@@ -79,17 +79,26 @@ We self-impose discipline rather than find out the hard way.
   happening at the same time as live user traffic.
 - **Concurrency limiter, not unlimited `Promise.all`.** All batch fetching
   (e.g. 1,230 games in a season backfill) goes through a `p-limit`-style
-  gate, not a naive `for` loop (too slow) or unbounded `Promise.all` (too
-  aggressive). Default concurrency: start at **4–6 concurrent requests**;
-  this is a starting guess, not a measured number.
+  gate (`lib/espn/rate-limiter.ts`), not a naive `for` loop (too slow) or
+  unbounded `Promise.all` (too aggressive).
 - **Backoff on failure.** 429/5xx responses trigger exponential backoff with
   jitter, honoring `Retry-After` if present. A request that keeps failing
   after a capped number of retries is logged and skipped (same "don't crash
   the whole job" rule as SPEC.md §8) — the next scheduled run picks it up.
-- **Tune concurrency empirically in M2, not now.** M2 (below) is explicitly
-  where we hit real endpoints, measure real latency, and watch for 429s
-  before locking in a concurrency/delay number for the real backfill. Treat
-  the number above as a conservative starting point we're prepared to lower.
+- **Measured, not guessed (M2 results):** ran `ingest/burst-test.ts` against
+  81 distinct real completed-game `summary` calls (box score + play-by-play)
+  across 10 dates. Zero failures/429s at concurrency 5, 10, 20, or 30;
+  per-request latency held flat through concurrency 10 (~145ms) and started
+  creeping up past 20 (~180–245ms) — a soft sign of contention, not an
+  actual limit we hit. **Chosen default: concurrency 10** — fast, with
+  headroom before anything that looked like throttling.
+  - Backfill estimate at this default: `(1,230 games ÷ 10) × ~145ms ≈ 18s`
+    for a full season's worth of `summary` calls. Backfill is not the
+    slow part of this project — ESPN responds quickly and in parallel
+    without complaint at this concurrency.
+  - Re-run `ingest/burst-test.ts` if ESPN's behavior ever changes
+    noticeably (new failures, slower responses) — the number above reflects
+    conditions on 2026-10-26, not a permanent guarantee.
 - **Minimize call volume via bulk endpoints, not just concurrency.** Fast
   concurrency doesn't help if we're making calls we don't need:
   - Backfilling games walks the **scoreboard-by-day** endpoint (one call =
@@ -144,22 +153,36 @@ aren't documented.
   confirmed via a scratch create/read/delete smoke test against the real
   generated client and adapter.
 
-### M2 — ESPN exploration spike + rate-limit tuning (no persistence yet)
-- Build `lib/espn/client.ts` with the concurrency limiter and backoff from §2,
-  starting at the conservative defaults.
-- Small throwaway script(s) hitting each endpoint in SPEC.md §7 for a real,
-  known game/team/player, dumping raw JSON to inspect actual field names.
-- Fire a deliberate burst (e.g. 50+ concurrent `summary` calls for different
-  games) through the client to see where ESPN actually starts throttling or
-  erroring, and tune the concurrency/backoff constants against that reality
-  rather than the starting guess.
-- Purpose: confirm/adjust the mapper shapes before writing real mappers —
-  this is where we find out if `{CONFERENCE_ID}` values, `seasontype`
-  numbers, stat field names etc. match assumptions.
-- Verify: we have one real sample JSON payload per endpoint saved locally
-  for reference during mapper-writing (e.g. `ingest/__fixtures__/*.json`),
-  and a concurrency/backoff setting we're confident won't get us throttled
-  mid-backfill.
+### M2 — ESPN exploration spike + rate-limit tuning — DONE
+- Built `lib/espn/client.ts` (fetch + limiter + backoff), `rate-limiter.ts`
+  (`p-limit` wrapper + exponential backoff/jitter honoring `Retry-After`),
+  and `endpoints.ts` (typed URL builders for every endpoint in SPEC.md §7).
+- `ingest/explore.ts` hit scoreboard, summary, teams, team, roster,
+  team-statistics, athletes list, athlete overview/gamelog, and standings
+  for real NBA data; payloads saved to `ingest/__fixtures__/*.json`.
+- `ingest/burst-test.ts` fired real, distinct `summary` calls (81 completed
+  games across 10 dates) at concurrency 5/10/20/30 — results and the chosen
+  default are in §2 above. 0 failures at every level tested.
+- Findings that change earlier assumptions, now reflected in SPEC.md:
+  - **Conference group IDs don't need to be guessed/confirmed separately** —
+    each team's own payload includes `groups.id` (e.g. Atlanta Hawks →
+    `groups.id = "5"`, `standingSummary: "3rd in Eastern Conference
+    Division"`). The team mapper (M3) can read this directly instead of
+    hardcoding `{CONFERENCE_ID}` values.
+  - **Standings is a two-step `$ref` fetch**, not one call:
+    `.../groups/{id}/standings` returns a list of named views
+    (`overall`/`expanded`/`division`/...), each a `$ref` to the real data,
+    e.g. `.../groups/5/standings/0` for the `overall` view actually
+    containing `standings[].team.$ref` + `standings[].records[].stats[]`.
+    The standings mapper (M5) ingests view `0` and follows each team's
+    `$ref` (already-known teams, so this is just an id match, not a new
+    lookup).
+  - `seasontype=2` (regular season) and the scoreboard/summary endpoints
+    all returned exactly the shapes assumed in SPEC.md §6/§7 — no schema
+    changes needed there.
+- Verify (done): fixtures saved under `ingest/__fixtures__/`; concurrency
+  default locked at 10 (§2); confirmed no mapper/schema changes needed
+  beyond the standings two-step fetch noted above.
 
 ### M3 — Reference data ingestion
 - `ingest/mappers/team.ts`, `player.ts` + `sync-reference-data.ts`.
@@ -172,9 +195,10 @@ aren't documented.
 - `backfill.ts` walks one completed season's schedule day-by-day (scoreboard
   endpoint, not per-team), and for every `final` game runs the `summary` call
   through the shared rate-limited client to ingest box score + play-by-play.
-- Before running it for real: compute the wall-clock estimate from §2 using
-  M2's measured latency/concurrency and share it — know how long this will
-  take before starting it, don't just kick it off and wait.
+- M2 already measured this: ~18s for a full season's ~1,230 `summary` calls
+  at concurrency 10 (§2). No separate estimate step needed — just watch for
+  a real run taking meaningfully longer than that, which would mean
+  something changed (ESPN throttling, network conditions) worth investigating.
 - Verify: spot-check a handful of known real games against ESPN's website —
   scores, stat lines, and a few play-by-play entries match.
 

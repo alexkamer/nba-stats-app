@@ -1,0 +1,158 @@
+{
+  "count": 524,
+  "pageIndex": 1,
+  "pageSize": 50,
+  "pageCount": 11,
+  "items": [
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4431679?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/5142620?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/2991235?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4066261?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4683730?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4593125?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4433268?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4278039?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/3135045?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4066328?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4277869?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/5164559?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/5060701?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/2993874?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/3032977?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/3934719?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4683021?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/5105555?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4278129?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4277848?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4873138?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4432816?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4277919?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4432573?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4066320?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4870562?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/6578?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4433134?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4684208?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4395625?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4397886?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4431893?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/6580?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4432187?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/5279133?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4397136?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/5148538?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/5105626?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4348700?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4432586?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4712849?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4395650?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/3037789?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/5105637?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/3136193?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/5041935?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4684269?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4280245?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4432737?lang=en&region=us"
+    },
+    {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/4065673?lang=en&region=us"
+    }
+  ]
+}
