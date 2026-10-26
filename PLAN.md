@@ -265,10 +265,47 @@ aren't documented.
   idempotency and self-healing via a second real run (20s, 0 new writes
   except the same 4 known-404 retries).
 
-### M5 — Season aggregates
+### M5 — Season aggregates — DONE
 - `ingest/mappers/season-stats.ts`, `standings.ts` + `sync-aggregates.ts`.
-- Verify: team/player season stat rows and standings match ESPN's site for
-  that season.
+- Scoped to the 2025-26 **regular season only** (ESPN season year 2026,
+  type 2) — standings only make sense for the regular season, and "season
+  stats" conventionally means regular-season averages. Every number comes
+  from a real ESPN call per the user's earlier decision (not self-aggregated
+  from our own game data).
+- Real run: 30/30 standings + team season stats, 582/669 player season
+  stats synced (87 skipped — see gap below), ~5s total (team-statistics +
+  standings calls are O(30)/O(2), player-statistics is O(players) but all
+  cheap at concurrency 10, consistent with M2's findings).
+- **Two real bugs found and fixed, not just assumptions that happened to
+  work:**
+  - Assumed the `standings` array's order was rank order (like a naive read
+    of the API would suggest) — it isn't. Confirmed by seeing the league's
+    best record (64-18) land at array position 15. Fixed by using ESPN's
+    explicit `playoffSeed` stat for conference rank instead of array index.
+  - Assumed the division-level standings endpoint would have the same
+    `"overall"` record name as the conference-level one — it doesn't; at
+    division scope ESPN names it `"Division Standings"`. Looking up
+    `"overall"` there silently returned zeros for every team (no error,
+    just wrong data), which combined with the first bug produced completely
+    scrambled division ranks. Fixed by not calling the division endpoint
+    for this at all: division rank is now derived from the already-correct
+    conference-level records, grouped by each team's division (known
+    locally since M3), sorted by win pct — avoids 6 extra API calls too.
+  - Caught both by actually eyeballing real output (OKC's division rank)
+    rather than trusting "0 errors thrown" as success — neither bug raised
+    an exception, they just silently produced wrong numbers.
+- **Known ESPN-side gap, not a bug:** 87 players skipped on
+  `athlete/{id}/statistics` with a 404 ("No stats found"). Most are
+  legitimately low/no-minute players, but a few (e.g. Damian Lillard, 39
+  games played per our own box score data) have a real gap in ESPN's own
+  season-stat aggregation — confirmed by querying ESPN directly and getting
+  the same 404. Same pattern as M4's 4 unreachable playoff-game summaries:
+  accepted, self-retrying, not fixable on our end.
+- Verify (done): standings now correctly rank by win pct within both
+  conference (clean 1-15 distribution, 2 teams per rank across both
+  conferences) and division (spot-checked Northwest: OKC 64-18 → rank 1,
+  Utah 22-60 → rank 5); spot-checked top scorers/win totals against known
+  2025-26 reality (Luka Doncic 33.5 ppg, OKC/Pistons as conference #1 seeds).
 
 ### M6 — Incremental sync job
 - `sync-completed-games.ts`: finds newly-final games not yet in DB, ingests
