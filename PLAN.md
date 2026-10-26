@@ -337,12 +337,43 @@ aren't documented.
   present, correctly skipped) and only re-attempted the same persistent
   4 failures — idempotency confirmed with real data, not a synthetic test.
 
-### M7 — Webapp: DB-backed pages
-- Route handlers for teams, team detail, players, player detail, standings,
-  and the `final`-game branch of game detail — all reading via Prisma.
-- Corresponding pages/components.
-- Verify: browse teams → team detail → roster → player detail; browse
-  standings; open a few completed games and confirm box score/PBP render.
+### M7 — Webapp: DB-backed pages — DONE
+- `src/lib/db.ts` (same driver-adapter pattern as `ingest/lib/db.ts`,
+  cached on `globalThis` so Next's dev-mode hot reload doesn't open a new
+  SQLite connection per reload).
+- Route handlers: `/api/teams`, `/api/teams/[teamId]`, `/api/players`,
+  `/api/players/[athleteId]`, `/api/standings`, `/api/games/[eventId]`
+  (final-game branch only — 404s for anything not yet ingested, by design,
+  until M8 adds the live-proxy branch).
+- Pages: `/teams`, `/teams/[teamId]`, `/players` (client-side search per
+  SPEC.md Sec 9.2), `/players/[athleteId]`, `/standings`,
+  `/games/[eventId]` (box score + play-by-play). TanStack Query +
+  `providers.tsx` wired into the root layout.
+- **Bug found and fixed:** `/api/standings` picked "latest season by year"
+  from the `Season` table directly — but M6's incremental sync creates a
+  `Season` row the moment a game goes final, before `sync-aggregates` has
+  populated standings for it. That picked the brand-new, standings-less
+  2026-27 season and returned an empty result. Fixed by querying for the
+  latest season that actually has `Standing` rows instead.
+- **Next 16 Cache Components gotcha:** all three dynamic-route pages
+  (`teams/[teamId]`, `players/[athleteId]`, `games/[eventId]`) use
+  `useParams()` in a client component, which Next 16 flags as blocking
+  prerendering unless wrapped in `<Suspense>`. Fixed by splitting each into
+  a thin default export wrapping an inner `*Content` component.
+- **Styling gotcha:** a leftover template rule in `globals.css`
+  (`body { background: var(--background); ... }`) silently overrode the
+  dark-theme Tailwind classes applied to `<body>` in `layout.tsx` — same
+  specificity, later in source order. Simplified `globals.css` to drop the
+  template's light/dark toggle entirely, since this app uses one fixed
+  dark theme.
+- Verify (done): **actually tested in a real browser**, not just HTTP
+  status codes — installed Playwright + Chromium transiently, drove all
+  six pages end to end, confirmed real data renders (team logos, 30-team
+  roster grid, full standings table with correct win/loss/rank, player
+  search/filter, a real box score + 500+ play play-by-play feed) with zero
+  browser console errors, then removed the Playwright dependency again
+  since it wasn't part of the planned stack — this was verification
+  tooling, not a project dependency.
 
 ### M8 — Webapp: live proxy path
 - `src/lib/espn-live.ts` + scoreboard route/page + the non-final branch of
