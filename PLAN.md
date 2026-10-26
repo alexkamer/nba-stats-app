@@ -375,12 +375,37 @@ aren't documented.
   since it wasn't part of the planned stack — this was verification
   tooling, not a project dependency.
 
-### M8 — Webapp: live proxy path
-- `src/lib/espn-live.ts` + scoreboard route/page + the non-final branch of
-  game detail.
-- Verify: today's scoreboard shows real live/scheduled games (test during
-  an actual game day), date picker works for past (DB) and future (live)
-  dates, in-progress game detail updates on refresh.
+### M8 — Webapp: live proxy path — DONE
+- `src/lib/espn-live.ts`: `getScoreboard(date)` and `getLiveGameDetail(eventId)`,
+  reusing the ingest mappers' pure stat-parsing logic (`mapTeamGameStat`,
+  `mapPlayerGameStat`, `mapPlay`) with placeholder FK ids (never persisted)
+  so live and DB-backed box scores share one parsing path.
+- `/api/scoreboard?date=YYYYMMDD` route; homepage rewritten into the actual
+  scoreboard (date nav, game cards) per SPEC.md Sec 5.1 — it was a
+  placeholder nav-links page through M7.
+- `/api/games/[eventId]` now branches per SPEC.md Sec 4: DB first, live
+  ESPN fallback if not found, 404 only if ESPN doesn't know the id either.
+  The game detail page normalizes both response shapes into one view
+  model — live-sourced teams/players render as plain text (no `/teams/[id]`
+  or `/players/[id]` link, since there may be no corresponding local row).
+- **Two Next 16 Cache Components gotchas, same category as M7's
+  `useParams()` issue:** `new Date()` read directly during a Client
+  Component's render (in the homepage's `useState` initializer) is flagged
+  as non-deterministic for prerendering the same way `useParams()` was.
+  Fixed identically — split into a thin default export wrapping a
+  `<Suspense>`-wrapped inner component. Worth remembering as a pattern: any
+  client component reading "current time" or route params needs this.
+- **Real-data finding:** ESPN reports `"0"` (not an omitted field) for a
+  scheduled game's score before tipoff — rendered as a real 0-0 score
+  before this was caught by actually looking at a screenshot. Fixed by
+  treating `STATUS_SCHEDULED` as "no score to show" explicitly.
+- Verify (done): tested live during an actual pre-game window — today
+  (2026-10-26) had 9 real scheduled games, confirmed via browser screenshot
+  showing correct matchups/tip times and no console errors; confirmed the
+  DB-backed branch (a real `final` game, `source: "db"`) and the live
+  branch (a `source: "live"` scheduled game, correctly showing "no box
+  score yet" with no broken links) both render correctly; confirmed the
+  existing M7 DB-backed pages still work unchanged after this refactor.
 
 ### M9 — Players/teams search, polish, error states
 - Client-side search per SPEC.md §9.2.

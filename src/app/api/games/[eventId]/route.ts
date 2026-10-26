@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/db";
+import { getLiveGameDetail } from "@/lib/espn-live";
 import { NextResponse } from "next/server";
 
-// DB-backed branch only (M7) — serves games already ingested as `final`.
-// The live-proxy branch for scheduled/in-progress games (SPEC.md Sec 4) is
-// M8, not yet implemented; such an espnId will 404 here until then.
+// Branches per SPEC.md Sec 4: `final` games are served from the DB
+// (ingested by the sync jobs); anything else (scheduled/in-progress, or
+// simply not ingested yet) falls back to the live ESPN proxy, which is
+// never persisted.
 export async function GET(_request: Request, { params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = await params;
 
@@ -20,14 +22,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
       },
     });
 
-    if (!game) {
-      return NextResponse.json(
-        { error: "Game not found in database (not yet final, or live-path not implemented — see M8)" },
-        { status: 404 },
-      );
+    if (game) {
+      return NextResponse.json({ game, source: "db" });
     }
 
-    return NextResponse.json({ game });
+    const liveGame = await getLiveGameDetail(eventId);
+    if (!liveGame) {
+      return NextResponse.json({ error: "Game not found (unknown espnId)" }, { status: 404 });
+    }
+    return NextResponse.json({ game: liveGame, source: "live" });
   } catch {
     return NextResponse.json({ error: "Failed to load game" }, { status: 500 });
   }
