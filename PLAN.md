@@ -93,9 +93,12 @@ We self-impose discipline rather than find out the hard way.
   actual limit we hit. **Chosen default: concurrency 10** — fast, with
   headroom before anything that looked like throttling.
   - Backfill estimate at this default: `(1,230 games ÷ 10) × ~145ms ≈ 18s`
-    for a full season's worth of `summary` calls. Backfill is not the
-    slow part of this project — ESPN responds quickly and in parallel
-    without complaint at this concurrency.
+    for a full season's worth of `summary` calls alone — confirmed accurate
+    for the ESPN-fetching side specifically. **Revised in M4 below:** the
+    real full backfill run took ~6 minutes, because bulk SQLite write
+    volume (not ESPN latency) dominates for a one-time full-season load.
+    ESPN responds quickly and in parallel without complaint at this
+    concurrency — that part of the estimate held up fine.
   - Re-run `ingest/burst-test.ts` if ESPN's behavior ever changes
     noticeably (new failures, slower responses) — the number above reflects
     conditions on 2026-10-26, not a permanent guarantee.
@@ -201,17 +204,66 @@ aren't documented.
   re-ran the whole sync a second time and row counts were identical
   (upsert-by-espnId idempotency confirmed, not just assumed).
 
-### M4 — Backfill: completed games (one season to start)
-- `ingest/mappers/game.ts`, `boxscore.ts`, `playbyplay.ts`.
-- `backfill.ts` walks one completed season's schedule day-by-day (scoreboard
-  endpoint, not per-team), and for every `final` game runs the `summary` call
-  through the shared rate-limited client to ingest box score + play-by-play.
-- M2 already measured this: ~18s for a full season's ~1,230 `summary` calls
-  at concurrency 10 (§2). No separate estimate step needed — just watch for
-  a real run taking meaningfully longer than that, which would mean
-  something changed (ESPN throttling, network conditions) worth investigating.
-- Verify: spot-check a handful of known real games against ESPN's website —
-  scores, stat lines, and a few play-by-play entries match.
+### M4 — Backfill: completed games (one season to start) — DONE
+- `ingest/mappers/game.ts`, `boxscore.ts`, `playbyplay.ts` + `backfill.ts`.
+- Targeted the 2025-26 season (ESPN season year 2026, the most recently
+  completed season as of 2026-10-26 — confirmed its actual date range via
+  real ESPN data: 2025-10-21 through 2026-06-10) per discussion with the
+  user, who confirmed this is explicitly a single-season backfill, not a
+  full historical archive (SPEC.md §2/§9.7 already scoped it that way).
+- **Phase A** walks the scoreboard day-by-day (233 days, one call each) to
+  discover + create `Game` rows (status/score/venue/teams come straight off
+  the scoreboard — no `summary` call needed for this part). **Phase B**
+  fetches `summary` per game needing a box score (query-driven — see
+  resilience note below, not just "newly discovered this run") through the
+  shared rate-limited client, using `Promise.allSettled` so one bad game
+  can't abort the other ~1,300 in flight.
+- Real run: **1,315 games discovered, 1,311 fully ingested** (2,622 team box
+  score rows, 34,464 player box score rows, 636,959 plays, 669 distinct
+  players — 518 from the M3 roster snapshot + 151 created on the fly from
+  box scores for traded/two-way players not on that snapshot). 1,231
+  regular season + 84 postseason, matching a real 82-game season + full
+  playoff bracket. Zero FK violations (`PRAGMA foreign_key_check`).
+- **Timing finding that revises §2's estimate:** the real run took ~6
+  minutes, not the ~18s ESPN-latency-only estimate. The gap is DB write
+  volume, not ESPN: ~674k individual upsert statements (team + player +
+  play rows) across 1,311 games, each going through Prisma/better-sqlite3
+  one at a time with no batching. A second run (self-healing retry only,
+  nothing new to write) took **20s** — confirming ESPN-side latency was
+  never the bottleneck; bulk SQLite write throughput is, and only matters
+  for a one-time full-season backfill, not the incremental sync (M6), which
+  only ever has a handful of new games per run.
+- **Two real, intentional gaps, not bugs:**
+  - 3 events skipped in Phase A (`unknown team`) — these were the All-Star
+    Game ("Team Stripes"/"Team Stars") and Rising Stars ("World") exhibition
+    "teams," which aren't real NBA franchises and correctly don't exist in
+    our `Team` table. Working as designed.
+  - 4 games (all second-round-or-later playoff games) got a 404 on
+    `summary` — confirmed by re-querying the scoreboard for one of their
+    dates that ESPN no longer even lists that event id under that date
+    (playoff event ids can get reassigned as series/dates finalize). Their
+    `Game` row is still correct (captured from the original scoreboard
+    pass), only box score/play-by-play is missing. Self-healing retry will
+    keep trying them on every future run at near-zero cost; this is an
+    accepted, documented ESPN-side data gap (SPEC.md §8's resilience model
+    covers exactly this).
+- **Resilience fix made during this milestone:** the Phase B worklist is
+  now derived from a DB query (`game.teamGameStats: { none: {} }`) rather
+  than "games discovered in this run's Phase A." Without this, a partial
+  Phase B failure (which did happen on the first attempt, from the missing
+  `athlete.id` bug below) would leave games permanently stuck — Phase A
+  would skip them forever as "already existing" and Phase B would never
+  revisit them. This makes every future run fully self-healing.
+- **Bug fixed during this milestone:** a small number of box score athlete
+  entries across the season have no `athlete.id` (malformed ESPN data, not
+  something we could predict from the single-game M2 fixture) — this
+  originally crashed the whole backfill via an unhandled Prisma validation
+  error. Now skipped with a per-entry warning instead.
+- Verify (done): spot-checked real games (scores/stat lines/play text all
+  readable and correct) during a 3-day smoke test before the full run;
+  confirmed full-run row counts and FK integrity above; confirmed
+  idempotency and self-healing via a second real run (20s, 0 new writes
+  except the same 4 known-404 retries).
 
 ### M5 — Season aggregates
 - `ingest/mappers/season-stats.ts`, `standings.ts` + `sync-aggregates.ts`.
