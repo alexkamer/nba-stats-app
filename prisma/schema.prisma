@@ -1,0 +1,335 @@
+// NBA Stats Webapp — Prisma schema
+// Mirrors SPEC.md §6. Every ESPN-sourced model keeps `espnId` (unique) so
+// ingestion upserts by espn id are idempotent and traceable to source.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum SeasonType {
+  PRESEASON
+  REGULAR
+  POSTSEASON
+}
+
+enum GameStatus {
+  SCHEDULED
+  LIVE
+  FINAL
+}
+
+// ---------- Reference / slow-changing ----------
+
+model Conference {
+  id        Int        @id @default(autoincrement())
+  espnId    String     @unique @map("espn_id")
+  name      String
+  divisions Division[]
+
+  @@map("conference")
+}
+
+model Division {
+  id           Int        @id @default(autoincrement())
+  espnId       String     @unique @map("espn_id")
+  name         String
+  conferenceId Int        @map("conference_id")
+  conference   Conference @relation(fields: [conferenceId], references: [id])
+  teams        Team[]
+
+  @@map("division")
+}
+
+model Venue {
+  id       Int     @id @default(autoincrement())
+  espnId   String  @unique @map("espn_id")
+  name     String
+  city     String?
+  state    String?
+  capacity Int?
+  teams    Team[]
+  games    Game[]
+
+  @@map("venue")
+}
+
+model Position {
+  id           Int      @id @default(autoincrement())
+  espnId       String   @unique @map("espn_id")
+  name         String
+  abbreviation String
+  players      Player[]
+
+  @@map("position")
+}
+
+model Team {
+  id             Int       @id @default(autoincrement())
+  espnId         String    @unique @map("espn_id")
+  name           String
+  location       String
+  displayName    String    @map("display_name")
+  abbreviation   String
+  color          String?
+  alternateColor String?   @map("alternate_color")
+  logoUrl        String?   @map("logo_url")
+  divisionId     Int?      @map("division_id")
+  division       Division? @relation(fields: [divisionId], references: [id])
+  venueId        Int?      @map("venue_id")
+  venue          Venue?    @relation(fields: [venueId], references: [id])
+
+  players           Player[]
+  homeGames         Game[]             @relation("HomeTeam")
+  awayGames         Game[]             @relation("AwayTeam")
+  playsAsTeam       Play[]
+  teamGameStats     TeamGameStat[]
+  teamSeasonStats   TeamSeasonStat[]
+  playerSeasonStats PlayerSeasonStat[]
+  standings         Standing[]
+  playerGameStats   PlayerGameStat[]
+
+  @@map("team")
+}
+
+model Player {
+  id            Int       @id @default(autoincrement())
+  espnId        String    @unique @map("espn_id")
+  fullName      String    @map("full_name")
+  displayName   String    @map("display_name")
+  headshotUrl   String?   @map("headshot_url")
+  jersey        String?
+  positionId    Int?      @map("position_id")
+  position      Position? @relation(fields: [positionId], references: [id])
+  currentTeamId Int?      @map("current_team_id")
+  currentTeam   Team?     @relation(fields: [currentTeamId], references: [id])
+  heightIn      Int?      @map("height_in")
+  weightLb      Int?      @map("weight_lb")
+  birthDate     DateTime? @map("birth_date")
+  birthPlace    String?   @map("birth_place")
+  college       String?
+  draftYear     Int?      @map("draft_year")
+  draftRound    Int?      @map("draft_round")
+  draftPick     Int?      @map("draft_pick")
+  active        Boolean   @default(true)
+
+  playerGameStats   PlayerGameStat[]
+  playerSeasonStats PlayerSeasonStat[]
+
+  @@map("player")
+}
+
+model Season {
+  id   Int        @id @default(autoincrement())
+  year Int
+  type SeasonType
+
+  games             Game[]
+  teamSeasonStats   TeamSeasonStat[]
+  playerSeasonStats PlayerSeasonStat[]
+  standings         Standing[]
+
+  @@unique([year, type])
+  @@map("season")
+}
+
+// ---------- Game / event data ----------
+
+model Game {
+  id         Int        @id @default(autoincrement())
+  espnId     String     @unique @map("espn_id")
+  seasonId   Int        @map("season_id")
+  season     Season     @relation(fields: [seasonId], references: [id])
+  seasonType SeasonType @map("season_type")
+  date       DateTime
+  status     GameStatus @default(FINAL)
+  period     Int?
+  clock      String?
+  homeTeamId Int        @map("home_team_id")
+  homeTeam   Team       @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeamId Int        @map("away_team_id")
+  awayTeam   Team       @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  homeScore  Int?       @map("home_score")
+  awayScore  Int?       @map("away_score")
+  venueId    Int?       @map("venue_id")
+  venue      Venue?     @relation(fields: [venueId], references: [id])
+  attendance Int?
+
+  plays           Play[]
+  teamGameStats   TeamGameStat[]
+  playerGameStats PlayerGameStat[]
+
+  @@map("game")
+}
+
+model Play {
+  id             Int     @id @default(autoincrement())
+  espnId         String  @unique @map("espn_id")
+  gameId         Int     @map("game_id")
+  game           Game    @relation(fields: [gameId], references: [id])
+  sequenceNumber Int     @map("sequence_number")
+  period         Int?
+  clock          String?
+  description    String?
+  teamId         Int?    @map("team_id")
+  team           Team?   @relation(fields: [teamId], references: [id])
+  homeScore      Int?    @map("home_score")
+  awayScore      Int?    @map("away_score")
+  scoringPlay    Boolean @default(false) @map("scoring_play")
+
+  @@map("play")
+}
+
+model TeamGameStat {
+  id        Int  @id @default(autoincrement())
+  gameId    Int  @map("game_id")
+  game      Game @relation(fields: [gameId], references: [id])
+  teamId    Int  @map("team_id")
+  team      Team @relation(fields: [teamId], references: [id])
+  points    Int?
+  rebounds  Int?
+  assists   Int?
+  steals    Int?
+  blocks    Int?
+  turnovers Int?
+  fouls     Int?
+  fgMade    Int? @map("fg_made")
+  fgAtt     Int? @map("fg_att")
+  threeMade Int? @map("three_made")
+  threeAtt  Int? @map("three_att")
+  ftMade    Int? @map("ft_made")
+  ftAtt     Int? @map("ft_att")
+
+  @@unique([gameId, teamId])
+  @@map("team_game_stat")
+}
+
+model PlayerGameStat {
+  id        Int    @id @default(autoincrement())
+  gameId    Int    @map("game_id")
+  game      Game   @relation(fields: [gameId], references: [id])
+  playerId  Int    @map("player_id")
+  player    Player @relation(fields: [playerId], references: [id])
+  teamId    Int    @map("team_id")
+  team      Team   @relation(fields: [teamId], references: [id])
+  minutes   Int?
+  points    Int?
+  rebounds  Int?
+  assists   Int?
+  steals    Int?
+  blocks    Int?
+  turnovers Int?
+  fouls     Int?
+  fgMade    Int?   @map("fg_made")
+  fgAtt     Int?   @map("fg_att")
+  threeMade Int?   @map("three_made")
+  threeAtt  Int?   @map("three_att")
+  ftMade    Int?   @map("ft_made")
+  ftAtt     Int?   @map("ft_att")
+  plusMinus Int?   @map("plus_minus")
+
+  @@unique([gameId, playerId])
+  @@map("player_game_stat")
+}
+
+// ---------- Season aggregates ----------
+
+model TeamSeasonStat {
+  id               Int     @id @default(autoincrement())
+  teamId           Int     @map("team_id")
+  team             Team    @relation(fields: [teamId], references: [id])
+  seasonId         Int     @map("season_id")
+  season           Season  @relation(fields: [seasonId], references: [id])
+  wins             Int?
+  losses           Int?
+  pointsPerGame    Float?  @map("points_per_game")
+  oppPointsPerGame Float?  @map("opp_points_per_game")
+  extra            String? // JSON-encoded; SQLite has no native Json type via this provider version
+
+  @@unique([teamId, seasonId])
+  @@map("team_season_stat")
+}
+
+model PlayerSeasonStat {
+  id               Int     @id @default(autoincrement())
+  playerId         Int     @map("player_id")
+  player           Player  @relation(fields: [playerId], references: [id])
+  teamId           Int     @map("team_id")
+  team             Team    @relation(fields: [teamId], references: [id])
+  seasonId         Int     @map("season_id")
+  season           Season  @relation(fields: [seasonId], references: [id])
+  gamesPlayed      Int?    @map("games_played")
+  pointsPerGame    Float?  @map("points_per_game")
+  reboundsPerGame  Float?  @map("rebounds_per_game")
+  assistsPerGame   Float?  @map("assists_per_game")
+  stealsPerGame    Float?  @map("steals_per_game")
+  blocksPerGame    Float?  @map("blocks_per_game")
+  turnoversPerGame Float?  @map("turnovers_per_game")
+  fieldGoalPct     Float?  @map("field_goal_pct")
+  threePointPct    Float?  @map("three_point_pct")
+  freeThrowPct     Float?  @map("free_throw_pct")
+  extra            String? // JSON-encoded
+
+  @@unique([playerId, seasonId])
+  @@map("player_season_stat")
+}
+
+model Standing {
+  id             Int     @id @default(autoincrement())
+  teamId         Int     @map("team_id")
+  team           Team    @relation(fields: [teamId], references: [id])
+  seasonId       Int     @map("season_id")
+  season         Season  @relation(fields: [seasonId], references: [id])
+  conferenceRank Int?    @map("conference_rank")
+  divisionRank   Int?    @map("division_rank")
+  wins           Int?
+  losses         Int?
+  winPct         Float?  @map("win_pct")
+  gamesBehind    Float?  @map("games_behind")
+  streak         String?
+  homeRecord     String? @map("home_record")
+  awayRecord     String? @map("away_record")
+  lastTen        String? @map("last_ten")
+
+  @@unique([teamId, seasonId])
+  @@map("standing")
+}
+
+// ---------- News (stretch) ----------
+
+model NewsArticle {
+  id          Int       @id @default(autoincrement())
+  espnId      String    @unique @map("espn_id")
+  headline    String
+  description String?
+  url         String?
+  imageUrl    String?   @map("image_url")
+  publishedAt DateTime? @map("published_at")
+
+  teams   NewsArticleTeam[]
+  players NewsArticlePlayer[]
+
+  @@map("news_article")
+}
+
+model NewsArticleTeam {
+  newsArticleId Int         @map("news_article_id")
+  newsArticle   NewsArticle @relation(fields: [newsArticleId], references: [id])
+  teamId        Int         @map("team_id")
+
+  @@id([newsArticleId, teamId])
+  @@map("news_article_team")
+}
+
+model NewsArticlePlayer {
+  newsArticleId Int         @map("news_article_id")
+  newsArticle   NewsArticle @relation(fields: [newsArticleId], references: [id])
+  playerId      Int         @map("player_id")
+
+  @@id([newsArticleId, playerId])
+  @@map("news_article_player")
+}
