@@ -12,7 +12,7 @@ import { fetchLeagueTree } from "./mappers/reference-tree";
 import { mapTeam, mapVenue, type EspnSiteTeamListItem, type EspnTeamDetail } from "./mappers/team";
 import { mapPlayer, mapPosition, type EspnRosterAthlete } from "./mappers/player";
 
-const CURRENT_SEASON_YEAR = "2025";
+const CURRENT_SEASON_YEAR = "2026"; // 2025-26 season per ESPN's year-of-conclusion convention (confirmed M4)
 const REGULAR_SEASON_TYPE = "2";
 
 interface EspnTeamsListResponse {

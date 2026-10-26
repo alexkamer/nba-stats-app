@@ -307,14 +307,35 @@ aren't documented.
   Utah 22-60 → rank 5); spot-checked top scorers/win totals against known
   2025-26 reality (Luka Doncic 33.5 ppg, OKC/Pistons as conference #1 seeds).
 
-### M6 — Incremental sync job
-- `sync-completed-games.ts`: finds newly-final games not yet in DB, ingests
-  them, then triggers `sync-aggregates.ts` for affected teams/players.
-- `run-all-sync.ts` orchestrates the recurring jobs; wire up a local cron
-  (or just run manually) for now — exact scheduler deferred to deployment.
-- Verify: mark a "yesterday" game as the cutoff, confirm re-running the sync
-  only adds new games and doesn't touch/duplicate existing rows (idempotency
-  check — run it twice, row counts don't change the second time).
+### M6 — Incremental sync job — DONE
+- Extracted `ingest/lib/game-ingest.ts` from M4's `backfill.ts` (discovery +
+  box score ingestion logic, now shared by both scripts) — `backfill.ts`
+  is now a thin wrapper calling it with the full-season date range.
+- `sync-completed-games.ts`: calls the same shared logic with a short
+  rolling window (today - 4 days through today) instead of the whole
+  season — cheap enough to just always check, and the 4-day lookback (not
+  just "yesterday") absorbs a missed run without creating a permanent gap,
+  since discovery + box score ingestion are both idempotent/self-healing.
+- `run-all-sync.ts`: single entry point running, in order, reference data
+  → completed games → aggregates (matches SPEC.md Sec 7.2's dependency —
+  aggregates should refresh after completed games change). Exact scheduler
+  (cron, systemd timer, etc.) still deferred to deployment per SPEC.md
+  Sec 9.1 — this script is just what gets invoked.
+- Real run: this surfaced genuinely new data, not just a no-op test — the
+  2026-27 season had already started (today is 2026-10-26), so the
+  incremental job discovered and fully ingested **29 real new games** from
+  the season in progress, created new `Season` rows for it automatically,
+  and correctly re-attempted (and re-failed, as expected) the same 4
+  known-unreachable 2025-26 playoff games from M4 — proving both the
+  "pick up genuinely new data" and "self-healing retry" paths work for
+  real, not just in theory.
+- Full `run-all-sync.ts` run: ~14s end to end (reference data + incremental
+  games + aggregates together).
+- Verify (done): confirmed via the real run above — new season/games
+  appeared correctly with right scores/teams; re-running
+  `sync-completed-games.ts` a second time found 0 new games (all 29 already
+  present, correctly skipped) and only re-attempted the same persistent
+  4 failures — idempotency confirmed with real data, not a synthetic test.
 
 ### M7 — Webapp: DB-backed pages
 - Route handlers for teams, team detail, players, player detail, standings,
