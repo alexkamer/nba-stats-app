@@ -407,11 +407,17 @@ aren't documented.
   score yet" with no broken links) both render correctly; confirmed the
   existing M7 DB-backed pages still work unchanged after this refactor.
 
-### M9 — Players/teams search, polish, error states
-- Client-side search per SPEC.md §9.2.
-- Error/empty states per SPEC.md §8.
-- Visual pass (this is where we'd invoke the frontend-design skill for any
-  non-trivial layout/styling decisions).
+### M9 — Players/teams search, polish, error states — DONE (functional scope)
+- Client-side player search (SPEC.md Sec 9.2) was built in M7; teams don't
+  need search (30 teams, browsable by conference/division already).
+- Error/empty states (SPEC.md Sec 8) were built alongside every page in
+  M7/M8: every page distinguishes loading/error/empty, no page ever shows
+  a raw crash. Confirmed in the M7/M8 real-browser verification passes.
+- Deferred, not done: a dedicated visual design pass (the frontend-design
+  skill). The current dark theme (built ad hoc in M7) is functional and
+  was verified in real screenshots, but nobody has asked for distinctive
+  visual design — not pursuing further without that ask, to avoid scope
+  creep beyond what was requested.
 
 ### M10 (stretch) — News
 - Only if time allows, per SPEC.md §5.7.
