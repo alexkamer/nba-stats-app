@@ -184,11 +184,22 @@ aren't documented.
   default locked at 10 (§2); confirmed no mapper/schema changes needed
   beyond the standings two-step fetch noted above.
 
-### M3 — Reference data ingestion
-- `ingest/mappers/team.ts`, `player.ts` + `sync-reference-data.ts`.
-- Ingest conferences, divisions, venues, positions, teams, full rosters.
-- Verify: `prisma studio` shows all 30 teams correctly linked to
-  division/conference/venue, and rosters populated.
+### M3 — Reference data ingestion — DONE
+- `ingest/mappers/reference-tree.ts` (conference/division tree, walked from
+  ESPN's `/groups` hierarchy — no hardcoded conference/division IDs),
+  `team.ts`, `player.ts` + `sync-reference-data.ts`, `ingest/lib/db.ts`
+  (Prisma client with the driver-adapter pattern from M1).
+- Ingested conferences, divisions, venues, positions, teams, full rosters
+  for real: 2 conferences, 6 divisions, 29 venues (one shared by two teams),
+  3 positions, 30 teams, 518 players.
+- Finding: ESPN's roster payload only reports broad position groups
+  (Guard/Forward/Center), not the five traditional positions — SPEC.md §6
+  updated to reflect this.
+- Verify (done): FK integrity confirmed via direct SQL (0 teams missing a
+  division or venue); spot-checked team→division→conference→venue joins
+  look correct (e.g. Bulls → Central → Eastern Conference → United Center);
+  re-ran the whole sync a second time and row counts were identical
+  (upsert-by-espnId idempotency confirmed, not just assumed).
 
 ### M4 — Backfill: completed games (one season to start)
 - `ingest/mappers/game.ts`, `boxscore.ts`, `playbyplay.ts`.

@@ -28,4 +28,26 @@ export const espnEndpoints = {
     `${CORE}/seasons/${year}/types/${seasonType}/teams/${teamId}/statistics`,
   standings: (year: string, seasonType: string, groupId: string) =>
     `${CORE}/seasons/${year}/types/${seasonType}/groups/${groupId}/standings`,
+  standingsView: (year: string, seasonType: string, groupId: string, viewId: string) =>
+    `${CORE}/seasons/${year}/types/${seasonType}/groups/${groupId}/standings/${viewId}`,
+
+  // Conference/division tree (SPEC.md Sec 6: conference/division models) —
+  // discovered during M2: top-level groups are the 2 conferences, each
+  // conference's `children` are its divisions, each division's `teams`
+  // lists its member teams.
+  groups: (year: string, seasonType: string) => `${CORE}/seasons/${year}/types/${seasonType}/groups`,
+  group: (year: string, seasonType: string, groupId: string) =>
+    `${CORE}/seasons/${year}/types/${seasonType}/groups/${groupId}`,
+  groupChildren: (year: string, seasonType: string, groupId: string) =>
+    `${CORE}/seasons/${year}/types/${seasonType}/groups/${groupId}/children`,
+  groupTeams: (year: string, seasonType: string, groupId: string) =>
+    `${CORE}/seasons/${year}/types/${seasonType}/groups/${groupId}/teams`,
 };
+
+/** Pulls the trailing numeric id off an ESPN `$ref` URL, e.g.
+ * ".../teams/5?lang=en" -> "5". */
+export function idFromRef(ref: string): string {
+  const withoutQuery = ref.split("?")[0];
+  const segments = withoutQuery.split("/");
+  return segments[segments.length - 1];
+}

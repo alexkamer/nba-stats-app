@@ -130,7 +130,9 @@ Reference / slow-changing tables:
 - **conference** (`id`, `espn_id`, `name`) — Eastern / Western
 - **division** (`id`, `espn_id`, `name`, `conference_id` FK)
 - **venue** (`id`, `espn_id`, `name`, `city`, `state`, `capacity`)
-- **position** (`id`, `espn_id`, `name`, `abbreviation`) — PG/SG/SF/PF/C
+- **position** (`id`, `espn_id`, `name`, `abbreviation`) — confirmed during
+  M3: ESPN's roster payload only reports broad groups (Guard/Forward/Center),
+  not the five traditional positions; the table stores whatever ESPN returns
 - **team** (`id`, `espn_id`, `name`, `location`, `display_name`, `abbreviation`,
   `color`, `alternate_color`, `logo_url`, `division_id` FK, `venue_id` FK)
 - **player** (`id`, `espn_id`, `full_name`, `display_name`, `headshot_url`,
