@@ -41,6 +41,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Link href="/players" className="text-neutral-400 hover:text-neutral-100">
                 Players
               </Link>
+              <Link href="/news" className="text-neutral-400 hover:text-neutral-100">
+                News
+              </Link>
             </nav>
           </header>
           <main className="flex-1 px-6 py-6 max-w-6xl w-full mx-auto">{children}</main>

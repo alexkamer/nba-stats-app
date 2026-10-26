@@ -419,8 +419,26 @@ aren't documented.
   visual design — not pursuing further without that ask, to avoid scope
   creep beyond what was requested.
 
-### M10 (stretch) — News
-- Only if time allows, per SPEC.md §5.7.
+### M10 (stretch) — News — DONE
+- `ingest/mappers/news.ts` + `sync-news.ts` (added to `run-all-sync.ts`):
+  upserts articles by espnId, relinking team/player join rows fresh each
+  run. Team/player associations come from the article's own `categories`
+  array (`teamId`/`athleteId` fields matching our `espnId`s directly — no
+  guessing needed, confirmed during M10 exploration).
+- `/api/news` + `/news` page, linked in the nav.
+- Real run: 50 articles, 106 team associations, 68 player associations,
+  confirmed idempotent on a second run (same counts).
+- **Bug found and fixed via real-browser testing, not just status codes:**
+  the news card was an `<a>` wrapping another `<a>` (team links nested
+  inside the article-link card) — invalid HTML, caused a silent React
+  hydration error. Restructured so the card is a `<div>`, the headline is
+  the external article link, and team links are separate siblings.
+- **Real-data note, not a bug:** ESPN's NBA news feed includes some
+  cross-league content (e.g. WNBA Finals articles that also tag an NBA
+  team/contributor by shared categorization) — expected noise in a real
+  news feed, not something to filter out for v1.
+- Verify (done): real browser screenshot showing headlines, images,
+  dates, and correct team tags; zero console errors after the fix.
 
 ## 4. What we're explicitly deferring past this plan
 

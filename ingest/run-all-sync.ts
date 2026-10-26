@@ -15,7 +15,12 @@
 import { execFileSync } from "child_process";
 import { join } from "path";
 
-const SCRIPTS = ["sync-reference-data.ts", "sync-completed-games.ts", "sync-aggregates.ts"];
+const SCRIPTS = [
+  "sync-reference-data.ts",
+  "sync-completed-games.ts",
+  "sync-aggregates.ts",
+  "sync-news.ts", // M10 (stretch) — independent of the others, order doesn't matter
+];
 
 function runScript(name: string) {
   console.log(`\n=== running ${name} ===`);
