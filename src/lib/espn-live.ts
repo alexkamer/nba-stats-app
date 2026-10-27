@@ -13,6 +13,7 @@ import {
   type EspnBoxscore,
 } from "../../ingest/mappers/boxscore";
 import { mapPlay, type EspnPlay } from "../../ingest/mappers/playbyplay";
+import { pickPrimaryProvider, type EspnPickcenterEntry } from "../../ingest/mappers/odds";
 
 // Richer than ingest/mappers/game.ts's EspnScoreboardEvent (which only
 // needs team.id for FK lookups) — the scoreboard view needs to display
@@ -40,6 +41,16 @@ interface EspnScoreboardResponse {
 interface EspnSummaryResponse {
   boxscore: EspnBoxscore;
   plays: EspnPlay[];
+  pickcenter?: EspnPickcenterEntry[];
+}
+
+export interface LiveOdds {
+  provider: string;
+  spread: number | null;
+  overUnder: number | null;
+  homeMoneyline: number | null;
+  awayMoneyline: number | null;
+  favoriteSide: "home" | "away" | null;
 }
 
 export interface ScoreboardGameCard {
@@ -97,6 +108,7 @@ export interface LiveGameDetail {
   teamGameStats: (ReturnType<typeof mapTeamGameStat> & { teamEspnId: string })[];
   playerGameStats: (ReturnType<typeof mapPlayerGameStat> & { playerDisplayName: string; teamEspnId: string })[];
   plays: ReturnType<typeof mapPlay>[];
+  odds: LiveOdds | null;
 }
 
 /** Fetches a game live from ESPN and reshapes it into roughly the same
@@ -148,6 +160,18 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
 
   const plays = (summary.plays ?? []).map((play) => mapPlay(play, 0, null));
 
+  const primaryOdds = pickPrimaryProvider(summary.pickcenter);
+  const odds: LiveOdds | null = primaryOdds
+    ? {
+        provider: primaryOdds.provider.name,
+        spread: primaryOdds.spread ?? null,
+        overUnder: primaryOdds.overUnder ?? null,
+        homeMoneyline: primaryOdds.homeTeamOdds?.moneyLine ?? null,
+        awayMoneyline: primaryOdds.awayTeamOdds?.moneyLine ?? null,
+        favoriteSide: primaryOdds.homeTeamOdds?.favorite ? "home" : primaryOdds.awayTeamOdds?.favorite ? "away" : null,
+      }
+    : null;
+
   return {
     espnId: eventId,
     source: "live",
@@ -169,5 +193,6 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
     teamGameStats,
     playerGameStats,
     plays,
+    odds,
   };
 }

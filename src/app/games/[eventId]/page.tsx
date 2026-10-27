@@ -16,6 +16,24 @@ interface ApiResponse {
   game: DbGame | LiveGame;
 }
 
+interface DbOdds {
+  provider: string;
+  spread: number | null;
+  overUnder: number | null;
+  homeMoneyline: number | null;
+  awayMoneyline: number | null;
+  favoriteTeamId: number | null;
+}
+
+interface LiveOdds {
+  provider: string;
+  spread: number | null;
+  overUnder: number | null;
+  homeMoneyline: number | null;
+  awayMoneyline: number | null;
+  favoriteSide: "home" | "away" | null;
+}
+
 interface DbGame {
   date: string;
   homeScore: number | null;
@@ -26,6 +44,7 @@ interface DbGame {
   teamGameStats: (TeamStatFields & { teamId: number; team: { abbreviation: string } })[];
   playerGameStats: (PlayerStatFields & { id: number; teamId: number; player: { id: number; displayName: string } })[];
   plays: PlayFields[];
+  odds: DbOdds | null;
 }
 
 interface LiveGame {
@@ -36,6 +55,7 @@ interface LiveGame {
   teamGameStats: (TeamStatFields & { teamEspnId: string })[];
   playerGameStats: (PlayerStatFields & { teamEspnId: string; playerDisplayName: string })[];
   plays: PlayFields[];
+  odds: LiveOdds | null;
 }
 
 interface TeamStatFields {
@@ -70,6 +90,11 @@ interface PlayFields {
   homeScore: number | null;
   awayScore: number | null;
   scoringPlay: boolean;
+}
+
+function formatSigned(value: number | null): string {
+  if (value === null) return "";
+  return value > 0 ? `+${value}` : String(value);
 }
 
 async function fetchGame(eventId: string): Promise<ApiResponse> {
@@ -133,6 +158,22 @@ function GameDetailContent() {
       .sort((a, b) => (b.points ?? 0) - (a.points ?? 0));
   };
 
+  // Normalize odds too — DB shape knows the favorite by internal team id,
+  // live shape only knows home/away side (no FK ids for an unpersisted game).
+  const rawOdds = (game as DbGame | LiveGame).odds;
+  const odds = rawOdds
+    ? {
+        provider: rawOdds.provider,
+        overUnder: rawOdds.overUnder,
+        homeSpread: rawOdds.spread,
+        awaySpread: rawOdds.spread !== null ? -rawOdds.spread : null,
+        homeMoneyline: rawOdds.homeMoneyline,
+        awayMoneyline: rawOdds.awayMoneyline,
+        homeIsFavorite:
+          source === "db" ? (rawOdds as DbOdds).favoriteTeamId === home.linkId : (rawOdds as LiveOdds).favoriteSide === "home",
+      }
+    : null;
+
   const plays = game.plays.map((p, i) => ({ ...p, key: p.id ?? i }));
   const visiblePlays = showAllPlays ? plays : plays.slice(-20);
 
@@ -150,6 +191,36 @@ function GameDetailContent() {
         )}
         {source === "live" && <p className="text-neutral-500 text-sm">{(game as LiveGame).statusDetail}</p>}
       </div>
+
+      {odds && (
+        <section>
+          <h2 className="text-lg font-medium text-neutral-300 mb-3">
+            Odds <span className="text-neutral-500 text-sm font-normal">({odds.provider})</span>
+          </h2>
+          <table className="w-full text-sm max-w-md">
+            <thead>
+              <tr className="text-left text-neutral-500 border-b border-neutral-800">
+                <th className="py-2 pr-2">Team</th>
+                <th className="py-2 pr-2 text-right">Spread</th>
+                <th className="py-2 text-right">Moneyline</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className={`border-b border-neutral-900 ${!odds.homeIsFavorite ? "font-semibold" : ""}`}>
+                <td className="py-2 pr-2">{away.abbreviation}</td>
+                <td className="py-2 pr-2 text-right">{formatSigned(odds.awaySpread)}</td>
+                <td className="py-2 text-right">{formatSigned(odds.awayMoneyline)}</td>
+              </tr>
+              <tr className={odds.homeIsFavorite ? "font-semibold" : ""}>
+                <td className="py-2 pr-2">{home.abbreviation}</td>
+                <td className="py-2 pr-2 text-right">{formatSigned(odds.homeSpread)}</td>
+                <td className="py-2 text-right">{formatSigned(odds.homeMoneyline)}</td>
+              </tr>
+            </tbody>
+          </table>
+          {odds.overUnder !== null && <p className="text-neutral-500 text-sm mt-2">O/U {odds.overUnder}</p>}
+        </section>
+      )}
 
       <section>
         <h2 className="text-lg font-medium text-neutral-300 mb-3">Box score</h2>

@@ -21,6 +21,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
         teamGameStats: { include: { team: true } },
         playerGameStats: { include: { player: true, team: true } },
         plays: { orderBy: { sequenceNumber: "asc" } },
+        odds: true,
       },
     });
 
