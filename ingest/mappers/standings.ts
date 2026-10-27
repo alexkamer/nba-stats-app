@@ -62,6 +62,94 @@ export interface StandingUpsertInput {
   lastTen: string | null;
 }
 
+/** The "expanded" standings view (viewId "1") carries a different set of
+ * named records than the "overall" view (viewId "0") — same entry/team
+ * shape, just different `records` content (confirmed against the real
+ * ESPN core API: groups/{id}/standings/1). */
+export interface ExpandedStandingInput {
+  threePtRecord: string | null;
+  tenPtRecord: string | null;
+  vsOverRecord: string | null;
+  vsUnderRecord: string | null;
+  otRecord: string | null;
+}
+
+export function mapExpandedStanding(entry: EspnStandingsEntry): ExpandedStandingInput {
+  return {
+    threePtRecord: findRecord(entry, "Three Points")?.summary ?? null,
+    tenPtRecord: findRecord(entry, "Ten Points")?.summary ?? null,
+    vsOverRecord: findRecord(entry, "vs. .500 or Better")?.summary ?? null,
+    vsUnderRecord: findRecord(entry, "vs. Below .500")?.summary ?? null,
+    otRecord: findRecord(entry, "In Overtime Games")?.summary ?? null,
+  };
+}
+
+/** The "division" standings view (viewId "2") carries records against each
+ * conference and division (confirmed against the real ESPN core API:
+ * groups/{id}/standings/2). */
+export interface DivisionStandingInput {
+  vsEastRecord: string | null;
+  vsAtlRecord: string | null;
+  vsCenRecord: string | null;
+  vsSeRecord: string | null;
+  vsWestRecord: string | null;
+  vsNwRecord: string | null;
+  vsPacRecord: string | null;
+  vsSwRecord: string | null;
+}
+
+export function mapDivisionStanding(entry: EspnStandingsEntry): DivisionStandingInput {
+  return {
+    vsEastRecord: findRecord(entry, "vs. Eastern Conf.")?.summary ?? null,
+    vsAtlRecord: findRecord(entry, "vs. Atlantic Div.")?.summary ?? null,
+    vsCenRecord: findRecord(entry, "vs. Central Div.")?.summary ?? null,
+    vsSeRecord: findRecord(entry, "vs. Southeast Div.")?.summary ?? null,
+    vsWestRecord: findRecord(entry, "vs. Western Conf.")?.summary ?? null,
+    vsNwRecord: findRecord(entry, "vs. Northwest Div.")?.summary ?? null,
+    vsPacRecord: findRecord(entry, "vs. Pacific Div.")?.summary ?? null,
+    vsSwRecord: findRecord(entry, "vs. Southwest Div.")?.summary ?? null,
+  };
+}
+
+/** NBA Cup (In-Season Tournament) pool play, started 2023-24 (year 2024).
+ * Fetched per-pool (groups 22-27 — "East/West Group A/B/C", see
+ * sync-aggregates.ts) rather than per-conference, using the same
+ * "inseason" view (viewId "3") that also exists at conference level; at
+ * pool scope its "In Season" record is each team's pool-play-only
+ * record (confirmed against the real ESPN core API), with "Home"/"Road"
+ * records alongside it exactly like the main standings shape. */
+export interface NbaCupStandingInput {
+  seed: number | null;
+  wins: number | null;
+  losses: number | null;
+  winPct: number | null;
+  gamesBehind: number | null;
+  homeRecord: string | null;
+  awayRecord: string | null;
+  pointsFor: number | null;
+  pointsAgainst: number | null;
+  pointDifferential: number | null;
+  streak: string | null;
+}
+
+export function mapNbaCupStanding(entry: EspnStandingsEntry): NbaCupStandingInput {
+  const inSeason = findRecord(entry, "In Season");
+  const streakValue = findStat(inSeason, "streak");
+  return {
+    seed: findStat(inSeason, "playoffSeed"),
+    wins: findStat(inSeason, "wins"),
+    losses: findStat(inSeason, "losses"),
+    winPct: findStat(inSeason, "winPercent"),
+    gamesBehind: findStat(inSeason, "gamesBehind"),
+    homeRecord: findRecord(entry, "Home")?.summary ?? null,
+    awayRecord: findRecord(entry, "Road")?.summary ?? null,
+    pointsFor: findStat(inSeason, "pointsFor"),
+    pointsAgainst: findStat(inSeason, "pointsAgainst"),
+    pointDifferential: findStat(inSeason, "pointDifferential"),
+    streak: streakValue !== null ? String(streakValue) : null,
+  };
+}
+
 /** The `standings` array's order is NOT rank order (confirmed during M5 —
  * e.g. the league's best record showed up at array position 15). ESPN
  * reports conference rank explicitly as the `playoffSeed` stat on each

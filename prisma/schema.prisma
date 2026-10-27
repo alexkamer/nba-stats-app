@@ -93,6 +93,7 @@ model Team {
   playerSeasonStats PlayerSeasonStat[]
   standings         Standing[]
   playerGameStats   PlayerGameStat[]
+  nbaCupStandings   NbaCupStanding[]
 
   @@map("team")
 }
@@ -156,6 +157,7 @@ model Season {
   teamSeasonStats   TeamSeasonStat[]
   playerSeasonStats PlayerSeasonStat[]
   standings         Standing[]
+  nbaCupStandings   NbaCupStanding[]
 
   @@unique([year, type])
   @@map("season")
@@ -343,9 +345,51 @@ model Standing {
   divRecord      String? @map("div_record")
   confRecord     String? @map("conf_record")
   lastTen        String? @map("last_ten")
+  threePtRecord  String? @map("three_pt_record")
+  tenPtRecord    String? @map("ten_pt_record")
+  vsOverRecord   String? @map("vs_over_record")
+  vsUnderRecord  String? @map("vs_under_record")
+  otRecord       String? @map("ot_record")
+  vsEastRecord   String? @map("vs_east_record")
+  vsAtlRecord    String? @map("vs_atl_record")
+  vsCenRecord    String? @map("vs_cen_record")
+  vsSeRecord     String? @map("vs_se_record")
+  vsWestRecord   String? @map("vs_west_record")
+  vsNwRecord     String? @map("vs_nw_record")
+  vsPacRecord    String? @map("vs_pac_record")
+  vsSwRecord     String? @map("vs_sw_record")
 
   @@unique([teamId, seasonId])
   @@map("standing")
+}
+
+// NBA Cup (In-Season Tournament) pool play, started 2023-24 (year 2024 in
+// our convention) — a separate 6-pool grouping (3 per conference) unrelated
+// to conference/division, sourced from ESPN's dedicated pool group ids
+// (confirmed against the real core API: groups 22-27 are "East/West Group
+// A/B/C", found by brute-forcing group ids — they aren't listed as children
+// of the conference groups like divisions are).
+model NbaCupStanding {
+  id                Int     @id @default(autoincrement())
+  teamId            Int     @map("team_id")
+  team              Team    @relation(fields: [teamId], references: [id])
+  seasonId          Int     @map("season_id")
+  season            Season  @relation(fields: [seasonId], references: [id])
+  groupName         String  @map("group_name")
+  seed              Int?
+  wins              Int?
+  losses            Int?
+  winPct            Float?  @map("win_pct")
+  gamesBehind       Float?  @map("games_behind")
+  homeRecord        String? @map("home_record")
+  awayRecord        String? @map("away_record")
+  pointsFor         Float?  @map("points_for")
+  pointsAgainst     Float?  @map("points_against")
+  pointDifferential Float?  @map("point_differential")
+  streak            String?
+
+  @@unique([teamId, seasonId])
+  @@map("nba_cup_standing")
 }
 
 // ---------- News (stretch) ----------

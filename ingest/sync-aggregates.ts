@@ -17,6 +17,9 @@ import { espnEndpoints, idFromRef } from "../lib/espn/endpoints";
 import {
   conferenceRankOf,
   extractOverallRecord,
+  mapDivisionStanding,
+  mapExpandedStanding,
+  mapNbaCupStanding,
   mapStanding,
   type EspnStandingsResponse,
 } from "./mappers/standings";
@@ -27,6 +30,20 @@ import {
 } from "./mappers/season-stats";
 
 const SEASON_TYPE_CODE = "2"; // regular season
+
+// NBA Cup (In-Season Tournament) started in the 2023-24 season (year 2024
+// in our convention) — don't bother querying ESPN's pool groups for
+// earlier seasons, they don't exist. Pool group espnIds confirmed stable
+// across 2024-2027 by direct probing (see mappers/standings.ts).
+const NBA_CUP_START_YEAR = 2024;
+const NBA_CUP_GROUPS = [
+  { espnId: "22", groupName: "East Group A" },
+  { espnId: "23", groupName: "East Group B" },
+  { espnId: "24", groupName: "East Group C" },
+  { espnId: "25", groupName: "West Group A" },
+  { espnId: "26", groupName: "West Group B" },
+  { espnId: "27", groupName: "West Group C" },
+];
 
 async function getOrCreateSeasonId(seasonYear: number): Promise<number> {
   const season = await prisma.season.upsert({
@@ -90,14 +107,40 @@ async function syncStandingsAndTeamSeasonStats(seasonId: number, seasonYear: num
 
   // Fetch both conferences first so we have every team's correct overall
   // record in hand before computing division rank.
-  const conferenceViews = await Promise.all(
-    maps.conferenceEspnIds.map((confEspnId) =>
-      fetchEspnJson<EspnStandingsResponse>(
-        espnEndpoints.standingsView(String(seasonYear), SEASON_TYPE_CODE, confEspnId, "0"),
+  const [conferenceViews, expandedViews, divisionViews] = await Promise.all([
+    Promise.all(
+      maps.conferenceEspnIds.map((confEspnId) =>
+        fetchEspnJson<EspnStandingsResponse>(
+          espnEndpoints.standingsView(String(seasonYear), SEASON_TYPE_CODE, confEspnId, "0"),
+        ),
       ),
     ),
-  );
+    Promise.all(
+      maps.conferenceEspnIds.map((confEspnId) =>
+        fetchEspnJson<EspnStandingsResponse>(
+          espnEndpoints.standingsView(String(seasonYear), SEASON_TYPE_CODE, confEspnId, "1"),
+        ),
+      ),
+    ),
+    Promise.all(
+      maps.conferenceEspnIds.map((confEspnId) =>
+        fetchEspnJson<EspnStandingsResponse>(
+          espnEndpoints.standingsView(String(seasonYear), SEASON_TYPE_CODE, confEspnId, "2"),
+        ),
+      ),
+    ),
+  ]);
   const allEntries = conferenceViews.flatMap((view) => view.standings);
+  const expandedByTeamEspnId = new Map(
+    expandedViews
+      .flatMap((view) => view.standings)
+      .map((entry) => [idFromRef(entry.team.$ref), mapExpandedStanding(entry)]),
+  );
+  const divisionByTeamEspnId = new Map(
+    divisionViews
+      .flatMap((view) => view.standings)
+      .map((entry) => [idFromRef(entry.team.$ref), mapDivisionStanding(entry)]),
+  );
   const allRecords = allEntries.map((entry) => ({
     teamEspnId: idFromRef(entry.team.$ref),
     record: extractOverallRecord(entry),
@@ -118,7 +161,11 @@ async function syncStandingsAndTeamSeasonStats(seasonId: number, seasonYear: num
 
       const conferenceRank = conferenceRankOf(entry);
       const divisionRank = divisionRankByTeamEspnId.get(teamEspnId) ?? null;
-      const standingInput = mapStanding(entry, teamId, seasonId, conferenceRank, divisionRank);
+      const standingInput = {
+        ...mapStanding(entry, teamId, seasonId, conferenceRank, divisionRank),
+        ...(expandedByTeamEspnId.get(teamEspnId) ?? {}),
+        ...(divisionByTeamEspnId.get(teamEspnId) ?? {}),
+      };
       await prisma.standing.upsert({
         where: { teamId_seasonId: { teamId, seasonId } },
         create: standingInput,
@@ -141,6 +188,44 @@ async function syncStandingsAndTeamSeasonStats(seasonId: number, seasonYear: num
   );
 
   console.log(`standings synced: ${standingsCount}, team season stats synced: ${teamStatsCount}`);
+}
+
+async function syncNbaCupStandings(seasonId: number, seasonYear: number) {
+  if (seasonYear < NBA_CUP_START_YEAR) return;
+
+  const maps = await loadIdMaps();
+  const groupViews = await Promise.all(
+    NBA_CUP_GROUPS.map((group) =>
+      fetchEspnJson<EspnStandingsResponse>(
+        espnEndpoints.standingsView(String(seasonYear), SEASON_TYPE_CODE, group.espnId, "3"),
+      ),
+    ),
+  );
+
+  let nbaCupCount = 0;
+  await Promise.all(
+    groupViews.map(async (view, i) => {
+      const groupName = NBA_CUP_GROUPS[i].groupName;
+      await Promise.all(
+        view.standings.map(async (entry) => {
+          const teamEspnId = idFromRef(entry.team.$ref);
+          const teamId = maps.teamIdByEspnId.get(teamEspnId);
+          if (!teamId) {
+            console.warn(`nba cup standings: unknown team espnId ${teamEspnId}`);
+            return;
+          }
+          const input = { teamId, seasonId, groupName, ...mapNbaCupStanding(entry) };
+          await prisma.nbaCupStanding.upsert({
+            where: { teamId_seasonId: { teamId, seasonId } },
+            create: input,
+            update: input,
+          });
+          nbaCupCount += 1;
+        }),
+      );
+    }),
+  );
+  console.log(`nba cup standings synced: ${nbaCupCount}`);
 }
 
 /**
@@ -216,6 +301,7 @@ export async function syncAggregatesForYear(seasonYear: number) {
   console.log(`\n--- aggregates for season year ${seasonYear} ---`);
   const seasonId = await getOrCreateSeasonId(seasonYear);
   await syncStandingsAndTeamSeasonStats(seasonId, seasonYear);
+  await syncNbaCupStandings(seasonId, seasonYear);
   await syncPlayerSeasonStats(seasonId, seasonYear);
 }
 
