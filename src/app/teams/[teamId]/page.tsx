@@ -253,7 +253,7 @@ function TeamDetailContent() {
       </div>
 
       {activeTab === "home" && (
-        <div className="grid grid-cols-1 md:grid-cols-[220px_1fr_260px] gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-[220px_1fr_320px] gap-6">
           <aside className="self-start rounded-lg border border-neutral-800 p-4 space-y-3">
             <h2 className="text-lg font-medium text-neutral-300">
               {season ? seasonLabel(season.year) : ""} Schedule
@@ -432,9 +432,11 @@ function TeamDetailContent() {
                             />
                           )}
                           <div className="min-w-0">
-                            <p className="text-sm truncate">{player.displayName}</p>
-                            <p className="text-xs text-neutral-500 truncate">
-                              {player.position?.abbreviation} #{player.jersey ?? "—"}
+                            <p className="text-sm truncate">
+                              {player.displayName}{" "}
+                              <span className="text-neutral-500">
+                                {player.position?.abbreviation} #{player.jersey ?? "—"}
+                              </span>
                             </p>
                             <p className="text-2xl font-semibold">{displayValue}</p>
                           </div>
