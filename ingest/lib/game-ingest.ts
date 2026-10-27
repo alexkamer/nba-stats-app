@@ -20,6 +20,7 @@ import {
 } from "../mappers/game";
 import { mapPlayerGameStat, mapTeamGameStat, type EspnBoxscore } from "../mappers/boxscore";
 import { mapPlay, type EspnPlay } from "../mappers/playbyplay";
+import { mapOdds, pickPrimaryProvider, type EspnPickcenterEntry } from "../mappers/odds";
 
 interface EspnScoreboardResponse {
   events: EspnScoreboardEvent[];
@@ -28,6 +29,7 @@ interface EspnScoreboardResponse {
 interface EspnSummaryResponse {
   boxscore: EspnBoxscore;
   plays: EspnPlay[];
+  pickcenter?: EspnPickcenterEntry[];
 }
 
 export function* dateRange(start: Date, end: Date): Generator<string> {
@@ -228,6 +230,13 @@ async function ingestOneGame(
     return mapPlay(play, gameId, teamId);
   });
 
+  // Best-effort, informational only — present for some games/eras, absent
+  // for others (confirmed sparse/era-dependent coverage; see the Odds model
+  // comment in schema.prisma). No extra API call: `pickcenter` rides along
+  // on the same `summary` response already fetched above.
+  const primaryOdds = pickPrimaryProvider(summary.pickcenter);
+  const oddsInputs = primaryOdds ? [mapOdds(primaryOdds, gameId, game.homeTeamId, game.awayTeamId)] : [];
+
   // One atomic transaction per game: either all of its box score/play rows
   // land, or none do. This matters for the self-healing retry design (PLAN.md
   // Sec 3/M4) — the "needs processing" check is "zero team_game_stat rows for
@@ -242,6 +251,7 @@ async function ingestOneGame(
     prisma.teamGameStat.createMany({ data: teamGameStatInputs }),
     prisma.playerGameStat.createMany({ data: playerGameStatInputs }),
     prisma.play.createMany({ data: playInputs }),
+    prisma.odds.createMany({ data: oddsInputs }),
   ]);
 }
 

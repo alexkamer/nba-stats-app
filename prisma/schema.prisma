@@ -186,8 +186,31 @@ model Game {
   plays           Play[]
   teamGameStats   TeamGameStat[]
   playerGameStats PlayerGameStat[]
+  odds            Odds?
 
   @@map("game")
+}
+
+// Best-effort, informational only (no betting UI) — re-added after
+// confirming ESPN's `summary` call (already fetched for every game) still
+// carries the pre-game line via `pickcenter`, even on completed games.
+// Coverage is sparse and era-dependent (confirmed via direct probing: solid
+// ~2015-Jan 2023, mostly empty Feb 2023 through most of 2025-26 — likely an
+// ESPN odds-partner transition — present again for the current season), so
+// most games simply won't have a row here. Only the highest-priority
+// provider ESPN lists is kept, not every sportsbook.
+model Odds {
+  id             Int    @id @default(autoincrement())
+  gameId         Int    @unique @map("game_id")
+  game           Game   @relation(fields: [gameId], references: [id])
+  provider       String
+  spread         Float? // home-team-relative, matching ESPN's own convention
+  overUnder      Float?  @map("over_under")
+  homeMoneyline  Int?   @map("home_moneyline")
+  awayMoneyline  Int?   @map("away_moneyline")
+  favoriteTeamId Int?   @map("favorite_team_id")
+
+  @@map("odds")
 }
 
 model Play {

@@ -11,9 +11,11 @@ sourced from ESPN's unofficial public JSON API.
 ## 2. Non-goals (v1)
 
 - No fantasy basketball features.
-- No odds/betting data of any kind (dropped from v1 — see §9.4: odds are
-  inherently pre-game data, but we only persist games once `final`, so there's
-  a timing mismatch not worth solving right now).
+- No betting UI (place-a-bet, sportsbook-style features). Odds themselves
+  *are* in scope as read-only informational data (see §9.4 — the original
+  "pre-game data won't survive past `final`" assumption turned out to be
+  wrong; ESPN's `summary` call still carries it, with real coverage ~2013-23
+  and gaps outside that range).
 - No user accounts, favorites, or personalization.
 - No historical seasons beyond "current season + recent completed season" at
   first; the schema is designed to hold more history once we backfill it (deep
@@ -259,10 +261,13 @@ columns once we see real NBA payloads — that's expected, not a spec defect.
    filters/searches in the browser.
 3. **"Today's games":** Use the viewer's local browser date for the default
    scoreboard view and date picker.
-4. **Odds:** Dropped from v1. Odds are pre-game data, but we only persist a
-   game once it's `final`, and ESPN's odds endpoint may not reliably return
-   the pre-game line after the fact. Not worth solving now given it's purely
-   informational — revisit if we later persist scheduled games too.
+4. **Odds:** Re-added (PLAN.md §4e) — the original concern was wrong.
+   ESPN's `summary` call (already fetched for every game) still carries the
+   pre-game line via `pickcenter` on completed games; the real constraint
+   is sparse/era-dependent coverage (solid 2012-13 to 2022-23, gaps outside
+   that), not disappearing after the game ends. Stored as a single
+   best-effort `Odds` row per game (highest-priority provider only),
+   informational, no betting UI.
 5. **DB scope is completed games only (v1):** The database never stores a
    `scheduled` or `in-progress` game. A game is written exactly once, when
    (and only when) it reaches `final`, via the incremental sync job (§7.2).

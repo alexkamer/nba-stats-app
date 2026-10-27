@@ -547,6 +547,43 @@ McGrady, 32.1 PPG for Orlando) and that year's champion's record (Spurs
 - Exact concurrency/backoff constants — placeholders in §2 until M2 gives us
   real numbers.
 
+## 4e. Odds — re-added, re-reversing the earlier drop
+
+SPEC.md §9.4 dropped odds from scope, reasoning that pre-game odds wouldn't
+survive past a game going `final` (we only ever persist completed games).
+The user found concrete evidence this reasoning was wrong: ESPN's
+`summary` endpoint — already fetched for every game — still carries the
+pre-game line via `pickcenter`, even on completed games, confirmed by
+direct inspection of a real finished game's response.
+
+Direct probing found the real constraint is different from what we
+assumed: not "disappears after the game," but **sparse, era-dependent
+coverage**:
+- 2002-03 through 2011-12: no coverage at all.
+- **2012-13 through 2022-23: 100% coverage**, every single game.
+- 2023-24 and 2024-25: no coverage (likely an ESPN odds-partner
+  transition — the data uses a `"consensus"` line pre-2023 vs. a named
+  book like `"DraftKings"` now).
+- 2025-26 onward: partial coverage, improving.
+
+**What was built:** `Odds` model (one row per game, highest-priority
+provider only — informational, no betting UI), `ingest/mappers/odds.ts`,
+wired into `ingestOneGame`'s existing transaction (zero extra API calls for
+new games — `pickcenter` rides along on the `summary` call already being
+fetched). `ingest/backfill-odds.ts` re-checked all ~31k existing games
+(self-healing: only games missing an `Odds` row). Real result: **15,229 of
+30,927 games (49%) have odds**, exactly matching the era pattern found
+during probing. Spot-checked real values (spread/total/moneyline) against
+final scores — all sane.
+
+Caught and fixed one small bug during this: forgot `@map("over_under")` on
+the new field, breaking the snake_case DB column convention — caught
+immediately via a real query, fixed before any meaningful data existed to
+migrate around.
+
+Deferred: surfacing odds in the game detail page UI — the data layer is
+done, display wasn't asked for yet.
+
 ## 5. Immediate next step
 
 Start M0 (scaffolding) and M1 (Prisma schema) — these have no open
