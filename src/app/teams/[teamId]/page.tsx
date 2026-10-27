@@ -150,8 +150,6 @@ interface GameRow {
   // fill in the rest of the season (see getUpcomingGames) — null for
   // anything already ingested into the DB.
   broadcast: string | null;
-  ticketLink: string | null;
-  ticketStartingPrice: number | null;
   // This team's own box-score leaders — only set for FINAL games.
   leaders: { points: GameLeader | null; rebounds: GameLeader | null; assists: GameLeader | null } | null;
   homeScore: number | null;
@@ -324,9 +322,6 @@ function TeamDetailContent() {
     season,
     availableSeasons,
     standing,
-    teamSeasonStat,
-    extendedStats,
-    nbaCupStanding,
     roster,
     schedule,
     divisionStandings,
@@ -639,52 +634,7 @@ function TeamDetailContent() {
           <PlayerStatsTable roster={roster} splitLabel={splitLabel} />
           <ShootingStatsTable roster={roster} splitLabel={splitLabel} />
 
-          {standing && (
-            <section className="space-y-3">
-              <h2 className="text-lg font-medium text-neutral-300">{season && seasonLabel(season.year)} Record</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
-                <Stat label="Record" value={`${standing.wins}-${standing.losses}`} />
-                <Stat label="PCT" value={standing.winPct?.toFixed(3) ?? "—"} />
-                <Stat label="Conf Rank" value={standing.conferenceRank ?? "—"} />
-                <Stat label="Div Rank" value={standing.divisionRank ?? "—"} />
-                <Stat label="GB" value={standing.gamesBehind ?? "—"} />
-                <Stat label="Streak" value={formatStreak(standing.streak)} />
-                <Stat label="Home" value={standing.homeRecord ?? "—"} />
-                <Stat label="Away" value={standing.awayRecord ?? "—"} />
-                <Stat label="Div" value={standing.divRecord ?? "—"} />
-                <Stat label="Conf" value={standing.confRecord ?? "—"} />
-                <Stat label="Last 10" value={standing.lastTen ?? "—"} />
-              </div>
-            </section>
-          )}
-
-          {(teamSeasonStat || extendedStats) && (
-            <section className="space-y-3">
-              <h2 className="text-lg font-medium text-neutral-300">Team stats</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-3">
-                <Stat label="PPG" value={teamSeasonStat?.pointsPerGame?.toFixed(1) ?? "—"} />
-                <Stat label="Opp PPG" value={teamSeasonStat?.oppPointsPerGame?.toFixed(1) ?? "—"} />
-                <Stat label="FG%" value={extendedStats?.fieldGoalPct ?? "—"} />
-                <Stat label="3P%" value={extendedStats?.threePointPct ?? "—"} />
-                <Stat label="FT%" value={extendedStats?.freeThrowPct ?? "—"} />
-                <Stat label="RPG" value={extendedStats?.reboundsPerGame ?? "—"} />
-                <Stat label="APG" value={extendedStats?.assistsPerGame ?? "—"} />
-                <Stat label="TOPG" value={extendedStats?.turnoversPerGame ?? "—"} />
-              </div>
-            </section>
-          )}
-
-          {nbaCupStanding && (
-            <section className="space-y-3">
-              <h2 className="text-lg font-medium text-neutral-300">NBA Cup</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Stat label="Group" value={nbaCupStanding.groupName} />
-                <Stat label="Seed" value={nbaCupStanding.seed ?? "—"} />
-                <Stat label="Record" value={`${nbaCupStanding.wins}-${nbaCupStanding.losses}`} />
-                <Stat label="Streak" value={formatStreak(nbaCupStanding.streak)} />
-              </div>
-            </section>
-          )}
+          <StatsGlossary />
         </div>
       )}
 
@@ -769,11 +719,18 @@ function groupByMonth(rows: ScheduleRow[]): [string, ScheduleRow[]][] {
   return [...groups.entries()];
 }
 
+// "Zach LaVine" -> "Z. LaVine" — ESPN's own box-score-leader shorthand.
+function shortName(displayName: string): string {
+  const parts = displayName.trim().split(/\s+/);
+  if (parts.length < 2) return displayName;
+  return `${parts[0][0]}. ${parts.slice(1).join(" ")}`;
+}
+
 function GameLeaderCell({ leader }: { leader: GameLeader | null }) {
   if (!leader) return <span className="text-neutral-500">—</span>;
   return (
     <Link href={`/players/${leader.playerId}`} className="hover:text-neutral-100">
-      <span className="font-medium">{leader.value}</span> <span className="text-neutral-400">{leader.displayName}</span>
+      <span className="text-neutral-400">{shortName(leader.displayName)}</span> <span className="font-medium">{leader.value}</span>
     </Link>
   );
 }
@@ -846,9 +803,9 @@ function ScheduleTab({
                       <th className="py-2 pr-3">Opponent</th>
                       <th className="py-2 pr-3 text-right">Result</th>
                       <th className="py-2 pr-3 text-right">W-L</th>
-                      <th className="py-2 pr-3 text-right">Hi Points</th>
-                      <th className="py-2 pr-3 text-right">Hi Rebounds</th>
-                      <th className="py-2 text-right">Hi Assists</th>
+                      <th className="py-2 pr-3">Hi Points</th>
+                      <th className="py-2 pr-3">Hi Rebounds</th>
+                      <th className="py-2 pr-3">Hi Assists</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -880,13 +837,13 @@ function ScheduleTab({
                             </Link>
                           </td>
                           <td className="py-2 pr-3 text-right text-neutral-500">{record ?? "—"}</td>
-                          <td className="py-2 pr-3 text-right">
+                          <td className="py-2 pr-3">
                             <GameLeaderCell leader={game.leaders?.points ?? null} />
                           </td>
-                          <td className="py-2 pr-3 text-right">
+                          <td className="py-2 pr-3">
                             <GameLeaderCell leader={game.leaders?.rebounds ?? null} />
                           </td>
-                          <td className="py-2 text-right">
+                          <td className="py-2 pr-3">
                             <GameLeaderCell leader={game.leaders?.assists ?? null} />
                           </td>
                         </tr>
@@ -912,8 +869,7 @@ function ScheduleTab({
                       <th className="py-2 pl-3 pr-3">Date</th>
                       <th className="py-2 pr-3">Opponent</th>
                       <th className="py-2 pr-3 text-right">Time</th>
-                      <th className="py-2 pr-3 text-right">TV</th>
-                      <th className="py-2 text-right">Tickets</th>
+                      <th className="py-2 pr-3 text-center">TV</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -941,21 +897,7 @@ function ScheduleTab({
                                 : date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                             </Link>
                           </td>
-                          <td className="py-2 pr-3 text-right text-neutral-500">{game.broadcast ?? "—"}</td>
-                          <td className="py-2 text-right">
-                            {game.ticketLink ? (
-                              <a
-                                href={game.ticketLink}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-neutral-500 hover:text-neutral-100"
-                              >
-                                {game.ticketStartingPrice != null ? `From $${Math.round(game.ticketStartingPrice)}` : "Tickets"}
-                              </a>
-                            ) : (
-                              <span className="text-neutral-500">—</span>
-                            )}
-                          </td>
+                          <td className="py-2 pr-3 text-center text-neutral-500">{game.broadcast ?? "—"}</td>
                         </tr>
                       );
                     })}
@@ -1097,15 +1039,6 @@ function TeamLeadersCard({
           Full Team Statistics
         </button>
       )}
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-md border border-neutral-800 bg-neutral-900 p-3 text-center">
-      <div className="text-xs text-neutral-500">{label}</div>
-      <div className="text-lg font-medium">{value}</div>
     </div>
   );
 }
@@ -1390,6 +1323,52 @@ function ShootingStatsTable({ roster, splitLabel }: { roster: RosterRow[]; split
             )}
           </tbody>
         </table>
+      </div>
+    </section>
+  );
+}
+
+const STATS_GLOSSARY: { term: string; definition: string }[] = [
+  { term: "GP", definition: "Games Played" },
+  { term: "GS", definition: "Games Started" },
+  { term: "MIN", definition: "Minutes Per Game" },
+  { term: "PTS", definition: "Points Per Game" },
+  { term: "OR", definition: "Offensive Rebounds Per Game" },
+  { term: "DR", definition: "Defensive Rebounds Per Game" },
+  { term: "REB", definition: "Rebounds Per Game" },
+  { term: "AST", definition: "Assists Per Game" },
+  { term: "STL", definition: "Steals Per Game" },
+  { term: "BLK", definition: "Blocks Per Game" },
+  { term: "TO", definition: "Turnovers Per Game" },
+  { term: "PF", definition: "Personal Fouls Per Game" },
+  { term: "AST/TO", definition: "Assist to Turnover Ratio" },
+  { term: "FGM", definition: "Field Goals Made Per Game" },
+  { term: "FGA", definition: "Field Goals Attempted Per Game" },
+  { term: "FG%", definition: "Field Goal Percentage" },
+  { term: "3PM", definition: "3-Point Field Goals Made Per Game" },
+  { term: "3PA", definition: "3-Point Field Goals Attempted Per Game" },
+  { term: "3P%", definition: "3-Point Field Goal Percentage" },
+  { term: "FTM", definition: "Free Throws Made Per Game" },
+  { term: "FTA", definition: "Free Throws Attempted Per Game" },
+  { term: "FT%", definition: "Free Throw Percentage" },
+  { term: "2PM", definition: "2-Point Field Goals Made Per Game" },
+  { term: "2PA", definition: "2-Point Field Goals Attempted Per Game" },
+  { term: "2P%", definition: "2-Point Field Goal Percentage" },
+  { term: "SC-EFF", definition: "Scoring Efficiency" },
+  { term: "SH-EFF", definition: "Shooting Efficiency" },
+];
+
+function StatsGlossary() {
+  return (
+    <section className="space-y-3">
+      <h2 className="text-lg font-medium text-neutral-300">Glossary</h2>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-2 text-sm">
+        {STATS_GLOSSARY.map(({ term, definition }) => (
+          <p key={term}>
+            <span className="text-neutral-200 font-medium">{term}</span>{" "}
+            <span className="text-neutral-500">— {definition}</span>
+          </p>
+        ))}
       </div>
     </section>
   );
