@@ -219,8 +219,23 @@ export async function syncAggregatesForYear(seasonYear: number) {
   await syncPlayerSeasonStats(seasonId, seasonYear);
 }
 
+/** No-arg default for the recurring M6 cron case: whatever the most recent
+ * season we know about is, per the Season table itself (populated by
+ * discoverGames the moment a season's first game goes final) — not a
+ * hardcoded year, which would silently go stale every October when a new
+ * season starts (confirmed as a real bug: the old hardcoded 2026 default
+ * meant run-all-sync.ts would never pick up 2026-27 on its own). */
+async function currentSeasonYear(): Promise<number> {
+  const latest = await prisma.season.findFirst({
+    where: { type: "REGULAR" },
+    orderBy: { year: "desc" },
+  });
+  if (!latest) throw new Error("No seasons in the database yet — run backfill first");
+  return latest.year;
+}
+
 async function main() {
-  const seasonYear = Number(process.argv[2] ?? 2026);
+  const seasonYear = process.argv[2] ? Number(process.argv[2]) : await currentSeasonYear();
   await syncAggregatesForYear(seasonYear);
   await prisma.$disconnect();
 }
