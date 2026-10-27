@@ -8,6 +8,7 @@ interface Standing {
   id: number;
   conferenceRank: number | null;
   divisionRank: number | null;
+  leagueRank?: number;
   wins: number | null;
   losses: number | null;
   winPct: number | null;
@@ -33,7 +34,7 @@ interface StandingsResponse {
   conferences: { conferenceName: string; standings: Standing[] }[];
 }
 
-type ViewMode = "conference" | "division";
+type ViewMode = "league" | "conference" | "division";
 
 function seasonLabel(year: number): string {
   return `${year - 1}-${String(year).slice(-2)}`;
@@ -80,14 +81,30 @@ export default function StandingsPage() {
       .sort((a, b) => a.groupName.localeCompare(b.groupName));
   }, [data]);
 
+  // League view has no stored rank (standings/season-stats.ts only ever
+  // computes conference/division rank from ESPN) — derive it client-side
+  // by win pct, tie-broken by wins, same approach already used for
+  // division rank server-side.
+  const leagueGroups = useMemo(() => {
+    if (!data) return [];
+    const allStandings = data.conferences.flatMap((c) => c.standings);
+    const ranked = allStandings
+      .slice()
+      .sort((a, b) => (b.winPct ?? 0) - (a.winPct ?? 0) || (b.wins ?? 0) - (a.wins ?? 0))
+      .map((s, i) => ({ ...s, leagueRank: i + 1 }));
+    return [{ groupName: "League", standings: ranked }];
+  }, [data]);
+
   if (isLoading) return <p className="text-neutral-400">Loading standings…</p>;
   if (error || !data) return <p className="text-red-400">Failed to load standings.</p>;
 
   const groups =
-    viewMode === "conference"
-      ? data.conferences.map((c) => ({ groupName: c.conferenceName, standings: c.standings }))
-      : divisionGroups;
-  const rankField = viewMode === "conference" ? "conferenceRank" : "divisionRank";
+    viewMode === "league"
+      ? leagueGroups
+      : viewMode === "conference"
+        ? data.conferences.map((c) => ({ groupName: c.conferenceName, standings: c.standings }))
+        : divisionGroups;
+  const rankField = viewMode === "league" ? "leagueRank" : viewMode === "conference" ? "conferenceRank" : "divisionRank";
 
   return (
     <div className="space-y-8">
@@ -98,12 +115,14 @@ export default function StandingsPage() {
         </h1>
         <div className="flex items-center gap-3">
           <div className="flex rounded-md border border-neutral-800 overflow-hidden text-sm">
-            {(["conference", "division"] as const).map((mode) => (
+            {(["league", "conference", "division"] as const).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
                 className={`px-3 py-2 capitalize ${
-                  viewMode === mode ? "bg-neutral-800 text-neutral-100" : "bg-neutral-900 text-neutral-400 hover:text-neutral-200"
+                  viewMode === mode
+                    ? "bg-neutral-800 text-neutral-100 font-semibold"
+                    : "bg-neutral-900 text-neutral-400 hover:text-neutral-200"
                 }`}
               >
                 {mode}
@@ -125,7 +144,15 @@ export default function StandingsPage() {
           )}
         </div>
       </div>
-      <div className={viewMode === "conference" ? "grid md:grid-cols-2 gap-8" : "grid md:grid-cols-2 lg:grid-cols-3 gap-8"}>
+      <div
+        className={
+          viewMode === "league"
+            ? "max-w-2xl"
+            : viewMode === "conference"
+              ? "grid md:grid-cols-2 gap-8"
+              : "grid md:grid-cols-2 lg:grid-cols-3 gap-8"
+        }
+      >
         {groups.map((group) => (
           <section key={group.groupName}>
             <h2 className="text-lg font-medium text-neutral-300 mb-3">{group.groupName}</h2>
