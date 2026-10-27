@@ -106,6 +106,10 @@ interface TeamDetail {
     } | null;
   }[];
   coach: { name: string; experienceYears: number | null } | null;
+  depthChart: {
+    abbreviation: string;
+    players: ({ id: number; displayName: string; jersey: string | null } | null)[];
+  }[];
   schedule: GameRow[];
   divisionStandings: {
     id: number;
@@ -343,6 +347,7 @@ function TeamDetailContent() {
     divisionStandings,
     news,
     teamLeaders,
+    depthChart,
   } = data;
   const accentColor = team.color ? `#${team.color}` : "#525252";
 
@@ -723,7 +728,9 @@ function TeamDetailContent() {
         />
       )}
 
-      {(activeTab === "depth" || activeTab === "injuries" || activeTab === "transactions") && (
+      {activeTab === "depth" && <DepthChartTab team={team} depthChart={depthChart} />}
+
+      {(activeTab === "injuries" || activeTab === "transactions") && (
         <p className="text-neutral-500">{TEAM_TABS.find((t) => t.value === activeTab)?.label} — coming soon.</p>
       )}
     </div>
@@ -774,6 +781,89 @@ function GameLeaderCell({ leader }: { leader: GameLeader | null }) {
     <Link href={`/players/${leader.playerId}`} className="hover:text-neutral-100">
       <span className="text-neutral-400">{shortName(leader.displayName)}</span> <span className="font-medium">{leader.value}</span>
     </Link>
+  );
+}
+
+const DEPTH_CHART_COLUMN_LABELS = ["Starter", "2nd", "3rd", "4th", "5th"];
+
+function DepthChartTab({
+  team,
+  depthChart,
+}: {
+  team: TeamDetail["team"];
+  depthChart: TeamDetail["depthChart"];
+}) {
+  if (depthChart.length === 0) {
+    return <p className="text-neutral-500">Depth chart unavailable.</p>;
+  }
+
+  return (
+    <section>
+      <h2 className="text-2xl font-bold text-neutral-100 mb-3">{team.displayName} Depth Chart</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm whitespace-nowrap">
+          <thead>
+            <tr className="text-left text-neutral-500 border-b border-neutral-800">
+              <th className="py-2 pr-6 border-r border-neutral-800" />
+              {DEPTH_CHART_COLUMN_LABELS.map((label, i) => (
+                <th key={label} className={`py-2 pr-6 font-medium ${i === 0 ? "pl-3" : ""}`}>
+                  {label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {depthChart.map((position) => (
+              <tr key={position.abbreviation} className="border-b border-neutral-900">
+                <td className="py-2 pr-6 text-neutral-500 border-r border-neutral-800">{position.abbreviation}</td>
+                {DEPTH_CHART_COLUMN_LABELS.map((label, i) => {
+                  const player = position.players[i] ?? null;
+                  return (
+                    <td key={label} className={`py-2 pr-6 ${i === 0 ? "pl-3" : ""}`}>
+                      {player ? (
+                        <Link
+                          href={`/players/${player.id}`}
+                          className={`hover:text-neutral-100 ${i === 0 ? "font-semibold text-neutral-100" : "text-neutral-400"}`}
+                        >
+                          {player.displayName}
+                        </Link>
+                      ) : (
+                        <span className="text-neutral-500">-</span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+        <p>
+          <span className="text-neutral-400 font-medium">PG:</span> <span className="text-neutral-500">Point Guard</span>
+        </p>
+        <p>
+          <span className="text-neutral-400 font-medium">SF:</span> <span className="text-neutral-500">Small Forward</span>
+        </p>
+        <p>
+          <span className="text-neutral-400 font-medium">C:</span> <span className="text-neutral-500">Center</span>
+        </p>
+        <p>
+          <span className="text-neutral-400 font-medium">SG:</span> <span className="text-neutral-500">Shooting Guard</span>
+        </p>
+        <p>
+          <span className="text-neutral-400 font-medium">PF:</span> <span className="text-neutral-500">Power Forward</span>
+        </p>
+        <span />
+        <p>
+          <span className="text-red-400 font-medium">DD:</span> <span className="text-neutral-500">Day-to-Day</span>
+        </p>
+        <p>
+          <span className="text-red-400 font-medium">O:</span> <span className="text-neutral-500">Out</span>
+        </p>
+      </div>
+    </section>
   );
 }
 

@@ -3,6 +3,7 @@ import { resolveTeamIdentities } from "@/lib/team-identity";
 import { getTeamLeaders } from "@/lib/espn-team-leaders";
 import { getUpcomingGames } from "@/lib/espn-schedule";
 import { getTeamCoach } from "@/lib/espn-team-coach";
+import { getTeamDepthChart } from "@/lib/espn-team-depth-chart";
 import { NextResponse } from "next/server";
 
 // ESPN's own leaders endpoint is the source of truth for who leads the
@@ -367,6 +368,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
         divisionStandings: [],
         news: [],
         teamLeaders: [],
+        depthChart: [],
       });
     }
 
@@ -614,6 +616,29 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
       };
     });
 
+    // Best-effort — an ESPN hiccup here shouldn't take down the whole page.
+    let depthChartRaw: Awaited<ReturnType<typeof getTeamDepthChart>> = [];
+    try {
+      depthChartRaw = await getTeamDepthChart(team.espnId, season.year);
+    } catch {
+      depthChartRaw = [];
+    }
+    const depthChartAthleteEspnIds = [...new Set(depthChartRaw.flatMap((p) => p.athleteEspnIdsByRank))];
+    const depthChartPlayers = depthChartAthleteEspnIds.length
+      ? await prisma.player.findMany({
+          where: { espnId: { in: depthChartAthleteEspnIds } },
+          select: { id: true, espnId: true, displayName: true, jersey: true },
+        })
+      : [];
+    const depthChartPlayerByEspnId = new Map(depthChartPlayers.map((p) => [p.espnId, p]));
+    const depthChart = depthChartRaw.map((pos) => ({
+      abbreviation: pos.abbreviation,
+      players: pos.athleteEspnIdsByRank.map((espnId) => {
+        const player = depthChartPlayerByEspnId.get(espnId);
+        return player ? { id: player.id, displayName: player.displayName, jersey: player.jersey } : null;
+      }),
+    }));
+
     return NextResponse.json({
       team: teamWithIdentity,
       season,
@@ -628,6 +653,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
       divisionStandings: divisionStandingsWithIdentities,
       news,
       teamLeaders,
+      depthChart,
     });
   } catch {
     return NextResponse.json({ error: "Failed to load team" }, { status: 500 });
