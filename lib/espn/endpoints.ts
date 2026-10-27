@@ -24,6 +24,13 @@ export const espnEndpoints = {
 
   athleteOverview: (athleteId: string) => `${SITE_WEB}/athletes/${athleteId}/overview`,
   athleteGamelog: (athleteId: string) => `${SITE_WEB}/athletes/${athleteId}/gamelog`,
+  athleteSplits: (athleteId: string, params?: { season?: string; category?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.season) query.set("season", params.season);
+    if (params?.category) query.set("category", params.category);
+    const qs = query.toString();
+    return `${SITE_WEB}/athletes/${athleteId}/splits${qs ? `?${qs}` : ""}`;
+  },
 
   athletesList: (limit = 1000) => `${CORE}/athletes?limit=${limit}&active=true`,
   seasonTeams: (year: string) => `${CORE}/seasons/${year}/teams?limit=50`,

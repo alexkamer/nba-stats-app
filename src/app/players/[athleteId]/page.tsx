@@ -120,6 +120,47 @@ async function fetchPlayerBio(athleteId: string): Promise<PlayerBio> {
   return res.json();
 }
 
+interface PlayerSplitRow {
+  displayName: string;
+  abbreviation: string;
+  stats: string[];
+}
+
+interface PlayerSplitCategory {
+  name: string;
+  displayName: string;
+  splits: PlayerSplitRow[];
+}
+
+interface PlayerSplitsFilterOption {
+  value: string;
+  displayValue: string;
+}
+
+interface PlayerSplitsFilter {
+  name: string;
+  displayName: string;
+  value: string;
+  options: PlayerSplitsFilterOption[];
+}
+
+interface PlayerSplits {
+  displayName: string;
+  labels: string[];
+  splitCategories: PlayerSplitCategory[];
+  filters: PlayerSplitsFilter[];
+}
+
+async function fetchPlayerSplits(athleteId: string, season?: string, category?: string): Promise<PlayerSplits> {
+  const query = new URLSearchParams();
+  if (season) query.set("season", season);
+  if (category) query.set("category", category);
+  const qs = query.toString();
+  const res = await fetch(`/api/players/${athleteId}/splits${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error("Failed to load player splits");
+  return res.json();
+}
+
 function formatHeight(heightIn: number | null): string {
   if (!heightIn) return "—";
   return `${Math.floor(heightIn / 12)}'${heightIn % 12}"`;
@@ -334,7 +375,7 @@ function PlayerDetailContent() {
 
       {activeTab === "stats" && <StatsTab seasons={player.playerSeasonStats} accentColor={accentColor} />}
       {activeTab === "bio" && <BioTab player={player} athleteId={athleteId} accentColor={accentColor} />}
-      {activeTab === "splits" && <PlaceholderTab label="Splits" />}
+      {activeTab === "splits" && <SplitsTab athleteId={athleteId} />}
       {activeTab === "gameLog" && <PlaceholderTab label="Game Log" />}
       {activeTab === "advanced" && <PlaceholderTab label="Advanced Stats" />}
     </div>
@@ -534,6 +575,126 @@ function BioField({ label, value }: { label: string; value: ReactNode }) {
       <dt className="text-xs uppercase tracking-wide text-neutral-500">{label}</dt>
       <dd className="font-semibold text-neutral-100">{value}</dd>
     </div>
+  );
+}
+
+function SplitsTab({ athleteId }: { athleteId: string }) {
+  const [season, setSeason] = useState<string | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["player-splits", athleteId, season, category],
+    queryFn: () => fetchPlayerSplits(athleteId, season ?? undefined, category ?? undefined),
+  });
+
+  if (isLoading && !data) return <p className="text-neutral-500">Loading…</p>;
+  if (error || !data || data.splitCategories.length === 0) {
+    return <p className="text-neutral-500">No splits available.</p>;
+  }
+
+  const leagueFilter = data.filters.find((f) => f.name === "league");
+  const seasonFilter = data.filters.find((f) => f.name === "season");
+  const categoryFilter = data.filters.find((f) => f.name === "category");
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-bold tracking-wide text-neutral-100">{data.displayName}</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          {leagueFilter && <SplitsFilterSelect value={leagueFilter.value} options={leagueFilter.options} onChange={() => {}} disabled />}
+          {seasonFilter && (
+            <SplitsFilterSelect value={season ?? seasonFilter.value} options={seasonFilter.options} onChange={setSeason} />
+          )}
+          {categoryFilter && (
+            <SplitsFilterSelect value={category ?? categoryFilter.value} options={categoryFilter.options} onChange={setCategory} />
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-8">
+        {data.splitCategories.map((cat) => (
+          <SplitsCategoryTable key={cat.name} category={cat} labels={data.labels} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SplitsFilterSelect({
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  options: PlayerSplitsFilterOption[];
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900 py-1 pl-3 pr-1.5 shadow-sm shadow-black/20">
+      <span className="relative inline-flex items-center">
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+          className="appearance-none rounded-full bg-neutral-800 py-1.5 pl-3 pr-8 text-sm font-semibold text-neutral-100 cursor-pointer transition-colors hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-600 disabled:cursor-default disabled:hover:bg-neutral-800"
+        >
+          {options.map((opt) => (
+            <option key={opt.value} value={opt.value} className="text-neutral-100">
+              {opt.displayValue}
+            </option>
+          ))}
+        </select>
+        {!disabled && (
+          <svg
+            viewBox="0 0 20 20"
+            fill="none"
+            aria-hidden="true"
+            className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-neutral-400"
+          >
+            <path d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+    </label>
+  );
+}
+
+function SplitsCategoryTable({ category, labels }: { category: PlayerSplitCategory; labels: string[] }) {
+  if (category.splits.length === 0) return null;
+  return (
+    <section className="space-y-2">
+      <h3 className="text-lg font-bold tracking-wide text-neutral-100 uppercase">{category.displayName}</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[820px] text-sm border-collapse">
+          <thead>
+            <tr className="text-neutral-100 text-sm uppercase border-b-2 border-neutral-700">
+              <th className="text-left font-extrabold px-2 py-2 sticky left-0 bg-neutral-950" />
+              {labels.map((label) => (
+                <th key={label} className="text-right font-extrabold px-2 py-2 whitespace-nowrap">
+                  {label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {category.splits.map((split) => (
+              <tr key={split.displayName} className="border-t border-neutral-800 hover:bg-neutral-900/60">
+                <td className="px-2 py-2 sticky left-0 bg-neutral-950 font-medium text-neutral-100 whitespace-nowrap">
+                  {split.displayName}
+                </td>
+                {split.stats.map((value, i) => (
+                  <td key={labels[i] ?? i} className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">
+                    {value}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
