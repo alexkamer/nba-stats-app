@@ -859,14 +859,16 @@ function GameLogCategoryRows({ category, labelCount }: { category: GameLogCatego
             </span>
           </td>
           <td className="px-2 py-2 whitespace-nowrap">
-            {game.result && (
-              <span className={game.result === "W" ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>
-                {game.result}
+            <Link href={`/games/${game.eventId}`} className="hover:underline">
+              {game.result && (
+                <span className={game.result === "W" ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>
+                  {game.result}
+                </span>
+              )}{" "}
+              <span className="text-neutral-400">
+                {game.teamScore}-{game.opponentScore}
               </span>
-            )}{" "}
-            <span className="text-neutral-400">
-              {game.teamScore}-{game.opponentScore}
-            </span>
+            </Link>
           </td>
           {game.stats.map((value, i) => (
             <td key={i} className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">
@@ -877,8 +879,8 @@ function GameLogCategoryRows({ category, labelCount }: { category: GameLogCatego
       ))}
       {category.totals && (
         <tr className="border-t border-neutral-800 font-medium text-neutral-100">
-          <td className="px-2 py-2 sticky left-0 bg-neutral-950" colSpan={3}>
-            Totals
+          <td className="px-2 py-2 sticky left-0 bg-neutral-950 capitalize" colSpan={3}>
+            {category.displayName} Averages
           </td>
           {category.totals.map((value, i) => (
             <td key={i} className="text-right px-2 py-2 whitespace-nowrap tabular-nums">
