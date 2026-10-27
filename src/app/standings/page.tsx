@@ -59,6 +59,10 @@ function formatDiff(ppg: number | null, oppPpg: number | null): string {
   return `${diff >= 0 ? "+" : ""}${diff.toFixed(1)}`;
 }
 
+// The play-in tournament started in the 2020-21 season (year 2021 in our
+// convention) — don't draw play-in lines on seasons before it existed.
+const PLAY_IN_START_YEAR = 2021;
+
 async function fetchStandings(year: number | null): Promise<StandingsResponse> {
   const url = year ? `/api/standings?year=${year}` : "/api/standings";
   const res = await fetch(url);
@@ -118,6 +122,9 @@ export default function StandingsPage() {
         ? data.conferences.map((c) => ({ groupName: c.conferenceName, standings: c.standings }))
         : divisionGroups;
   const rankField = viewMode === "league" ? "leagueRank" : viewMode === "conference" ? "conferenceRank" : "divisionRank";
+  // Play-in lines only make sense per-conference (the tournament is seeded
+  // within each conference, not league- or division-wide).
+  const showPlayInLines = viewMode === "conference" && (data.season?.year ?? 0) >= PLAY_IN_START_YEAR;
 
   return (
     <div className="space-y-8">
@@ -188,29 +195,40 @@ export default function StandingsPage() {
                   {group.standings
                     .slice()
                     .sort((a, b) => (a[rankField] ?? 0) - (b[rankField] ?? 0))
-                    .map((s) => (
-                      <tr key={s.id} className="border-b border-neutral-900">
-                        <td className="py-2 pr-3 text-neutral-500">{s[rankField]}</td>
-                        <td className="py-2 pr-3">
-                          <Link href={`/teams/${s.team.id}`} className="hover:text-neutral-100">
-                            {s.team.displayName}
-                          </Link>
-                        </td>
-                        <td className="py-2 pr-3 text-right">{s.wins}</td>
-                        <td className="py-2 pr-3 text-right">{s.losses}</td>
-                        <td className="py-2 pr-3 text-right">{s.winPct?.toFixed(3)}</td>
-                        <td className="py-2 pr-3 text-right">{s.gamesBehind}</td>
-                        <td className="py-2 pr-3 text-right">{s.homeRecord}</td>
-                        <td className="py-2 pr-3 text-right">{s.awayRecord}</td>
-                        <td className="py-2 pr-3 text-right">{s.divRecord}</td>
-                        <td className="py-2 pr-3 text-right">{s.confRecord}</td>
-                        <td className="py-2 pr-3 text-right">{s.pointsPerGame?.toFixed(1)}</td>
-                        <td className="py-2 pr-3 text-right">{s.oppPointsPerGame?.toFixed(1)}</td>
-                        <td className="py-2 pr-3 text-right">{formatDiff(s.pointsPerGame, s.oppPointsPerGame)}</td>
-                        <td className="py-2 pr-3 text-right">{formatStreak(s.streak)}</td>
-                        <td className="py-2 text-right">{s.lastTen}</td>
-                      </tr>
-                    ))}
+                    .map((s) => {
+                      const rank = s[rankField] ?? 0;
+                      const borderClass = showPlayInLines
+                        ? rank === 6
+                          ? "border-b-2 border-dotted border-neutral-600"
+                          : rank === 10
+                            ? "border-b-2 border-solid border-neutral-500"
+                            : "border-b border-neutral-900"
+                        : "border-b border-neutral-900";
+                      const hideRank = showPlayInLines && rank >= 11;
+                      return (
+                        <tr key={s.id} className={borderClass}>
+                          <td className="py-2 pr-3 text-neutral-500">{hideRank ? "" : rank}</td>
+                          <td className="py-2 pr-3">
+                            <Link href={`/teams/${s.team.id}`} className="hover:text-neutral-100">
+                              {s.team.displayName}
+                            </Link>
+                          </td>
+                          <td className="py-2 pr-3 text-right">{s.wins}</td>
+                          <td className="py-2 pr-3 text-right">{s.losses}</td>
+                          <td className="py-2 pr-3 text-right">{s.winPct?.toFixed(3)}</td>
+                          <td className="py-2 pr-3 text-right">{s.gamesBehind}</td>
+                          <td className="py-2 pr-3 text-right">{s.homeRecord}</td>
+                          <td className="py-2 pr-3 text-right">{s.awayRecord}</td>
+                          <td className="py-2 pr-3 text-right">{s.divRecord}</td>
+                          <td className="py-2 pr-3 text-right">{s.confRecord}</td>
+                          <td className="py-2 pr-3 text-right">{s.pointsPerGame?.toFixed(1)}</td>
+                          <td className="py-2 pr-3 text-right">{s.oppPointsPerGame?.toFixed(1)}</td>
+                          <td className="py-2 pr-3 text-right">{formatDiff(s.pointsPerGame, s.oppPointsPerGame)}</td>
+                          <td className="py-2 pr-3 text-right">{formatStreak(s.streak)}</td>
+                          <td className="py-2 text-right">{s.lastTen}</td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
