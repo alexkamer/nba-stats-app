@@ -28,6 +28,8 @@ export const espnEndpoints = {
   seasonTeam: (year: string, teamId: string) => `${CORE}/seasons/${year}/teams/${teamId}`,
   teamStatistics: (year: string, seasonType: string, teamId: string) =>
     `${CORE}/seasons/${year}/types/${seasonType}/teams/${teamId}/statistics`,
+  teamLeaders: (year: string, seasonType: string, teamId: string) =>
+    `${CORE}/seasons/${year}/types/${seasonType}/teams/${teamId}/leaders`,
   athleteStatistics: (year: string, seasonType: string, athleteId: string) =>
     `${CORE}/seasons/${year}/types/${seasonType}/athletes/${athleteId}/statistics`,
   standings: (year: string, seasonType: string, groupId: string) =>

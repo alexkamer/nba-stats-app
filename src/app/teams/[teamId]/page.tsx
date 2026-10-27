@@ -66,6 +66,8 @@ interface TeamDetail {
       pointsPerGame: number | null;
       reboundsPerGame: number | null;
       assistsPerGame: number | null;
+      stealsPerGame: number | null;
+      blocksPerGame: number | null;
       fieldGoalPct: number | null;
     } | null;
   }[];
@@ -78,7 +80,7 @@ interface TeamDetail {
     winPct: number | null;
     gamesBehind: number | null;
     streak: string | null;
-    team: { id: number; displayName: string; abbreviation: string; logoUrl?: string | null };
+    team: { id: number; displayName: string; abbreviation: string; location: string; logoUrl?: string | null };
   }[];
   news: {
     id: number;
@@ -87,6 +89,19 @@ interface TeamDetail {
     url: string | null;
     imageUrl: string | null;
     publishedAt: string | null;
+  }[];
+  teamLeaders: {
+    group: "offense" | "defense";
+    statName: string;
+    player: {
+      id: number;
+      displayName: string;
+      headshotUrl: string | null;
+      jersey: string | null;
+      position: { abbreviation: string } | null;
+    } | null;
+    displayValue: string | null;
+    secondary: { label: string; value: string | null }[];
   }[];
 }
 
@@ -99,8 +114,8 @@ interface GameRow {
   awayScore: number | null;
   homeTeamId: number;
   awayTeamId: number;
-  homeTeam: { id: number; abbreviation: string; displayName: string; logoUrl?: string | null };
-  awayTeam: { id: number; abbreviation: string; displayName: string; logoUrl?: string | null };
+  homeTeam: { id: number; abbreviation: string; displayName: string; name: string; logoUrl?: string | null };
+  awayTeam: { id: number; abbreviation: string; displayName: string; name: string; logoUrl?: string | null };
 }
 
 async function fetchTeam(teamId: string): Promise<TeamDetail> {
@@ -137,6 +152,13 @@ function formatStreak(streak: string | null): string {
 
 type TeamTab = "home" | "stats" | "schedule" | "roster" | "depth" | "injuries" | "transactions";
 
+type LeadersGroup = "offense" | "defense";
+
+const LEADERS_GROUPS: { value: LeadersGroup; label: string }[] = [
+  { value: "offense", label: "Offense" },
+  { value: "defense", label: "Defense" },
+];
+
 const TEAM_TABS: { value: TeamTab; label: string }[] = [
   { value: "home", label: "Home" },
   { value: "stats", label: "Stats" },
@@ -158,6 +180,7 @@ export default function TeamDetailPage() {
 function TeamDetailContent() {
   const { teamId } = useParams<{ teamId: string }>();
   const [activeTab, setActiveTab] = useState<TeamTab>("home");
+  const [leadersGroup, setLeadersGroup] = useState<LeadersGroup>("offense");
   const { data, isLoading, error } = useQuery({
     queryKey: ["team", teamId],
     queryFn: () => fetchTeam(teamId),
@@ -177,10 +200,12 @@ function TeamDetailContent() {
     schedule,
     divisionStandings,
     news,
+    teamLeaders,
   } = data;
   const accentColor = team.color ? `#${team.color}` : "#525252";
 
   const rosterByPoints = roster.slice().sort((a, b) => (b.seasonStat?.pointsPerGame ?? -1) - (a.seasonStat?.pointsPerGame ?? -1));
+  const visibleLeaders = teamLeaders.filter((l) => l.group === leadersGroup);
   // `schedule` comes back date-ascending from the API; show the most
   // recently played game first, with anything still upcoming (which has no
   // "most recent" ordering yet) following in chronological order.
@@ -229,35 +254,57 @@ function TeamDetailContent() {
 
       {activeTab === "home" && (
         <div className="grid grid-cols-1 md:grid-cols-[220px_1fr_260px] gap-6">
-          <aside className="space-y-3">
-            <h2 className="text-lg font-medium text-neutral-300">Schedule</h2>
-            <div className="space-y-1">
+          <aside className="self-start rounded-lg border border-neutral-800 p-4 space-y-3">
+            <h2 className="text-lg font-medium text-neutral-300">
+              {season ? seasonLabel(season.year) : ""} Schedule
+            </h2>
+            {orderedSchedule.length > 0 && <p className="text-xs font-semibold text-neutral-500">Regular Season</p>}
+            <div className="divide-y divide-neutral-800">
               {orderedSchedule.map((game) => {
                 const isHome = game.homeTeamId === team.id;
                 const opponent = isHome ? game.awayTeam : game.homeTeam;
                 const teamScore = isHome ? game.homeScore : game.awayScore;
                 const oppScore = isHome ? game.awayScore : game.homeScore;
                 const won = game.status === "FINAL" && teamScore !== null && oppScore !== null && teamScore > oppScore;
+                const highScore = teamScore !== null && oppScore !== null ? Math.max(teamScore, oppScore) : null;
+                const lowScore = teamScore !== null && oppScore !== null ? Math.min(teamScore, oppScore) : null;
                 return (
                   <Link
                     key={game.id}
                     href={`/games/${game.espnId}`}
-                    className="flex items-center justify-between rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5 text-xs hover:border-neutral-600"
+                    className="flex items-center justify-between gap-2 w-full py-3 text-xs hover:text-neutral-100"
                   >
-                    <span className="flex items-center gap-1 truncate">
-                      {game.status === "FINAL" && (
-                        <span className={`font-semibold ${won ? "text-emerald-400" : "text-red-400"}`}>{won ? "W" : "L"}</span>
+                    <span className="flex items-center gap-1.5 truncate min-w-0">
+                      <span className="text-neutral-500 shrink-0">{isHome ? "vs." : "@"}</span>
+                      {opponent.logoUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={opponent.logoUrl} alt="" className="h-5 w-5 shrink-0" />
                       )}
-                      {isHome ? "vs" : "@"} {opponent.abbreviation}
+                      <span className="truncate">{opponent.name}</span>
                     </span>
-                    <span className="text-neutral-500 shrink-0">
-                      {game.status === "FINAL" ? `${teamScore}-${oppScore}` : new Date(game.date).toLocaleDateString()}
+                    <span className="shrink-0 text-right">
+                      {game.status === "FINAL" ? (
+                        <>
+                          <span className={`font-semibold ${won ? "text-emerald-400" : "text-red-400"}`}>{won ? "W" : "L"}</span>{" "}
+                          <span className="text-neutral-500">
+                            {highScore}-{lowScore}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-neutral-500">{new Date(game.date).toLocaleDateString()}</span>
+                      )}
                     </span>
                   </Link>
                 );
               })}
-              {orderedSchedule.length === 0 && <p className="text-neutral-500 text-sm">No games found.</p>}
+              {orderedSchedule.length === 0 && <p className="text-neutral-500 text-sm p-3">No games found.</p>}
             </div>
+            <button
+              onClick={() => setActiveTab("schedule")}
+              className="block w-full text-center text-sm text-neutral-400 hover:text-neutral-100"
+            >
+              Full Schedule
+            </button>
           </aside>
 
           <main className="space-y-4">
@@ -311,45 +358,107 @@ function TeamDetailContent() {
                 <thead>
                   <tr className="text-left text-neutral-500 border-b border-neutral-800">
                     <th className="py-1.5 pr-2">Team</th>
-                    <th className="py-1.5 pr-2 text-right">W-L</th>
-                    <th className="py-1.5 text-right">GB</th>
+                    <th className="py-1.5 pr-2 text-right">W</th>
+                    <th className="py-1.5 pr-2 text-right">L</th>
+                    <th className="py-1.5 pr-2 text-right">PCT</th>
+                    <th className="py-1.5 pr-2 text-right">GB</th>
+                    <th className="py-1.5 text-right">STRK</th>
                   </tr>
                 </thead>
                 <tbody>
                   {divisionStandings.map((s) => (
-                    <tr key={s.id} className={`border-b border-neutral-900 ${s.team.id === team.id ? "text-neutral-100" : "text-neutral-400"}`}>
+                    <tr
+                      key={s.id}
+                      className={`border-b border-neutral-900 ${
+                        s.team.id === team.id ? "text-neutral-100 font-semibold" : "text-neutral-400"
+                      }`}
+                    >
                       <td className="py-1.5 pr-2">
                         <Link href={`/teams/${s.team.id}`} className="flex items-center gap-1.5 hover:text-neutral-100">
                           {s.team.logoUrl && (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={s.team.logoUrl} alt="" className="h-4 w-4" />
                           )}
-                          {s.team.abbreviation}
+                          {s.team.location}
                         </Link>
                       </td>
-                      <td className="py-1.5 pr-2 text-right">
-                        {s.wins}-{s.losses}
-                      </td>
-                      <td className="py-1.5 text-right">{s.gamesBehind ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-right">{s.wins}</td>
+                      <td className="py-1.5 pr-2 text-right">{s.losses}</td>
+                      <td className="py-1.5 pr-2 text-right">{s.winPct?.toFixed(3) ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-right">{s.gamesBehind ?? "—"}</td>
+                      <td className="py-1.5 text-right">{formatStreak(s.streak)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <Link href="/standings" className="block w-full text-center text-sm text-neutral-400 hover:text-neutral-100">
+                Full Standings
+              </Link>
             </div>
 
-            <div className="space-y-3">
-              <h2 className="text-lg font-medium text-neutral-300">Team Leaders</h2>
-              <div className="space-y-2 text-sm">
-                {["PTS", "REB", "AST"].map((category) => (
-                  <div
-                    key={category}
-                    className="flex items-center justify-between rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2"
+            <div className="rounded-lg border border-neutral-800 p-4 space-y-3">
+              <h2 className="text-lg font-medium text-neutral-300">
+                {season ? seasonLabel(season.year) : ""} Team Leaders
+              </h2>
+              <div className="flex border-b border-neutral-800 text-sm">
+                {LEADERS_GROUPS.map((group) => (
+                  <button
+                    key={group.value}
+                    onClick={() => setLeadersGroup(group.value)}
+                    className={`flex-1 pb-2 text-center border-b-2 ${
+                      leadersGroup === group.value
+                        ? "text-neutral-100 font-semibold"
+                        : "text-neutral-500 border-transparent hover:text-neutral-300"
+                    }`}
+                    style={leadersGroup === group.value ? { borderColor: accentColor } : undefined}
                   >
-                    <span className="text-neutral-500">{category}</span>
-                    <span className="text-neutral-500">—</span>
+                    {group.label}
+                  </button>
+                ))}
+              </div>
+              <div className="divide-y divide-neutral-800">
+                {visibleLeaders.map(({ statName, player, displayValue, secondary }) => (
+                  <div key={statName} className="w-full py-3 space-y-2">
+                    <p className="text-sm text-neutral-300">{statName}</p>
+                    {player ? (
+                      <Link href={`/players/${player.id}`} className="flex items-center justify-between gap-3 hover:text-neutral-100">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {player.headshotUrl && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={player.headshotUrl}
+                              alt=""
+                              className="h-12 w-12 rounded-full bg-neutral-800 object-cover shrink-0"
+                            />
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm truncate">{player.displayName}</p>
+                            <p className="text-xs text-neutral-500 truncate">
+                              {player.position?.abbreviation} #{player.jersey ?? "—"}
+                            </p>
+                            <p className="text-2xl font-semibold">{displayValue}</p>
+                          </div>
+                        </div>
+                        <div className="text-right text-xs text-neutral-500 shrink-0 space-y-0.5">
+                          {secondary.map((s) => (
+                            <p key={s.label}>
+                              {s.label} <span className="text-neutral-300 font-medium">{s.value ?? "—"}</span>
+                            </p>
+                          ))}
+                        </div>
+                      </Link>
+                    ) : (
+                      <p className="text-neutral-500 text-sm">—</p>
+                    )}
                   </div>
                 ))}
               </div>
+              <button
+                onClick={() => setActiveTab("stats")}
+                className="block w-full text-center text-sm text-neutral-400 hover:text-neutral-100"
+              >
+                Full Team Statistics
+              </button>
             </div>
           </aside>
         </div>

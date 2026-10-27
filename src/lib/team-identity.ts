@@ -1,6 +1,8 @@
 import { prisma } from "./db";
 
 export interface TeamIdentity {
+  name: string;
+  location: string;
   displayName: string;
   abbreviation: string;
   logoUrl: string | null;
@@ -21,7 +23,7 @@ export async function resolveTeamIdentities(
   const [teams, identities] = await Promise.all([
     prisma.team.findMany({
       where: { id: { in: teamIds } },
-      select: { id: true, displayName: true, abbreviation: true, logoUrl: true },
+      select: { id: true, name: true, location: true, displayName: true, abbreviation: true, logoUrl: true },
     }),
     prisma.teamSeasonIdentity.findMany({
       where: { teamId: { in: teamIds }, year },
@@ -33,6 +35,8 @@ export async function resolveTeamIdentities(
   for (const team of teams) {
     const historical = identityByTeamId.get(team.id);
     result.set(team.id, {
+      name: historical?.name ?? team.name,
+      location: historical?.location ?? team.location,
       displayName: historical?.displayName ?? team.displayName,
       abbreviation: historical?.abbreviation ?? team.abbreviation,
       logoUrl: historical?.logoUrl ?? team.logoUrl,
