@@ -63,6 +63,9 @@ function formatDiff(ppg: number | null, oppPpg: number | null): string {
 // convention) — don't draw play-in lines on seasons before it existed.
 const PLAY_IN_START_YEAR = 2021;
 
+// Vertical divider between column groups: Team | W-L-PCT-GB | HOME-AWAY-DIV-CONF | PPG-OPP PPG-DIFF | STRK-L10
+const COLUMN_DIVIDER = "border-l border-neutral-800 pl-3";
+
 async function fetchStandings(year: number | null): Promise<StandingsResponse> {
   const url = year ? `/api/standings?year=${year}` : "/api/standings";
   const res = await fetch(url);
@@ -176,18 +179,18 @@ export default function StandingsPage() {
                   <tr className="text-left text-neutral-500 border-b border-neutral-800">
                     <th className="py-2 pr-3">#</th>
                     <th className="py-2 pr-3">Team</th>
-                    <th className="py-2 pr-3 text-right">W</th>
+                    <th className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>W</th>
                     <th className="py-2 pr-3 text-right">L</th>
                     <th className="py-2 pr-3 text-right">PCT</th>
                     <th className="py-2 pr-3 text-right">GB</th>
-                    <th className="py-2 pr-3 text-right">HOME</th>
+                    <th className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>HOME</th>
                     <th className="py-2 pr-3 text-right">AWAY</th>
                     <th className="py-2 pr-3 text-right">DIV</th>
                     <th className="py-2 pr-3 text-right">CONF</th>
-                    <th className="py-2 pr-3 text-right">PPG</th>
+                    <th className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>PPG</th>
                     <th className="py-2 pr-3 text-right">OPP PPG</th>
                     <th className="py-2 pr-3 text-right">DIFF</th>
-                    <th className="py-2 pr-3 text-right">STRK</th>
+                    <th className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>STRK</th>
                     <th className="py-2 text-right">L10</th>
                   </tr>
                 </thead>
@@ -213,18 +216,18 @@ export default function StandingsPage() {
                               {s.team.displayName}
                             </Link>
                           </td>
-                          <td className="py-2 pr-3 text-right">{s.wins}</td>
+                          <td className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>{s.wins}</td>
                           <td className="py-2 pr-3 text-right">{s.losses}</td>
                           <td className="py-2 pr-3 text-right">{s.winPct?.toFixed(3)}</td>
                           <td className="py-2 pr-3 text-right">{s.gamesBehind}</td>
-                          <td className="py-2 pr-3 text-right">{s.homeRecord}</td>
+                          <td className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>{s.homeRecord}</td>
                           <td className="py-2 pr-3 text-right">{s.awayRecord}</td>
                           <td className="py-2 pr-3 text-right">{s.divRecord}</td>
                           <td className="py-2 pr-3 text-right">{s.confRecord}</td>
-                          <td className="py-2 pr-3 text-right">{s.pointsPerGame?.toFixed(1)}</td>
+                          <td className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>{s.pointsPerGame?.toFixed(1)}</td>
                           <td className="py-2 pr-3 text-right">{s.oppPointsPerGame?.toFixed(1)}</td>
                           <td className="py-2 pr-3 text-right">{formatDiff(s.pointsPerGame, s.oppPointsPerGame)}</td>
-                          <td className="py-2 pr-3 text-right">{formatStreak(s.streak)}</td>
+                          <td className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>{formatStreak(s.streak)}</td>
                           <td className="py-2 text-right">{s.lastTen}</td>
                         </tr>
                       );
