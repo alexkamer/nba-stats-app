@@ -110,6 +110,18 @@ interface TeamDetail {
     abbreviation: string;
     players: ({ id: number; displayName: string; jersey: string | null } | null)[];
   }[];
+  injuries: {
+    playerId: number | null;
+    displayName: string;
+    headshotUrl: string | null;
+    jersey: string | null;
+    position: string | null;
+    status: string;
+    date: string;
+    returnDate: string | null;
+    injuryType: string | null;
+    comment: string | null;
+  }[];
   schedule: GameRow[];
   divisionStandings: {
     id: number;
@@ -348,6 +360,7 @@ function TeamDetailContent() {
     news,
     teamLeaders,
     depthChart,
+    injuries,
   } = data;
   const accentColor = team.color ? `#${team.color}` : "#525252";
 
@@ -730,9 +743,9 @@ function TeamDetailContent() {
 
       {activeTab === "depth" && <DepthChartTab team={team} depthChart={depthChart} />}
 
-      {(activeTab === "injuries" || activeTab === "transactions") && (
-        <p className="text-neutral-500">{TEAM_TABS.find((t) => t.value === activeTab)?.label} — coming soon.</p>
-      )}
+      {activeTab === "injuries" && <InjuriesTab team={team} injuries={injuries} />}
+
+      {activeTab === "transactions" && <TransactionsTab team={team} availableSeasons={availableSeasons} />}
     </div>
   );
 }
@@ -863,6 +876,184 @@ function DepthChartTab({
           <span className="text-red-400 font-medium">O:</span> <span className="text-neutral-500">Out</span>
         </p>
       </div>
+    </section>
+  );
+}
+
+// ESPN colors each status distinctly on the team injuries page (red for
+// Out, amber for Day-To-Day, etc.) — fall back to neutral for anything new.
+function injuryStatusColorClass(status: string): string {
+  const normalized = status.toLowerCase();
+  if (normalized.includes("out")) return "text-red-400";
+  if (normalized.includes("day")) return "text-amber-400";
+  if (normalized.includes("questionable") || normalized.includes("doubtful")) return "text-amber-400";
+  return "text-neutral-400";
+}
+
+function formatInjuryDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function InjuriesTab({
+  team,
+  injuries,
+}: {
+  team: TeamDetail["team"];
+  injuries: TeamDetail["injuries"];
+}) {
+  if (injuries.length === 0) {
+    return (
+      <section>
+        <h2 className="text-2xl font-bold text-neutral-100 mb-3">{team.displayName} Injuries</h2>
+        <p className="text-neutral-500">No reported injuries.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <h2 className="text-2xl font-bold text-neutral-100 mb-3">{team.displayName} Injuries</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-neutral-500 border-b border-neutral-800">
+              <th className="py-2 pr-8">Player</th>
+              <th className="py-2 pr-8">Pos</th>
+              <th className="py-2 pr-8">Updated</th>
+              <th className="py-2 pr-8">Status</th>
+              <th className="py-2">Comment</th>
+            </tr>
+          </thead>
+          <tbody>
+            {injuries.map((injury, i) => (
+              <tr key={injury.playerId ?? i} className="border-b border-neutral-900 align-top">
+                <td className="py-3 pr-8 whitespace-nowrap">
+                  {injury.playerId ? (
+                    <Link href={`/players/${injury.playerId}`} className="flex items-center gap-2 hover:text-neutral-100">
+                      {injury.headshotUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={injury.headshotUrl}
+                          alt=""
+                          className="h-8 w-8 rounded-full bg-neutral-800 object-cover shrink-0"
+                        />
+                      )}
+                      <span>{injury.displayName}</span>
+                      <span className="text-neutral-500">#{injury.jersey ?? "—"}</span>
+                    </Link>
+                  ) : (
+                    <span>{injury.displayName}</span>
+                  )}
+                </td>
+                <td className="py-3 pr-8 text-neutral-400 whitespace-nowrap">{injury.position ?? "—"}</td>
+                <td className="py-3 pr-8 text-neutral-400 whitespace-nowrap">{formatInjuryDate(injury.date)}</td>
+                <td className={`py-3 pr-8 font-medium whitespace-nowrap ${injuryStatusColorClass(injury.status)}`}>
+                  {injury.status}
+                </td>
+                <td className="py-3 text-neutral-400 min-w-[320px]">{injury.comment ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+interface TeamTransaction {
+  date: string;
+  description: string;
+}
+
+async function fetchTeamTransactions(teamId: string, year: number): Promise<TeamTransaction[]> {
+  const res = await fetch(`/api/teams/${teamId}/transactions?year=${year}`);
+  if (!res.ok) throw new Error("Failed to load transactions");
+  const data = await res.json();
+  return data.transactions;
+}
+
+function groupTransactionsByMonth(transactions: TeamTransaction[]): [string, TeamTransaction[]][] {
+  const groups = new Map<string, TeamTransaction[]>();
+  for (const t of transactions) {
+    const key = monthLabel(new Date(t.date));
+    const existing = groups.get(key);
+    if (existing) existing.push(t);
+    else groups.set(key, [t]);
+  }
+  return [...groups.entries()];
+}
+
+function TransactionsTab({
+  team,
+  availableSeasons,
+}: {
+  team: TeamDetail["team"];
+  availableSeasons: SeasonInfo[];
+}) {
+  // ESPN's transactions endpoint buckets by the calendar year a move
+  // happened in, not by NBA season — so the picker here is calendar years
+  // (one per season the team has standings for, newest first) rather than
+  // the season-id pickers the other tabs use.
+  const calendarYears = [...new Set(availableSeasons.map((s) => s.year - 1))].sort((a, b) => b - a);
+  const [year, setYear] = useState<number>(calendarYears[0] ?? new Date().getFullYear());
+  const { data: transactions, isLoading } = useQuery({
+    queryKey: ["teamTransactions", team.id, year],
+    queryFn: () => fetchTeamTransactions(String(team.id), year),
+  });
+
+  // ESPN returns transactions date-ascending — show newest first, and group
+  // by month the same way the Schedule tab does.
+  const grouped = groupTransactionsByMonth(transactions ? transactions.slice().reverse() : []);
+
+  return (
+    <section className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-medium text-neutral-300">
+          {team.displayName} Transactions {year}
+        </h2>
+        <select
+          value={year}
+          onChange={(e) => setYear(Number(e.target.value))}
+          className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-600"
+        >
+          {calendarYears.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {isLoading && <p className="text-neutral-500 text-sm">Loading…</p>}
+      {!isLoading && transactions?.length === 0 && <p className="text-neutral-500 text-sm">No transactions found.</p>}
+
+      {grouped.map(([label, rows]) => (
+        <div key={label} className="space-y-1">
+          <h3 className="text-base font-semibold text-neutral-100">{label.split(" ")[0]}</h3>
+          <div className="overflow-x-auto rounded-lg border border-neutral-800">
+            <table className="w-full text-sm table-fixed">
+              <thead>
+                <tr className="text-left text-neutral-500 border-b border-neutral-800">
+                  <th className="py-2 pl-3 pr-3 w-40">Date</th>
+                  <th className="py-2 pr-3">Transaction</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((t, i) => (
+                  <tr key={`${t.date}-${i}`} className="border-b border-neutral-900 last:border-0 align-top">
+                    <td className="py-2 pl-3 pr-3 text-neutral-400 whitespace-nowrap">
+                      {new Date(t.date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
+                    </td>
+                    <td className="py-2 pr-3 text-neutral-300">{t.description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
     </section>
   );
 }

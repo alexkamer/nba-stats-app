@@ -4,6 +4,7 @@ import { getTeamLeaders } from "@/lib/espn-team-leaders";
 import { getUpcomingGames } from "@/lib/espn-schedule";
 import { getTeamCoach } from "@/lib/espn-team-coach";
 import { getTeamDepthChart } from "@/lib/espn-team-depth-chart";
+import { getTeamInjuries } from "@/lib/espn-team-injuries";
 import { NextResponse } from "next/server";
 
 // ESPN's own leaders endpoint is the source of truth for who leads the
@@ -369,6 +370,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
         news: [],
         teamLeaders: [],
         depthChart: [],
+        injuries: [],
       });
     }
 
@@ -639,6 +641,37 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
       }),
     }));
 
+    // Best-effort — an ESPN hiccup here shouldn't take down the whole page.
+    let injuriesRaw: Awaited<ReturnType<typeof getTeamInjuries>> = [];
+    try {
+      injuriesRaw = await getTeamInjuries(team.espnId);
+    } catch {
+      injuriesRaw = [];
+    }
+    const injuryAthleteEspnIds = [...new Set(injuriesRaw.map((i) => i.athleteEspnId))];
+    const injuryPlayers = injuryAthleteEspnIds.length
+      ? await prisma.player.findMany({
+          where: { espnId: { in: injuryAthleteEspnIds } },
+          include: { position: true },
+        })
+      : [];
+    const injuryPlayerByEspnId = new Map(injuryPlayers.map((p) => [p.espnId, p]));
+    const injuries = injuriesRaw.map((injury) => {
+      const player = injuryPlayerByEspnId.get(injury.athleteEspnId) ?? null;
+      return {
+        playerId: player?.id ?? null,
+        displayName: player?.displayName ?? "Unknown",
+        headshotUrl: player?.headshotUrl ?? null,
+        jersey: player?.jersey ?? null,
+        position: player?.position?.abbreviation ?? null,
+        status: injury.status,
+        date: injury.date,
+        returnDate: injury.returnDate,
+        injuryType: injury.injuryType,
+        comment: injury.comment,
+      };
+    });
+
     return NextResponse.json({
       team: teamWithIdentity,
       season,
@@ -654,6 +687,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
       news,
       teamLeaders,
       depthChart,
+      injuries,
     });
   } catch {
     return NextResponse.json({ error: "Failed to load team" }, { status: 500 });

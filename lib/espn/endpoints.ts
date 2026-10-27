@@ -19,6 +19,8 @@ export const espnEndpoints = {
   teamSchedule: (teamId: string, season: string) =>
     `${SITE}/teams/${teamId}/schedule?season=${season}`,
   news: (limit = 50) => `${SITE}/news?limit=${limit}`,
+  teamTransactions: (teamId: string, season: string, page = 1) =>
+    `${SITE}/transactions?team=${teamId}&season=${season}&page=${page}`,
 
   athleteOverview: (athleteId: string) => `${SITE_WEB}/athletes/${athleteId}/overview`,
   athleteGamelog: (athleteId: string) => `${SITE_WEB}/athletes/${athleteId}/gamelog`,
@@ -32,6 +34,10 @@ export const espnEndpoints = {
     `${CORE}/seasons/${year}/types/${seasonType}/teams/${teamId}/leaders`,
   teamDepthChart: (year: string, teamId: string) =>
     `${CORE}/seasons/${year}/teams/${teamId}/depthcharts`,
+  // No `seasons/{year}` segment — unlike most other team-scoped CORE
+  // endpoints, ESPN serves this one directly off `teams/{id}` and always
+  // returns the current season's reports.
+  teamInjuries: (teamId: string) => `${CORE}/teams/${teamId}/injuries`,
   athleteStatistics: (year: string, seasonType: string, athleteId: string) =>
     `${CORE}/seasons/${year}/types/${seasonType}/athletes/${athleteId}/statistics`,
   standings: (year: string, seasonType: string, groupId: string) =>
