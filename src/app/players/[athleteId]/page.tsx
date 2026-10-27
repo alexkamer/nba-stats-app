@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Suspense, useState, type ReactNode } from "react";
+import { TabPager, useTabQueryParam } from "@/components/TabPager";
 
 interface PlayerDetail {
   player: {
@@ -180,7 +181,7 @@ export default function PlayerDetailPage() {
 
 function PlayerDetailContent() {
   const { athleteId } = useParams<{ athleteId: string }>();
-  const [activeTab, setActiveTab] = useState<PlayerTab>("overview");
+  const [activeTab, setActiveTab] = useTabQueryParam<PlayerTab>("overview");
   const { data, isLoading, error } = useQuery({
     queryKey: ["player", athleteId],
     queryFn: () => fetchPlayer(athleteId),
@@ -287,22 +288,7 @@ function PlayerDetailContent() {
             </div>
           )}
         </div>
-        <div className="mx-auto max-w-6xl flex border-t border-neutral-800 px-6 text-sm">
-          {PLAYER_TABS.map((tab) => (
-            <button
-              key={tab.value}
-              onClick={() => setActiveTab(tab.value)}
-              className={`flex-1 px-3 py-2 text-center whitespace-nowrap ${
-                activeTab === tab.value
-                  ? "text-neutral-100 font-semibold border-b-2"
-                  : "text-neutral-400 hover:text-neutral-200 border-b-2 border-transparent"
-              }`}
-              style={activeTab === tab.value ? { borderColor: accentColor } : undefined}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        <TabPager tabs={PLAYER_TABS} activeTab={activeTab} onChange={setActiveTab} accentColor={accentColor} />
       </div>
 
       {activeTab === "overview" && (
