@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Fragment, Suspense, useState } from "react";
 
 interface SeasonInfo {
   id: number;
@@ -158,6 +158,10 @@ interface GameRow {
   broadcast: string | null;
   // This team's own box-score leaders — only set for FINAL games.
   leaders: { points: GameLeader | null; rebounds: GameLeader | null; assists: GameLeader | null } | null;
+  // Pre-game line, home-team-relative (spread) — see the Odds model.
+  // Coverage is sparse/era-dependent and only ever populated for FINAL
+  // games, since nothing fetches odds for games that aren't ingested yet.
+  odds: { spread: number | null; overUnder: number | null } | null;
   homeScore: number | null;
   awayScore: number | null;
   homeTeamId: number;
@@ -758,6 +762,12 @@ function shortName(displayName: string): string {
   return `${parts[0][0]}. ${parts.slice(1).join(" ")}`;
 }
 
+// Positive margin = hit (covered the spread / went over the total), 0 = push.
+function hitColorClass(margin: number | null): string {
+  if (margin == null || margin === 0) return "text-neutral-500";
+  return margin > 0 ? "text-emerald-400" : "text-red-400";
+}
+
 function GameLeaderCell({ leader }: { leader: GameLeader | null }) {
   if (!leader) return <span className="text-neutral-500">—</span>;
   return (
@@ -822,43 +832,65 @@ function ScheduleTab({
       {rows.length === 0 && <p className="text-neutral-500 text-sm">No games found.</p>}
 
       {completedRows.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-1">
           <p className="text-xs font-semibold text-neutral-500">{season && seasonTypeLabel(season.type)}</p>
-          {groupByMonth(completedRows).map(([label, groupRows]) => (
-            <div key={label} className="space-y-1">
-              <p className="text-xs font-semibold text-neutral-500 pt-2">{label}</p>
-              <div className="overflow-x-auto rounded-lg border border-neutral-800">
-                <table className="w-full text-sm whitespace-nowrap">
-                  <thead>
-                    <tr className="text-left text-neutral-500 border-b border-neutral-800">
-                      <th className="py-2 pl-3 pr-3">Date</th>
-                      <th className="py-2 pr-3">Opponent</th>
-                      <th className="py-2 pr-3 text-right">Result</th>
-                      <th className="py-2 pr-3 text-right">W-L</th>
-                      <th className="py-2 pr-3">Hi Points</th>
-                      <th className="py-2 pr-3">Hi Rebounds</th>
-                      <th className="py-2 pr-3">Hi Assists</th>
+          <div className="overflow-x-auto rounded-lg border border-neutral-800">
+            <table className="w-full text-sm whitespace-nowrap table-fixed">
+              <thead>
+                <tr className="text-left text-neutral-500 border-b border-neutral-800">
+                  <th className="py-2 pl-3 pr-8 w-32">Date</th>
+                  <th className="py-2 pr-3">Opponent</th>
+                  <th className="py-2 pr-3 w-28">Result</th>
+                  <th className="py-2 pr-3 text-right w-16">W-L</th>
+                  <th className="py-2 pl-3 pr-3 text-right w-20 border-l border-neutral-800">Line</th>
+                  <th className="py-2 pr-6 text-right w-24">O/U</th>
+                  <th className="py-2 pl-3 pr-3 w-32 border-l border-neutral-800">Hi Points</th>
+                  <th className="py-2 pr-3 w-32">Hi Rebounds</th>
+                  <th className="py-2 pr-3 w-32">Hi Assists</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groupByMonth(completedRows).map(([label, groupRows]) => (
+                  <Fragment key={label}>
+                    <tr className="border-b border-neutral-900">
+                      <td colSpan={9} className="pt-3 pb-1 pl-3 text-xs font-semibold text-neutral-500">
+                        {label}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
                     {groupRows.map(({ game, isHome, opponent, teamScore, oppScore, won, record }) => {
                       const date = new Date(game.date);
+                      // `odds.spread` is home-team-relative — flip it when
+                      // this team was the away side so it always reads as
+                      // "this team's" line.
+                      const teamSpread =
+                        game.odds?.spread != null ? (isHome ? game.odds.spread : -game.odds.spread) : null;
+                      // Positive margin = team covered its own line; 0 = push.
+                      const coverMargin =
+                        teamSpread != null && teamScore != null && oppScore != null
+                          ? teamScore - oppScore + teamSpread
+                          : null;
+                      const overUnder = game.odds?.overUnder ?? null;
+                      // Positive margin = game went over the total; 0 = push.
+                      const totalMargin =
+                        overUnder != null && teamScore != null && oppScore != null
+                          ? teamScore + oppScore - overUnder
+                          : null;
                       return (
                         <tr key={game.id} className="border-b border-neutral-900 last:border-0">
-                          <td className="py-2 pl-3 pr-3 text-neutral-400">
+                          <td className="py-2 pl-3 pr-8 text-neutral-400">
                             {date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
                           </td>
                           <td className="py-2 pr-3">
-                            <Link href={`/games/${game.espnId}`} className="flex items-center gap-2 hover:text-neutral-100">
+                            <Link href={`/teams/${opponent.id}`} className="flex items-center gap-2 hover:text-neutral-100">
                               <span className="text-neutral-500">{isHome ? "vs" : "@"}</span>
                               {opponent.logoUrl && (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={opponent.logoUrl} alt="" className="h-5 w-5" />
                               )}
-                              <span>{opponent.displayName}</span>
+                              <span className="truncate">{opponent.displayName}</span>
                             </Link>
                           </td>
-                          <td className="py-2 pr-3 text-right">
+                          <td className="py-2 pr-3">
                             <Link href={`/games/${game.espnId}`} className="hover:text-neutral-100">
                               <span className={`font-semibold ${won ? "text-emerald-400" : "text-red-400"}`}>
                                 {won ? "W" : "L"}
@@ -869,7 +901,23 @@ function ScheduleTab({
                             </Link>
                           </td>
                           <td className="py-2 pr-3 text-right text-neutral-500">{record ?? "—"}</td>
-                          <td className="py-2 pr-3">
+                          <td className={`py-2 pl-3 pr-3 text-right border-l border-neutral-900 ${hitColorClass(coverMargin)}`}>
+                            {teamSpread != null ? `${teamSpread > 0 ? "+" : ""}${teamSpread}` : "—"}
+                          </td>
+                          <td className={`py-2 pr-6 text-right ${hitColorClass(totalMargin)}`}>
+                            {overUnder != null ? (
+                              <>
+                                {overUnder}{" "}
+                                <span className="text-xs">
+                                  ({totalMargin! > 0 ? "+" : ""}
+                                  {totalMargin})
+                                </span>
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="py-2 pl-3 pr-3 border-l border-neutral-900">
                             <GameLeaderCell leader={game.leaders?.points ?? null} />
                           </td>
                           <td className="py-2 pr-3">
@@ -881,63 +929,65 @@ function ScheduleTab({
                         </tr>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {upcomingRows.length > 0 && (
-        <div className="space-y-3">
-          {groupByMonth(upcomingRows).map(([label, groupRows]) => (
-            <div key={label} className="space-y-1">
-              <p className="text-xs font-semibold text-neutral-500 pt-2">{label}</p>
-              <div className="overflow-x-auto rounded-lg border border-neutral-800">
-                <table className="w-full text-sm whitespace-nowrap">
-                  <thead>
-                    <tr className="text-left text-neutral-500 border-b border-neutral-800">
-                      <th className="py-2 pl-3 pr-3">Date</th>
-                      <th className="py-2 pr-3">Opponent</th>
-                      <th className="py-2 pr-3 text-right">Time</th>
-                      <th className="py-2 pr-3 text-center">TV</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groupRows.map(({ game, isHome, opponent }) => {
-                      const date = new Date(game.date);
-                      return (
-                        <tr key={game.id} className="border-b border-neutral-900 last:border-0">
-                          <td className="py-2 pl-3 pr-3 text-neutral-400">
-                            {date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
-                          </td>
-                          <td className="py-2 pr-3">
-                            <Link href={`/games/${game.espnId}`} className="flex items-center gap-2 hover:text-neutral-100">
-                              <span className="text-neutral-500">{isHome ? "vs" : "@"}</span>
-                              {opponent.logoUrl && (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={opponent.logoUrl} alt="" className="h-5 w-5" />
-                              )}
-                              <span>{opponent.displayName}</span>
-                            </Link>
-                          </td>
-                          <td className="py-2 pr-3 text-right">
-                            <Link href={`/games/${game.espnId}`} className="text-neutral-500 hover:text-neutral-100">
-                              {game.status === "LIVE"
-                                ? "Live"
-                                : date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                            </Link>
-                          </td>
-                          <td className="py-2 pr-3 text-center text-neutral-500">{game.broadcast ?? "—"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ))}
+        <div className="overflow-x-auto rounded-lg border border-neutral-800">
+          <table className="w-full text-sm whitespace-nowrap table-fixed">
+            <thead>
+              <tr className="text-left text-neutral-500 border-b border-neutral-800">
+                <th className="py-2 pl-3 pr-3 w-28">Date</th>
+                <th className="py-2 pr-3">Opponent</th>
+                <th className="py-2 pr-6 text-right w-40">Time</th>
+                <th className="py-2 pr-3 text-center w-40">TV</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupByMonth(upcomingRows).map(([label, groupRows]) => (
+                <Fragment key={label}>
+                  <tr className="border-b border-neutral-900">
+                    <td colSpan={4} className="pt-3 pb-1 pl-3 text-xs font-semibold text-neutral-500">
+                      {label}
+                    </td>
+                  </tr>
+                  {groupRows.map(({ game, isHome, opponent }) => {
+                    const date = new Date(game.date);
+                    return (
+                      <tr key={game.id} className="border-b border-neutral-900 last:border-0">
+                        <td className="py-2 pl-3 pr-8 text-neutral-400">
+                          {date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <Link href={`/games/${game.espnId}`} className="flex items-center gap-2 hover:text-neutral-100">
+                            <span className="text-neutral-500">{isHome ? "vs" : "@"}</span>
+                            {opponent.logoUrl && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={opponent.logoUrl} alt="" className="h-5 w-5" />
+                            )}
+                            <span className="truncate">{opponent.displayName}</span>
+                          </Link>
+                        </td>
+                        <td className="py-2 pr-6 text-right">
+                          <Link href={`/games/${game.espnId}`} className="text-neutral-500 hover:text-neutral-100">
+                            {game.status === "LIVE"
+                              ? "Live"
+                              : date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                          </Link>
+                        </td>
+                        <td className="py-2 pr-3 text-center text-neutral-500">{game.broadcast ?? "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </section>

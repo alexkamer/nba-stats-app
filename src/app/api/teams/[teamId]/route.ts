@@ -509,12 +509,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
       gameLeadersById.set(row.gameId, current);
     }
 
+    // Odds coverage is sparse/era-dependent (see the Odds model comment) —
+    // only completed games have a row, since nothing fetches pickcenter for
+    // games that haven't been ingested yet.
+    const oddsRows = finalGameIds.length
+      ? await prisma.odds.findMany({
+          where: { gameId: { in: finalGameIds } },
+          select: { gameId: true, spread: true, overUnder: true },
+        })
+      : [];
+    const oddsByGameId = new Map(oddsRows.map((o) => [o.gameId, { spread: o.spread, overUnder: o.overUnder }]));
+
     const scheduleWithIdentities = schedule.map((g) => ({
       ...g,
       broadcast: null as string | null,
-      ticketLink: null as string | null,
-      ticketStartingPrice: null as number | null,
       leaders: gameLeadersById.get(g.id) ?? null,
+      odds: oddsByGameId.get(g.id) ?? null,
       homeTeam: { ...g.homeTeam, ...(opponentIdentities.get(g.homeTeamId) ?? {}) },
       awayTeam: { ...g.awayTeam, ...(opponentIdentities.get(g.awayTeamId) ?? {}) },
     }));
@@ -527,9 +537,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
       date: g.date,
       status: g.status,
       broadcast: g.broadcast,
-      ticketLink: g.ticketLink,
-      ticketStartingPrice: g.ticketStartingPrice,
       leaders: null,
+      odds: null,
       homeScore: null,
       awayScore: null,
       homeTeamId: g.homeTeamId,
