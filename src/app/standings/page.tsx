@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useState } from "react";
 
 interface Standing {
   id: number;
@@ -14,33 +15,60 @@ interface Standing {
   team: { id: number; displayName: string; abbreviation: string; division: { name: string } | null };
 }
 
+interface SeasonInfo {
+  id: number;
+  year: number;
+  type: string;
+}
+
 interface StandingsResponse {
-  season: { year: number; type: string } | null;
+  season: SeasonInfo | null;
+  availableSeasons: SeasonInfo[];
   conferences: { conferenceName: string; standings: Standing[] }[];
 }
 
-async function fetchStandings(): Promise<StandingsResponse> {
-  const res = await fetch("/api/standings");
+function seasonLabel(year: number): string {
+  return `${year - 1}-${String(year).slice(-2)}`;
+}
+
+async function fetchStandings(year: number | null): Promise<StandingsResponse> {
+  const url = year ? `/api/standings?year=${year}` : "/api/standings";
+  const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to load standings");
   return res.json();
 }
 
 export default function StandingsPage() {
-  const { data, isLoading, error } = useQuery({ queryKey: ["standings"], queryFn: fetchStandings });
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["standings", selectedYear],
+    queryFn: () => fetchStandings(selectedYear),
+  });
 
   if (isLoading) return <p className="text-neutral-400">Loading standings…</p>;
   if (error || !data) return <p className="text-red-400">Failed to load standings.</p>;
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold">
-        Standings
-        {data.season && (
-          <span className="text-neutral-500 text-base ml-2">
-            {data.season.year - 1}-{String(data.season.year).slice(-2)}
-          </span>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">
+          Standings
+          {data.season && <span className="text-neutral-500 text-base ml-2">{seasonLabel(data.season.year)}</span>}
+        </h1>
+        {data.availableSeasons.length > 0 && (
+          <select
+            value={data.season?.year ?? ""}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-600"
+          >
+            {data.availableSeasons.map((s) => (
+              <option key={s.year} value={s.year}>
+                {seasonLabel(s.year)}
+              </option>
+            ))}
+          </select>
         )}
-      </h1>
+      </div>
       <div className="grid md:grid-cols-2 gap-8">
         {data.conferences.map((conf) => (
           <section key={conf.conferenceName}>
