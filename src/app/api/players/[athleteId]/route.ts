@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getUpcomingGames } from "@/lib/espn-schedule";
 import { resolveTeamIdentities } from "@/lib/team-identity";
 import { NextResponse } from "next/server";
 
@@ -196,10 +197,22 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ath
       };
     });
 
+    // Best-effort: an ESPN hiccup here shouldn't take down the whole page.
+    let nextGame: Awaited<ReturnType<typeof getUpcomingGames>>[number] | null = null;
+    if (player.currentTeam && currentSeasonStat) {
+      try {
+        const upcoming = await getUpcomingGames(player.currentTeam.espnId, currentSeasonStat.season.year);
+        nextGame = upcoming[0] ?? null;
+      } catch {
+        nextGame = null;
+      }
+    }
+
     return NextResponse.json({
       player: { ...player, playerSeasonStats: playerSeasonStatsWithIdentity },
       recentGames: recentGamesWithIdentity,
       seasonRanks,
+      nextGame,
     });
   } catch {
     return NextResponse.json({ error: "Failed to load player" }, { status: 500 });

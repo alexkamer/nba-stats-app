@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Suspense, useState, type ReactNode } from "react";
+import { SectionCard } from "@/components/SectionCard";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
 
 interface PlayerDetail {
@@ -83,17 +84,40 @@ interface PlayerDetail {
     points: number | null;
     rebounds: number | null;
     assists: number | null;
+    steals: number | null;
+    blocks: number | null;
+    turnovers: number | null;
+    fouls: number | null;
+    fgMade: number | null;
+    fgAtt: number | null;
+    threeMade: number | null;
+    threeAtt: number | null;
+    ftMade: number | null;
+    ftAtt: number | null;
+    plusMinus: number | null;
+    team: { id: number; abbreviation: string };
     game: {
       espnId: string;
       date: string;
-      homeTeam: { abbreviation: string };
-      awayTeam: { abbreviation: string };
+      season: { year: number };
+      homeScore: number | null;
+      awayScore: number | null;
+      homeTeam: { id: number; abbreviation: string; logoUrl: string | null };
+      awayTeam: { id: number; abbreviation: string; logoUrl: string | null };
     };
   }[];
   seasonRanks: Record<
     "pointsPerGame" | "reboundsPerGame" | "assistsPerGame" | "fieldGoalPct",
     { rank: number; tied: boolean } | null
   >;
+  nextGame: {
+    espnId: string;
+    date: string;
+    status: "SCHEDULED" | "LIVE";
+    broadcast: string | null;
+    home: { espnId: string; abbreviation: string; displayName: string };
+    away: { espnId: string; abbreviation: string; displayName: string };
+  } | null;
 }
 
 async function fetchPlayer(athleteId: string): Promise<PlayerDetail> {
@@ -117,6 +141,21 @@ interface PlayerBio {
 async function fetchPlayerBio(athleteId: string): Promise<PlayerBio> {
   const res = await fetch(`/api/players/${athleteId}/bio`);
   if (!res.ok) throw new Error("Failed to load player bio");
+  return res.json();
+}
+
+interface NewsArticle {
+  id: number;
+  headline: string;
+  description: string | null;
+  url: string | null;
+  imageUrl: string | null;
+  publishedAt: string | null;
+}
+
+async function fetchPlayerNews(playerId: string): Promise<{ articles: NewsArticle[] }> {
+  const res = await fetch(`/api/news?playerId=${playerId}&limit=3`);
+  if (!res.ok) throw new Error("Failed to load player news");
   return res.json();
 }
 
@@ -207,6 +246,31 @@ async function fetchPlayerGamelog(athleteId: string, season?: string): Promise<P
   return res.json();
 }
 
+interface AdvancedStatRow {
+  seasonId: number;
+  seasonYear: number;
+  seasonType: string;
+  gamesPlayed: number | null;
+  per40Points: number | null;
+  per40Rebounds: number | null;
+  per40Assists: number | null;
+  trueShootingPct: number | null;
+  assistPct: number | null;
+  turnoverPct: number | null;
+  usagePct: number | null;
+  reboundPct: number | null;
+}
+
+interface PlayerAdvancedStats {
+  rows: AdvancedStatRow[];
+}
+
+async function fetchPlayerAdvancedStats(athleteId: string): Promise<PlayerAdvancedStats> {
+  const res = await fetch(`/api/players/${athleteId}/advanced`);
+  if (!res.ok) throw new Error("Failed to load advanced stats");
+  return res.json();
+}
+
 function formatHeight(heightIn: number | null): string {
   if (!heightIn) return "—";
   return `${Math.floor(heightIn / 12)}'${heightIn % 12}"`;
@@ -277,7 +341,7 @@ function PlayerDetailContent() {
   if (isLoading) return <p className="text-neutral-400">Loading…</p>;
   if (error || !data) return <p className="text-red-400">Failed to load player.</p>;
 
-  const { player, recentGames, seasonRanks } = data;
+  const { player, recentGames, seasonRanks, nextGame } = data;
   const seasonStat = player.playerSeasonStats[0];
   const accentColor = player.currentTeam?.color ? `#${player.currentTeam.color}` : "#525252";
   const [firstName, ...lastNameParts] = player.displayName.trim().split(/\s+/);
@@ -375,61 +439,315 @@ function PlayerDetailContent() {
             </div>
           )}
         </div>
+        <NextGameBar nextGame={nextGame} player={player} accentColor={accentColor} />
         <TabPager tabs={PLAYER_TABS} activeTab={activeTab} onChange={setActiveTab} accentColor={accentColor} />
       </div>
 
       {activeTab === "overview" && (
-        <div className="space-y-8">
-          {seasonStat && (
-            <section>
-              <h2 className="text-lg font-medium text-neutral-300 mb-3">{seasonLabel(seasonStat.season.year)} season</h2>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-8 gap-3">
-                <Stat label="GP" value={seasonStat.gamesPlayed ?? "—"} />
-                <Stat label="PPG" value={seasonStat.pointsPerGame?.toFixed(1) ?? "—"} />
-                <Stat label="RPG" value={seasonStat.reboundsPerGame?.toFixed(1) ?? "—"} />
-                <Stat label="APG" value={seasonStat.assistsPerGame?.toFixed(1) ?? "—"} />
-                <Stat label="SPG" value={seasonStat.stealsPerGame?.toFixed(1) ?? "—"} />
-                <Stat label="BPG" value={seasonStat.blocksPerGame?.toFixed(1) ?? "—"} />
-                <Stat label="FG%" value={seasonStat.fieldGoalPct?.toFixed(1) ?? "—"} />
-                <Stat label="3P%" value={seasonStat.threePointPct?.toFixed(1) ?? "—"} />
-              </div>
-            </section>
-          )}
-
-          <section>
-            <h2 className="text-lg font-medium text-neutral-300 mb-3">Recent games</h2>
-            <div className="space-y-1">
-              {recentGames.map((entry) => (
-                <Link
-                  key={entry.id}
-                  href={`/games/${entry.game.espnId}`}
-                  className="flex items-center justify-between rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm hover:border-neutral-600"
-                >
-                  <span>
-                    {entry.game.awayTeam.abbreviation} @ {entry.game.homeTeam.abbreviation}
-                  </span>
-                  <span className="text-neutral-400">
-                    {entry.points ?? 0} pts · {entry.rebounds ?? 0} reb · {entry.assists ?? 0} ast
-                  </span>
-                  <span className="text-neutral-500">{new Date(entry.game.date).toLocaleDateString()}</span>
-                </Link>
-              ))}
-            </div>
-          </section>
-        </div>
+        <OverviewTab
+          player={player}
+          seasonStat={seasonStat}
+          recentGames={recentGames}
+          athleteId={athleteId}
+          accentColor={accentColor}
+        />
       )}
 
       {activeTab === "stats" && <StatsTab seasons={player.playerSeasonStats} accentColor={accentColor} />}
       {activeTab === "bio" && <BioTab player={player} athleteId={athleteId} accentColor={accentColor} />}
       {activeTab === "splits" && <SplitsTab athleteId={athleteId} />}
       {activeTab === "gameLog" && <GameLogTab athleteId={athleteId} accentColor={accentColor} />}
-      {activeTab === "advanced" && <PlaceholderTab label="Advanced Stats" />}
+      {activeTab === "advanced" && <AdvancedStatsTab athleteId={athleteId} accentColor={accentColor} />}
     </div>
   );
 }
 
-function PlaceholderTab({ label }: { label: string }) {
-  return <p className="text-neutral-500">{label} coming soon.</p>;
+function OverviewTab({
+  player,
+  seasonStat,
+  recentGames,
+  athleteId,
+  accentColor,
+}: {
+  player: PlayerDetail["player"];
+  seasonStat: SeasonStatRow | undefined;
+  recentGames: PlayerDetail["recentGames"];
+  athleteId: string;
+  accentColor: string;
+}) {
+  return (
+    <div className="space-y-8">
+      {seasonStat && (
+        <section>
+          <h2 className="text-lg font-medium text-neutral-300 mb-3">{seasonLabel(seasonStat.season.year)} season</h2>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-8 gap-3">
+            <Stat label="GP" value={seasonStat.gamesPlayed ?? "—"} />
+            <Stat label="PPG" value={seasonStat.pointsPerGame?.toFixed(1) ?? "—"} />
+            <Stat label="RPG" value={seasonStat.reboundsPerGame?.toFixed(1) ?? "—"} />
+            <Stat label="APG" value={seasonStat.assistsPerGame?.toFixed(1) ?? "—"} />
+            <Stat label="SPG" value={seasonStat.stealsPerGame?.toFixed(1) ?? "—"} />
+            <Stat label="BPG" value={seasonStat.blocksPerGame?.toFixed(1) ?? "—"} />
+            <Stat label="FG%" value={seasonStat.fieldGoalPct?.toFixed(1) ?? "—"} />
+            <Stat label="3P%" value={seasonStat.threePointPct?.toFixed(1) ?? "—"} />
+          </div>
+        </section>
+      )}
+
+      <RecentGamesTable games={recentGames} currentYear={seasonStat?.season.year} accentColor={accentColor} />
+      <CareerSnapshotCard seasons={player.playerSeasonStats} accentColor={accentColor} />
+      <NewsRow athleteId={athleteId} accentColor={accentColor} />
+    </div>
+  );
+}
+
+function NextGameBar({
+  nextGame,
+  player,
+  accentColor,
+}: {
+  nextGame: PlayerDetail["nextGame"];
+  player: PlayerDetail["player"];
+  accentColor: string;
+}) {
+  if (!nextGame) return null;
+
+  const isHome = player.currentTeam?.abbreviation === nextGame.home.abbreviation;
+  const opponent = isHome ? nextGame.away : nextGame.home;
+  const date = new Date(nextGame.date);
+
+  return (
+    <div className="mx-auto max-w-6xl flex items-center justify-between gap-3 px-6 py-2 border-t border-neutral-800 text-sm">
+      <p className="text-neutral-400 truncate">
+        <span className="font-semibold text-neutral-200">Next game</span> · {isHome ? "vs" : "@"} {opponent.displayName}{" "}
+        · {date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}{" "}
+        {date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+        {nextGame.broadcast && ` · ${nextGame.broadcast}`}
+      </p>
+      <Link
+        href={`/games/${nextGame.espnId}`}
+        className="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold text-neutral-200 hover:border-neutral-500"
+        style={{ borderColor: accentColor }}
+      >
+        Preview
+      </Link>
+    </div>
+  );
+}
+
+function RecentGamesTable({
+  games,
+  currentYear,
+  accentColor,
+}: {
+  games: PlayerDetail["recentGames"];
+  currentYear: number | undefined;
+  accentColor: string;
+}) {
+  const filtered = currentYear != null ? games.filter((g) => g.game.season.year === currentYear) : games;
+  const shown = filtered.slice(0, 10);
+
+  if (shown.length === 0) {
+    return (
+      <SectionCard title="Recent games" accentColor={accentColor}>
+        <p className="text-neutral-500 text-sm">No games played yet this season.</p>
+      </SectionCard>
+    );
+  }
+
+  return (
+    <SectionCard title="Recent games" accentColor={accentColor}>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[800px] text-sm border-collapse">
+          <thead>
+            <tr className="text-neutral-200 text-xs uppercase">
+              <th className="text-left font-bold px-2 py-2 sticky left-0 bg-neutral-900">Date</th>
+              <th className="text-left font-bold px-2 py-2">Opp</th>
+              <th className="text-left font-bold px-2 py-2">Result</th>
+              <th className="text-right font-bold px-2 py-2">MIN</th>
+              <th className="text-right font-bold px-2 py-2">FG</th>
+              <th className="text-right font-bold px-2 py-2">3PT</th>
+              <th className="text-right font-bold px-2 py-2">FT</th>
+              <th className="text-right font-bold px-2 py-2">REB</th>
+              <th className="text-right font-bold px-2 py-2">AST</th>
+              <th className="text-right font-bold px-2 py-2">STL</th>
+              <th className="text-right font-bold px-2 py-2">BLK</th>
+              <th className="text-right font-bold px-2 py-2">PF</th>
+              <th className="text-right font-bold px-2 py-2">TO</th>
+              <th className="text-right font-bold px-2 py-2">PTS</th>
+              <th className="text-right font-bold px-2 py-2">+/-</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((entry) => {
+              const isHome = entry.team.id === entry.game.homeTeam.id;
+              const opponent = isHome ? entry.game.awayTeam : entry.game.homeTeam;
+              const teamScore = isHome ? entry.game.homeScore : entry.game.awayScore;
+              const oppScore = isHome ? entry.game.awayScore : entry.game.homeScore;
+              const result = teamScore != null && oppScore != null ? (teamScore > oppScore ? "W" : "L") : null;
+              return (
+                <tr key={entry.id} className="border-t border-neutral-800 hover:bg-neutral-900/60">
+                  <td className="px-2 py-2 sticky left-0 bg-neutral-950 whitespace-nowrap text-neutral-300">
+                    <Link href={`/games/${entry.game.espnId}`} className="hover:text-neutral-100 hover:underline">
+                      {new Date(entry.game.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </Link>
+                  </td>
+                  <td className="px-2 py-2 whitespace-nowrap">
+                    <span className="flex items-center gap-1.5 text-neutral-300">
+                      <span className="text-neutral-500">{isHome ? "vs" : "@"}</span>
+                      {opponent.logoUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={opponent.logoUrl} alt="" className="h-4 w-4" />
+                      )}
+                      {opponent.abbreviation}
+                    </span>
+                  </td>
+                  <td className="px-2 py-2 whitespace-nowrap">
+                    <Link href={`/games/${entry.game.espnId}`} className="hover:underline">
+                      {result && (
+                        <span className={result === "W" ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>
+                          {result}
+                        </span>
+                      )}{" "}
+                      <span className="text-neutral-400">
+                        {teamScore ?? "—"}-{oppScore ?? "—"}
+                      </span>
+                    </Link>
+                  </td>
+                  <td className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">{entry.minutes ?? "—"}</td>
+                  <td className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">
+                    {fmtMadeAttempted(entry.fgMade, entry.fgAtt, 0)}
+                  </td>
+                  <td className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">
+                    {fmtMadeAttempted(entry.threeMade, entry.threeAtt, 0)}
+                  </td>
+                  <td className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">
+                    {fmtMadeAttempted(entry.ftMade, entry.ftAtt, 0)}
+                  </td>
+                  <td className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">{entry.rebounds ?? "—"}</td>
+                  <td className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">{entry.assists ?? "—"}</td>
+                  <td className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">{entry.steals ?? "—"}</td>
+                  <td className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">{entry.blocks ?? "—"}</td>
+                  <td className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">{entry.fouls ?? "—"}</td>
+                  <td className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">{entry.turnovers ?? "—"}</td>
+                  <td className="text-right px-2 py-2 text-neutral-100 font-semibold whitespace-nowrap tabular-nums">
+                    {entry.points ?? "—"}
+                  </td>
+                  <td className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">
+                    {entry.plusMinus != null ? (entry.plusMinus > 0 ? `+${entry.plusMinus}` : entry.plusMinus) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </SectionCard>
+  );
+}
+
+function CareerSnapshotCard({ seasons, accentColor }: { seasons: SeasonStatRow[]; accentColor: string }) {
+  const regular = seasons.filter((s) => s.season.type === "REGULAR").sort((a, b) => b.season.year - a.season.year);
+
+  if (regular.length === 0) {
+    return (
+      <SectionCard title="Career snapshot" accentColor={accentColor}>
+        <p className="text-neutral-500 text-sm">No career stats available.</p>
+      </SectionCard>
+    );
+  }
+
+  const recentSeasons = regular.slice(0, 5);
+  const careerGames = sum(regular, (s) => s.gamesPlayed);
+  const careerPpg = weightedAverage(regular, (s) => s.pointsPerGame);
+  const careerRpg = weightedAverage(regular, (s) => s.reboundsPerGame);
+  const careerApg = weightedAverage(regular, (s) => s.assistsPerGame);
+
+  return (
+    <SectionCard title="Career snapshot" accentColor={accentColor}>
+      <div className="grid grid-cols-4 gap-2 text-center mb-4 max-w-md">
+        <Stat label="GP" value={careerGames} />
+        <Stat label="PPG" value={fmt1(careerPpg)} />
+        <Stat label="RPG" value={fmt1(careerRpg)} />
+        <Stat label="APG" value={fmt1(careerApg)} />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="text-neutral-500 text-xs uppercase">
+              <th className="text-left font-semibold py-1">Season</th>
+              <th className="text-left font-semibold py-1">Team</th>
+              <th className="text-right font-semibold py-1">PPG</th>
+              <th className="text-right font-semibold py-1">RPG</th>
+              <th className="text-right font-semibold py-1">APG</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recentSeasons.map((s) => (
+              <tr key={s.season.year} className="border-t border-neutral-800">
+                <td className="py-1.5 text-neutral-100 font-medium whitespace-nowrap">{seasonLabel(s.season.year)}</td>
+                <td className="py-1.5 text-neutral-400 whitespace-nowrap">
+                  {s.teams.length > 0 ? (
+                    <span className="flex items-center gap-1">
+                      {s.teams.map((team, i) => (
+                        <span key={team.id} className="flex items-center gap-1">
+                          {i > 0 && <span className="text-neutral-600">/</span>}
+                          {team.abbreviation}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td className="py-1.5 text-right tabular-nums text-neutral-200">{fmt1(s.pointsPerGame)}</td>
+                <td className="py-1.5 text-right tabular-nums text-neutral-200">{fmt1(s.reboundsPerGame)}</td>
+                <td className="py-1.5 text-right tabular-nums text-neutral-200">{fmt1(s.assistsPerGame)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </SectionCard>
+  );
+}
+
+function NewsRow({ athleteId, accentColor }: { athleteId: string; accentColor: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["player-news", athleteId],
+    queryFn: () => fetchPlayerNews(athleteId),
+  });
+  const articles = data?.articles ?? [];
+
+  if (!isLoading && articles.length === 0) return null;
+
+  return (
+    <SectionCard title="Latest news" accentColor={accentColor}>
+      {isLoading ? (
+        <p className="text-neutral-500 text-sm">Loading…</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {articles.map((article) => (
+            <a
+              key={article.id}
+              href={article.url ?? undefined}
+              target="_blank"
+              rel="noreferrer"
+              className="group block space-y-2"
+            >
+              {article.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={article.imageUrl} alt="" className="aspect-video w-full rounded-md object-cover" />
+              )}
+              <p className="text-sm font-medium text-neutral-100 group-hover:text-neutral-300 line-clamp-2">{article.headline}</p>
+              {article.publishedAt && (
+                <p className="text-xs text-neutral-500">{new Date(article.publishedAt).toLocaleDateString()}</p>
+              )}
+            </a>
+          ))}
+        </div>
+      )}
+    </SectionCard>
+  );
 }
 
 type SeasonStatRow = PlayerDetail["player"]["playerSeasonStats"][number];
@@ -502,7 +820,7 @@ function BioTab({
 
   return (
     <div className="space-y-6">
-      <BioSection title="Biography" accentColor={accentColor}>
+      <SectionCard title="Biography" accentColor={accentColor}>
         <dl className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4 text-sm">
           <BioField label="Team" value={player.currentTeam?.displayName ?? "Free agent"} />
           <BioField label="Position" value={player.position?.name ?? "—"} />
@@ -528,10 +846,10 @@ function BioTab({
           <BioField label="Experience" value={formatExperience(player.playerSeasonStats)} />
           <BioField label="Birthplace" value={player.birthPlace ?? "—"} />
         </dl>
-      </BioSection>
+      </SectionCard>
 
       {careerHistory.length > 0 && (
-        <BioSection title="Career History" accentColor={accentColor}>
+        <SectionCard title="Career History" accentColor={accentColor}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
             {careerHistory.map((entry, i) => {
               const isCurrent = i === 0 && player.active && entry.teamId === player.currentTeam?.id;
@@ -560,10 +878,10 @@ function BioTab({
               );
             })}
           </div>
-        </BioSection>
+        </SectionCard>
       )}
 
-      <BioSection title="Career Highlights" accentColor={accentColor}>
+      <SectionCard title="Career Highlights" accentColor={accentColor}>
         {isLoading ? (
           <p className="text-neutral-500">Loading…</p>
         ) : awards.length === 0 ? (
@@ -588,32 +906,11 @@ function BioTab({
             ))}
           </div>
         )}
-      </BioSection>
+      </SectionCard>
     </div>
   );
 }
 
-function BioSection({
-  title,
-  accentColor,
-  children,
-}: {
-  title: string;
-  accentColor: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="rounded-md border border-neutral-800 bg-neutral-900 overflow-hidden">
-      <h2
-        className="px-4 py-3 text-base font-semibold text-neutral-100 border-b border-neutral-800"
-        style={{ borderBottomColor: accentColor }}
-      >
-        {title}
-      </h2>
-      <div className="p-4">{children}</div>
-    </section>
-  );
-}
 
 function BioField({ label, value }: { label: string; value: ReactNode }) {
   return (
@@ -890,6 +1187,85 @@ function GameLogCategoryRows({ category, labelCount }: { category: GameLogCatego
         </tr>
       )}
     </>
+  );
+}
+
+function AdvancedStatsTab({ athleteId, accentColor }: { athleteId: string; accentColor: string }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["player-advanced", athleteId],
+    queryFn: () => fetchPlayerAdvancedStats(athleteId),
+  });
+
+  if (isLoading && !data) return <p className="text-neutral-500">Loading…</p>;
+  if (error || !data) return <p className="text-neutral-500">No advanced stats available.</p>;
+
+  const seasons = data.rows.filter((r) => r.seasonType === "REGULAR" && r.gamesPlayed);
+  if (seasons.length === 0) return <p className="text-neutral-500">No advanced stats available.</p>;
+
+  const weightedAvg = (select: (r: AdvancedStatRow) => number | null): number | null => {
+    let weightedSum = 0;
+    let totalGames = 0;
+    for (const row of seasons) {
+      const value = select(row);
+      const games = row.gamesPlayed;
+      if (value == null || games == null || games <= 0) continue;
+      weightedSum += value * games;
+      totalGames += games;
+    }
+    return totalGames > 0 ? weightedSum / totalGames : null;
+  };
+
+  const columns: { label: string; select: (r: AdvancedStatRow) => number | null }[] = [
+    { label: "P/40", select: (r) => r.per40Points },
+    { label: "R/40", select: (r) => r.per40Rebounds },
+    { label: "A/40", select: (r) => r.per40Assists },
+    { label: "TS%", select: (r) => r.trueShootingPct },
+    { label: "AST", select: (r) => r.assistPct },
+    { label: "TO", select: (r) => r.turnoverPct },
+    { label: "USG", select: (r) => r.usagePct },
+    { label: "REBR", select: (r) => r.reboundPct },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-xl font-bold tracking-wide text-neutral-100">Advanced Stats</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm border-collapse">
+          <thead>
+            <tr className="text-neutral-100 text-sm uppercase border-b-2 border-neutral-700">
+              <th className="text-left font-extrabold px-2 py-2 sticky left-0 bg-neutral-950">Season</th>
+              {columns.map((col) => (
+                <th key={col.label} className="text-right font-extrabold px-2 py-2 whitespace-nowrap">
+                  {col.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {seasons.map((row) => (
+              <tr key={row.seasonId} className="border-t border-neutral-800 hover:bg-neutral-900/60">
+                <td className="px-2 py-2 sticky left-0 bg-neutral-950 font-medium text-neutral-100 whitespace-nowrap">
+                  {seasonLabel(row.seasonYear)}
+                </td>
+                {columns.map((col) => (
+                  <td key={col.label} className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">
+                    {fmt1(col.select(row))}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            <tr className="border-t-2 font-semibold text-neutral-100" style={{ borderColor: accentColor }}>
+              <td className="px-2 py-2 sticky left-0 bg-neutral-950 whitespace-nowrap">Career</td>
+              {columns.map((col) => (
+                <td key={col.label} className="text-right px-2 py-2 whitespace-nowrap tabular-nums">
+                  {fmt1(weightedAvg(col.select))}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

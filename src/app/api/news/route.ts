@@ -1,11 +1,18 @@
 import { prisma } from "@/lib/db";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const playerIdParam = searchParams.get("playerId");
+    const playerId = playerIdParam ? Number(playerIdParam) : null;
+    const limitParam = searchParams.get("limit");
+    const take = limitParam ? Number(limitParam) : 50;
+
     const articles = await prisma.newsArticle.findMany({
+      where: playerId ? { players: { some: { playerId } } } : undefined,
       orderBy: { publishedAt: "desc" },
-      take: 50,
+      take,
       include: {
         teams: { select: { teamId: true } },
         players: { select: { playerId: true } },
