@@ -39,6 +39,12 @@ function seasonLabel(year: number): string {
   return `${year - 1}-${String(year).slice(-2)}`;
 }
 
+function formatStreak(streak: string | null): string {
+  if (streak === null) return "";
+  if (streak.startsWith("-")) return `L${streak.slice(1)}`;
+  return `W${streak}`;
+}
+
 async function fetchStandings(year: number | null): Promise<StandingsResponse> {
   const url = year ? `/api/standings?year=${year}` : "/api/standings";
   const res = await fetch(url);
@@ -151,7 +157,7 @@ export default function StandingsPage() {
                       <td className="py-2 pr-2 text-right">{s.losses}</td>
                       <td className="py-2 pr-2 text-right">{s.winPct?.toFixed(3)}</td>
                       <td className="py-2 pr-2 text-right">{s.gamesBehind}</td>
-                      <td className="py-2 text-right">{s.streak}</td>
+                      <td className="py-2 text-right">{formatStreak(s.streak)}</td>
                     </tr>
                   ))}
               </tbody>
