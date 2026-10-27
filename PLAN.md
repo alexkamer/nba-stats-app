@@ -515,13 +515,32 @@ name/logo for old games, not always-current branding.
   self-healing design meant resuming only retried the one partially-written
   season rather than starting over.
 
-## 4b. What we're explicitly deferring past this plan
+## 4c. Historical aggregates (standings + season stats) — DONE
+
+Followed up on 4a's deferred item once the user confirmed they wanted it:
+standings + team/player season stats for all 23 historical seasons
+(2003-2025), not just games/box scores/plays.
+
+**Real bug fixed before running this at scale:** `syncPlayerSeasonStats`
+attributed every player's season stats to `player.currentTeamId` — their
+*modern* team, not who they played for that historical season (e.g. a
+player long since traded would get historical stats wrongly credited to
+their current team). Fixed by deriving team-for-that-season from our own
+`player_game_stat` rows (whichever team they have the most game appearances
+for that season, handling mid-season trades), which also naturally scopes
+the player list to "people who actually played this season" instead of
+iterating every player ever in the DB and eating a 404 for most of them.
+
+`sync-aggregates.ts` now takes an optional year argument (`syncAggregatesForYear`,
+exported for reuse) instead of a hardcoded 2026; `backfill-aggregates-historical.ts`
+loops a range. Real run: all 23 seasons, zero failures, 151s total.
+Spot-checked against known history — 2002-03 scoring leader (Tracy
+McGrady, 32.1 PPG for Orlando) and that year's champion's record (Spurs
+60-22) both correct.
+
+## 4d. What we're explicitly deferring past this plan
 
 - Choice of deployment host and its specific cron mechanism (SPEC.md §9.1).
-- Standings/season-stat aggregates for the newly-backfilled historical
-  seasons (2003-2025) — games/box scores/plays are in, but
-  `sync-aggregates.ts` has only ever been run for 2025-26. Explicitly not
-  assumed; ask before doing it.
 - Summer League / G League support (SPEC.md §9.7).
 - Any UI visual design system specifics — addressed during M9, not planned
   in detail here.

@@ -1,14 +1,15 @@
 /**
  * M5 — season aggregates (PLAN.md Sec 3/M5). Ingests team/player season
- * stats and standings for the 2025-26 regular season (ESPN season year
- * 2026, type 2) — scoped to regular season only (SPEC.md Sec 6): standings
- * only make sense for the regular season, and "season stats" pages
- * conventionally mean regular-season averages.
+ * stats and standings for a regular season — scoped to regular season only
+ * (SPEC.md Sec 6): standings only make sense for the regular season, and
+ * "season stats" pages conventionally mean regular-season averages.
  *
  * Per the user's earlier decision (not self-aggregating from our own game
  * data), every number here comes from a real ESPN stats/standings call.
  *
- * Run with: npx tsx ingest/sync-aggregates.ts
+ * Run with: npx tsx ingest/sync-aggregates.ts [year]
+ * (defaults to 2026 — the recurring M6 cron case; pass a year for
+ * historical backfill, or use backfill-aggregates-historical.ts for a range)
  */
 import { prisma } from "./lib/db";
 import { fetchEspnJson } from "../lib/espn/client";
@@ -25,13 +26,12 @@ import {
   type EspnStatisticsResponse,
 } from "./mappers/season-stats";
 
-const SEASON_YEAR = 2026;
 const SEASON_TYPE_CODE = "2"; // regular season
 
-async function getOrCreateSeasonId(): Promise<number> {
+async function getOrCreateSeasonId(seasonYear: number): Promise<number> {
   const season = await prisma.season.upsert({
-    where: { year_type: { year: SEASON_YEAR, type: "REGULAR" } },
-    create: { year: SEASON_YEAR, type: "REGULAR" },
+    where: { year_type: { year: seasonYear, type: "REGULAR" } },
+    create: { year: seasonYear, type: "REGULAR" },
     update: {},
   });
   return season.id;
@@ -85,7 +85,7 @@ function buildDivisionRankMap(
   return rankByTeamEspnId;
 }
 
-async function syncStandingsAndTeamSeasonStats(seasonId: number) {
+async function syncStandingsAndTeamSeasonStats(seasonId: number, seasonYear: number) {
   const maps = await loadIdMaps();
 
   // Fetch both conferences first so we have every team's correct overall
@@ -93,7 +93,7 @@ async function syncStandingsAndTeamSeasonStats(seasonId: number) {
   const conferenceViews = await Promise.all(
     maps.conferenceEspnIds.map((confEspnId) =>
       fetchEspnJson<EspnStandingsResponse>(
-        espnEndpoints.standingsView(String(SEASON_YEAR), SEASON_TYPE_CODE, confEspnId, "0"),
+        espnEndpoints.standingsView(String(seasonYear), SEASON_TYPE_CODE, confEspnId, "0"),
       ),
     ),
   );
@@ -128,7 +128,7 @@ async function syncStandingsAndTeamSeasonStats(seasonId: number) {
 
       const overall = extractOverallRecord(entry);
       const teamStats = await fetchEspnJson<EspnStatisticsResponse>(
-        espnEndpoints.teamStatistics(String(SEASON_YEAR), SEASON_TYPE_CODE, teamEspnId),
+        espnEndpoints.teamStatistics(String(seasonYear), SEASON_TYPE_CODE, teamEspnId),
       );
       const teamStatInput = mapTeamSeasonStat(teamStats, teamId, seasonId, overall);
       await prisma.teamSeasonStat.upsert({
@@ -143,9 +143,39 @@ async function syncStandingsAndTeamSeasonStats(seasonId: number) {
   console.log(`standings synced: ${standingsCount}, team season stats synced: ${teamStatsCount}`);
 }
 
-async function syncPlayerSeasonStats(seasonId: number) {
+/**
+ * Which team a player should be attributed to for a season's stats.
+ * `player.currentTeamId` is wrong for historical seasons — it's their
+ * *modern* team, not who they played for back then (confirmed as a real
+ * bug before this ran at historical scale). Instead, derive it from our
+ * own ingested box scores: whichever team they have the most
+ * player_game_stat rows for in this season (handles mid-season trades by
+ * picking the team they played the most games for). This also naturally
+ * scopes the player list to "people who actually played this season,"
+ * not every player ever in the DB.
+ */
+async function teamIdByPlayerForSeason(seasonId: number): Promise<Map<number, number>> {
+  const grouped = await prisma.playerGameStat.groupBy({
+    by: ["playerId", "teamId"],
+    where: { game: { seasonId } },
+    _count: { _all: true },
+  });
+
+  const bestByPlayer = new Map<number, { teamId: number; count: number }>();
+  for (const row of grouped) {
+    const current = bestByPlayer.get(row.playerId);
+    if (!current || row._count._all > current.count) {
+      bestByPlayer.set(row.playerId, { teamId: row.teamId, count: row._count._all });
+    }
+  }
+  return new Map([...bestByPlayer].map(([playerId, { teamId }]) => [playerId, teamId]));
+}
+
+async function syncPlayerSeasonStats(seasonId: number, seasonYear: number) {
+  const teamIdByPlayer = await teamIdByPlayerForSeason(seasonId);
   const players = await prisma.player.findMany({
-    select: { id: true, espnId: true, currentTeamId: true },
+    where: { id: { in: [...teamIdByPlayer.keys()] } },
+    select: { id: true, espnId: true },
   });
 
   let synced = 0;
@@ -153,14 +183,11 @@ async function syncPlayerSeasonStats(seasonId: number) {
 
   const results = await Promise.allSettled(
     players.map(async (player) => {
-      if (!player.currentTeamId) {
-        skipped += 1;
-        return;
-      }
+      const teamId = teamIdByPlayer.get(player.id)!;
       let stats: EspnStatisticsResponse;
       try {
         stats = await fetchEspnJson<EspnStatisticsResponse>(
-          espnEndpoints.athleteStatistics(String(SEASON_YEAR), SEASON_TYPE_CODE, player.espnId),
+          espnEndpoints.athleteStatistics(String(seasonYear), SEASON_TYPE_CODE, player.espnId),
         );
       } catch {
         // Player didn't play this season/type (e.g. no regular-season
@@ -168,7 +195,7 @@ async function syncPlayerSeasonStats(seasonId: number) {
         skipped += 1;
         return;
       }
-      const input = mapPlayerSeasonStat(stats, player.id, player.currentTeamId, seasonId);
+      const input = mapPlayerSeasonStat(stats, player.id, teamId, seasonId);
       await prisma.playerSeasonStat.upsert({
         where: { playerId_seasonId: { playerId: player.id, seasonId } },
         create: input,
@@ -185,15 +212,23 @@ async function syncPlayerSeasonStats(seasonId: number) {
   console.log(`player season stats synced: ${synced}, skipped (no data): ${skipped}, failed: ${failures.length}`);
 }
 
+export async function syncAggregatesForYear(seasonYear: number) {
+  console.log(`\n--- aggregates for season year ${seasonYear} ---`);
+  const seasonId = await getOrCreateSeasonId(seasonYear);
+  await syncStandingsAndTeamSeasonStats(seasonId, seasonYear);
+  await syncPlayerSeasonStats(seasonId, seasonYear);
+}
+
 async function main() {
-  const seasonId = await getOrCreateSeasonId();
-  await syncStandingsAndTeamSeasonStats(seasonId);
-  await syncPlayerSeasonStats(seasonId);
+  const seasonYear = Number(process.argv[2] ?? 2026);
+  await syncAggregatesForYear(seasonYear);
   await prisma.$disconnect();
 }
 
-main().catch(async (err) => {
-  console.error(err);
-  await prisma.$disconnect();
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(async (err) => {
+    console.error(err);
+    await prisma.$disconnect();
+    process.exit(1);
+  });
+}
