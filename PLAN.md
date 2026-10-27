@@ -440,10 +440,88 @@ aren't documented.
 - Verify (done): real browser screenshot showing headlines, images,
   dates, and correct team tags; zero console errors after the fix.
 
-## 4. What we're explicitly deferring past this plan
+## 4a. Historical backfill (post-v1) — DONE
+
+After M0-M10, the user asked to go beyond the single-season v1 scope:
+expand to multiple historical seasons, but first research how far back
+real data goes and what format differences to account for.
+
+**Research findings (direct ESPN probing):**
+- Reliable scoreboard coverage starts ~1993-94; before that, data is
+  sparse/unusable.
+- **1993-94 through 2001-02:** full box scores (team + player), but **zero
+  play-by-play**.
+- **2002-03 onward:** full score + box score + play-by-play — the same
+  completeness tier as what we already had for 2025-26.
+- Team `espnId`s are **stable across relocation/rename** (e.g. Seattle
+  SuperSonics -> OKC Thunder is one franchise id) — confirmed via a
+  season-scoped core-API team endpoint that returns era-accurate
+  name/colors/logo for the same id.
+- Conference/division format changed historically (1994: 2 conferences ×
+  2 divisions; today: 2×3) — already handled correctly since our
+  conference/division ingestion discovers the tree per season rather than
+  hardcoding it (M3).
+
+**User decisions:** backfill back to 2002-03 only (full-completeness tier,
+no partial-PBP handling needed); show era-accurate historical team
+name/logo for old games, not always-current branding.
+
+**What was built:**
+- `prisma/schema.prisma`: new `TeamSeasonIdentity` model (teamId, year,
+  name/location/displayName/abbreviation/color/alternateColor/logoUrl),
+  keyed by (teamId, year) — not a new Team row, since the franchise id is
+  stable.
+- `ingest/sync-team-identity.ts`: captures each season's real identity from
+  ESPN's season-scoped team list (only teams that actually existed that
+  year — e.g. 27 in 1994 vs 30 today).
+- `ingest/backfill-historical.ts`: generalizes M4's single-season
+  `backfill.ts` to any year range, with a deliberately generous per-season
+  date window (empty days are cheap) rather than hand-probing 23 seasons'
+  exact boundaries.
+- `src/lib/team-identity.ts` + wired into `/api/games/[eventId]` and
+  `/api/players/[athleteId]`: resolves era-accurate team name/logo per
+  game's season year, falling back to current identity if no historical
+  snapshot exists.
+- **Write-path optimization**, necessary at this scale: `ingestOneGame`
+  (ingest/lib/game-ingest.ts) now batches each game's team/player/play rows
+  into 3 `createMany` calls wrapped in one `$transaction`, instead of
+  hundreds of individual per-row `upsert` calls. This is also *more*
+  correct than before, not just faster — the transaction makes each game's
+  write atomic, so a mid-write crash can never leave it half-written in a
+  way the self-healing check would mistake for "done." Result: ~41s for a
+  season's ~1,300 games, vs. ~6 minutes before (9x). Phase A's scoreboard
+  fetching was also parallelized (previously sequential day-by-day).
+- Real run: all 23 seasons (2003-2025) backfilled. Box score counts match
+  game counts almost exactly everywhere; the only gaps are real NBA history
+  (1990 lockout season: 990 games; 2019-20 COVID-shortened + bubble
+  restart: handled via a small date-range supplement past the normal
+  cutoff; 2020-21 72-game season: 1080 games) plus the same persistent
+  4-game ESPN 404 gap already known from 2025-26.
+- **Two real bugs found and fixed during the run, not anticipated in
+  advance:** (1) a malformed historical scoreboard event with no `status`
+  field crashed `isIngestableFinalGame` — fixed with defensive optional
+  chaining throughout the event-parsing path; (2) running the resumed
+  backfill with a redundant inner `&` *and* the harness's own
+  `run_in_background` caused the process to be killed early when the
+  outer wrapper command (just an `echo`) finished — fixed by using
+  `run_in_background` alone, no manual backgrounding inside it.
+- **Infrastructure incident, not a code bug:** the backfill ran the user's
+  Mac out of disk space entirely (down to the low hundreds of MB free,
+  unrelated to this project — ~215GB of a 228GB disk was already used by
+  other things). Diagnosed read-only, found ~49GB of safely-regenerable
+  tool caches (`~/.npm`, `~/.cache/uv`, `~/.cache/huggingface`,
+  `~/.cache/puppeteer`, `~/.cache/chrome-devtools-mcp`), confirmed with the
+  user before deleting anything, cleared them, then resumed — the
+  self-healing design meant resuming only retried the one partially-written
+  season rather than starting over.
+
+## 4b. What we're explicitly deferring past this plan
 
 - Choice of deployment host and its specific cron mechanism (SPEC.md §9.1).
-- Multi-season historical backfill beyond one starting season.
+- Standings/season-stat aggregates for the newly-backfilled historical
+  seasons (2003-2025) — games/box scores/plays are in, but
+  `sync-aggregates.ts` has only ever been run for 2025-26. Explicitly not
+  assumed; ask before doing it.
 - Summer League / G League support (SPEC.md §9.7).
 - Any UI visual design system specifics — addressed during M9, not planned
   in detail here.

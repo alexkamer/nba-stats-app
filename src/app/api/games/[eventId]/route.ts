@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { getLiveGameDetail } from "@/lib/espn-live";
+import { resolveTeamIdentities } from "@/lib/team-identity";
 import { NextResponse } from "next/server";
 
 // Branches per SPEC.md Sec 4: `final` games are served from the DB
@@ -16,6 +17,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
         homeTeam: true,
         awayTeam: true,
         venue: true,
+        season: true,
         teamGameStats: { include: { team: true } },
         playerGameStats: { include: { player: true, team: true } },
         plays: { orderBy: { sequenceNumber: "asc" } },
@@ -23,7 +25,22 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
     });
 
     if (game) {
-      return NextResponse.json({ game, source: "db" });
+      // Team espnIds are stable across relocation/rename (e.g. Seattle
+      // SuperSonics -> OKC Thunder) — show the era-accurate name/logo for
+      // this game's season year rather than always the current branding.
+      const identities = await resolveTeamIdentities([game.homeTeamId, game.awayTeamId], game.season.year);
+      const homeIdentity = identities.get(game.homeTeamId);
+      const awayIdentity = identities.get(game.awayTeamId);
+      const gameWithIdentity = {
+        ...game,
+        homeTeam: homeIdentity ? { ...game.homeTeam, ...homeIdentity } : game.homeTeam,
+        awayTeam: awayIdentity ? { ...game.awayTeam, ...awayIdentity } : game.awayTeam,
+        teamGameStats: game.teamGameStats.map((s) => {
+          const identity = identities.get(s.teamId);
+          return identity ? { ...s, team: { ...s.team, ...identity } } : s;
+        }),
+      };
+      return NextResponse.json({ game: gameWithIdentity, source: "db" });
     }
 
     const liveGame = await getLiveGameDetail(eventId);

@@ -80,14 +80,21 @@ export async function discoverGames(dateStrings: Iterable<string>) {
   const maps = await loadExistingIdMaps();
   const seasonCache = new Map<string, number>();
 
-  let dayCount = 0;
+  // Fetch all scoreboards concurrently (network-bound, embarrassingly
+  // parallel — each day is independent) before doing any DB writes. Across
+  // many seasons this is the difference between walking ~6,000 days
+  // sequentially (tens of minutes) and letting the shared concurrency
+  // limiter (lib/espn/rate-limiter.ts) pipeline them. DB writes stay
+  // sequential below so the venue/season caches can't race.
+  const dates = [...dateStrings];
+  const boards = await Promise.all(
+    dates.map((dateStr) => fetchEspnJson<EspnScoreboardResponse>(espnEndpoints.scoreboard(dateStr))),
+  );
+
   let discovered = 0;
   let skippedExisting = 0;
 
-  for (const dateStr of dateStrings) {
-    dayCount += 1;
-    const board = await fetchEspnJson<EspnScoreboardResponse>(espnEndpoints.scoreboard(dateStr));
-
+  for (const board of boards) {
     for (const event of board.events ?? []) {
       if (!isIngestableFinalGame(event)) continue;
       if (maps.existingGameEspnIds.has(event.id)) {
@@ -95,9 +102,13 @@ export async function discoverGames(dateStrings: Iterable<string>) {
         continue;
       }
 
-      const competition = event.competitions[0];
-      const homeEspnId = competition.competitors.find((c) => c.homeAway === "home")?.team.id;
-      const awayEspnId = competition.competitors.find((c) => c.homeAway === "away")?.team.id;
+      const competition = event.competitions?.[0];
+      if (!competition) {
+        console.warn(`skipping event ${event.id}: malformed (no competitions array)`);
+        continue;
+      }
+      const homeEspnId = competition.competitors?.find((c) => c.homeAway === "home")?.team.id;
+      const awayEspnId = competition.competitors?.find((c) => c.homeAway === "away")?.team.id;
       const homeTeamId = homeEspnId ? maps.teamIdByEspnId.get(homeEspnId) : undefined;
       const awayTeamId = awayEspnId ? maps.teamIdByEspnId.get(awayEspnId) : undefined;
       if (!homeTeamId || !awayTeamId) {
@@ -135,7 +146,7 @@ export async function discoverGames(dateStrings: Iterable<string>) {
   }
 
   console.log(
-    `discoverGames: ${dayCount} days walked, ${discovered} new games discovered, ` +
+    `discoverGames: ${dates.length} days walked, ${discovered} new games discovered, ` +
       `${skippedExisting} already in DB (skipped).`,
   );
   return { maps, discovered };
@@ -158,20 +169,22 @@ async function ingestOneGame(
     select: { homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true },
   });
 
-  for (const teamBox of boxscore.teams) {
-    const teamId = teamIdByEspnId.get(teamBox.team.id);
-    if (!teamId) continue;
-    const points = teamId === game.homeTeamId ? game.homeScore : teamId === game.awayTeamId ? game.awayScore : null;
-    const input = mapTeamGameStat(teamBox, gameId, teamId, points);
-    await prisma.teamGameStat.upsert({
-      where: { gameId_teamId: { gameId, teamId } },
-      create: input,
-      update: input,
-    });
-  }
+  const teamGameStatInputs = boxscore.teams
+    .map((teamBox) => {
+      const teamId = teamIdByEspnId.get(teamBox.team.id);
+      if (!teamId) return null;
+      const points = teamId === game.homeTeamId ? game.homeScore : teamId === game.awayTeamId ? game.awayScore : null;
+      return mapTeamGameStat(teamBox, gameId, teamId, points);
+    })
+    .filter((x) => x !== null);
 
   // Player box score lines — create a minimal Player row on the fly for
-  // anyone not already known (e.g. traded since the last roster sync).
+  // anyone not already known (e.g. traded since the last roster sync, or —
+  // for historical seasons — a player who has since retired and was never
+  // on any roster snapshot we've taken). Player upserts happen individually
+  // here (idempotent, rare after the first pass through an era); the bulk
+  // stat rows below are batched.
+  const playerGameStatInputs: ReturnType<typeof mapPlayerGameStat>[] = [];
   for (const playerGroup of boxscore.players) {
     const teamId = teamIdByEspnId.get(playerGroup.team.id);
     if (!teamId) continue;
@@ -206,25 +219,30 @@ async function ingestOneGame(
         playerIdByEspnId.set(entry.athlete.id, playerId);
       }
 
-      const input = mapPlayerGameStat(entry, keys, gameId, playerId, teamId);
-      await prisma.playerGameStat.upsert({
-        where: { gameId_playerId: { gameId, playerId } },
-        create: input,
-        update: input,
-      });
+      playerGameStatInputs.push(mapPlayerGameStat(entry, keys, gameId, playerId, teamId));
     }
   }
 
-  // Play-by-play.
-  for (const play of plays) {
+  const playInputs = plays.map((play) => {
     const teamId = play.team ? teamIdByEspnId.get(play.team.id) ?? null : null;
-    const input = mapPlay(play, gameId, teamId);
-    await prisma.play.upsert({
-      where: { espnId: input.espnId },
-      create: input,
-      update: input,
-    });
-  }
+    return mapPlay(play, gameId, teamId);
+  });
+
+  // One atomic transaction per game: either all of its box score/play rows
+  // land, or none do. This matters for the self-healing retry design (PLAN.md
+  // Sec 3/M4) — the "needs processing" check is "zero team_game_stat rows for
+  // this game," so a crash mid-write must never leave a game half-written
+  // with team rows present but player/play rows missing, or it would look
+  // "done" to a future run and never get retried. Batched createMany (not
+  // per-row upsert) also matters at historical-backfill scale: dozens of
+  // seasons' worth of games would otherwise spend most of their time on
+  // write-call overhead rather than ESPN latency (confirmed during the
+  // single-season M4 backfill, where writes dominated over network time).
+  await prisma.$transaction([
+    prisma.teamGameStat.createMany({ data: teamGameStatInputs }),
+    prisma.playerGameStat.createMany({ data: playerGameStatInputs }),
+    prisma.play.createMany({ data: playInputs }),
+  ]);
 }
 
 export async function ingestMissingBoxscores(maps: Awaited<ReturnType<typeof loadExistingIdMaps>>) {

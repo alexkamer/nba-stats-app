@@ -24,6 +24,8 @@ export const espnEndpoints = {
   athleteGamelog: (athleteId: string) => `${SITE_WEB}/athletes/${athleteId}/gamelog`,
 
   athletesList: (limit = 1000) => `${CORE}/athletes?limit=${limit}&active=true`,
+  seasonTeams: (year: string) => `${CORE}/seasons/${year}/teams?limit=50`,
+  seasonTeam: (year: string, teamId: string) => `${CORE}/seasons/${year}/teams/${teamId}`,
   teamStatistics: (year: string, seasonType: string, teamId: string) =>
     `${CORE}/seasons/${year}/types/${seasonType}/teams/${teamId}/statistics`,
   athleteStatistics: (year: string, seasonType: string, athleteId: string) =>

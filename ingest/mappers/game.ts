@@ -52,11 +52,13 @@ export interface GameUpsertInput {
 }
 
 /** Is this event something our scope cares about: a completed game that
- * isn't preseason (SPEC.md Sec 9.5/9.7)? */
+ * isn't preseason (SPEC.md Sec 9.5/9.7)? Some historical events are
+ * malformed (missing `status` entirely — confirmed during the historical
+ * backfill), so every level here is optional-chained rather than assumed. */
 export function isIngestableFinalGame(event: EspnScoreboardEvent): boolean {
   const seasonType = event.season?.type;
   return (
-    event.status.type.completed &&
+    event.status?.type?.completed === true &&
     seasonType !== undefined &&
     seasonType !== 1 &&
     seasonType in SEASON_TYPE_MAP

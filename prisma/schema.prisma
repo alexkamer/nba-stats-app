@@ -84,8 +84,9 @@ model Team {
   venue          Venue?    @relation(fields: [venueId], references: [id])
 
   players           Player[]
-  homeGames         Game[]             @relation("HomeTeam")
-  awayGames         Game[]             @relation("AwayTeam")
+  seasonIdentities  TeamSeasonIdentity[]
+  homeGames         Game[]               @relation("HomeTeam")
+  awayGames         Game[]               @relation("AwayTeam")
   playsAsTeam       Play[]
   teamGameStats     TeamGameStat[]
   teamSeasonStats   TeamSeasonStat[]
@@ -94,6 +95,29 @@ model Team {
   playerGameStats   PlayerGameStat[]
 
   @@map("team")
+}
+
+// A team's espnId is stable across relocation/rename (e.g. Seattle
+// SuperSonics -> Oklahoma City Thunder is one franchise id, confirmed
+// during the historical-backfill research). This table captures the
+// identity ESPN reported for that franchise in a given season year, so
+// historical games/pages can render the era-accurate name/colors/logo
+// instead of always showing the current branding.
+model TeamSeasonIdentity {
+  id             Int     @id @default(autoincrement())
+  teamId         Int     @map("team_id")
+  team           Team    @relation(fields: [teamId], references: [id])
+  year           Int
+  name           String
+  location       String
+  displayName    String  @map("display_name")
+  abbreviation   String
+  color          String?
+  alternateColor String? @map("alternate_color")
+  logoUrl        String? @map("logo_url")
+
+  @@unique([teamId, year])
+  @@map("team_season_identity")
 }
 
 model Player {

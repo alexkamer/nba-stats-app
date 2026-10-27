@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { resolveTeamIdentities } from "@/lib/team-identity";
 import { NextResponse } from "next/server";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ athleteId: string }> }) {
@@ -25,10 +26,31 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ath
       where: { playerId: id },
       orderBy: { game: { date: "desc" } },
       take: 20,
-      include: { game: { include: { homeTeam: true, awayTeam: true } }, team: true },
+      include: { game: { include: { homeTeam: true, awayTeam: true, season: true } }, team: true },
     });
 
-    return NextResponse.json({ player, recentGames });
+    // Team espnIds are stable across relocation/rename — show the
+    // era-accurate name for each game's season year, not always current.
+    const teamIds = [...new Set(recentGames.flatMap((g) => [g.game.homeTeamId, g.game.awayTeamId]))];
+    const years = [...new Set(recentGames.map((g) => g.game.season.year))];
+    const identitiesByYear = new Map(
+      await Promise.all(years.map(async (year) => [year, await resolveTeamIdentities(teamIds, year)] as const)),
+    );
+    const recentGamesWithIdentity = recentGames.map((g) => {
+      const identities = identitiesByYear.get(g.game.season.year);
+      const homeIdentity = identities?.get(g.game.homeTeamId);
+      const awayIdentity = identities?.get(g.game.awayTeamId);
+      return {
+        ...g,
+        game: {
+          ...g.game,
+          homeTeam: homeIdentity ? { ...g.game.homeTeam, ...homeIdentity } : g.game.homeTeam,
+          awayTeam: awayIdentity ? { ...g.game.awayTeam, ...awayIdentity } : g.game.awayTeam,
+        },
+      };
+    });
+
+    return NextResponse.json({ player, recentGames: recentGamesWithIdentity });
   } catch {
     return NextResponse.json({ error: "Failed to load player" }, { status: 500 });
   }

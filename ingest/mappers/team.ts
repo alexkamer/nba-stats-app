@@ -56,6 +56,50 @@ export function mapVenue(venue: NonNullable<EspnTeamDetail["team"]["franchise"]>
   };
 }
 
+// Shape confirmed against sports.core.api's season-scoped team endpoint
+// during the historical-backfill research (team espnId is stable across
+// relocation/rename — same id returns "Seattle SuperSonics" for season
+// 2005 and "Oklahoma City Thunder" for season 2026).
+export interface EspnSeasonTeam {
+  name: string;
+  location: string;
+  displayName: string;
+  abbreviation: string;
+  color?: string;
+  alternateColor?: string;
+  logos?: { href: string }[];
+}
+
+export interface TeamSeasonIdentityUpsertInput {
+  teamId: number;
+  year: number;
+  name: string;
+  location: string;
+  displayName: string;
+  abbreviation: string;
+  color: string | null;
+  alternateColor: string | null;
+  logoUrl: string | null;
+}
+
+export function mapTeamSeasonIdentity(
+  seasonTeam: EspnSeasonTeam,
+  teamId: number,
+  year: number,
+): TeamSeasonIdentityUpsertInput {
+  return {
+    teamId,
+    year,
+    name: seasonTeam.name,
+    location: seasonTeam.location,
+    displayName: seasonTeam.displayName,
+    abbreviation: seasonTeam.abbreviation,
+    color: seasonTeam.color ?? null,
+    alternateColor: seasonTeam.alternateColor ?? null,
+    logoUrl: seasonTeam.logos?.[0]?.href ?? null,
+  };
+}
+
 export function mapTeam(
   siteTeam: EspnSiteTeamListItem,
   divisionId: number | null,
