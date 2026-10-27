@@ -94,6 +94,7 @@ async function syncTeams(teamIdToDivisionId: Map<string, number>) {
 
 async function syncRosters(teamsById: Map<string, { id: number }>) {
   const positionIdByEspnId = new Map<string, number>();
+  const seenEspnIds = new Set<string>();
   let playerCount = 0;
 
   await Promise.all(
@@ -123,12 +124,24 @@ async function syncRosters(teamsById: Map<string, { id: number }>) {
           create: playerInput,
           update: playerInput,
         });
+        seenEspnIds.add(playerInput.espnId);
         playerCount += 1;
       }
     }),
   );
 
+  // A player who isn't on any team's roster this run has left the NBA
+  // (retired, overseas, unsigned, etc.) — `currentTeamId` only ever gets
+  // upserted above, never cleared, so without this they'd linger on their
+  // last team's roster forever (confirmed bug: team roster tabs showing
+  // long-retired players as current).
+  const { count: clearedCount } = await prisma.player.updateMany({
+    where: { currentTeamId: { not: null }, espnId: { notIn: Array.from(seenEspnIds) } },
+    data: { currentTeamId: null },
+  });
+
   console.log(`rosters synced: ${playerCount} players across ${teamsById.size} teams`);
+  console.log(`cleared stale currentTeamId for ${clearedCount} players no longer on any roster`);
 }
 
 async function main() {

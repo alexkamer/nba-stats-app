@@ -60,7 +60,12 @@ interface TeamDetail {
     id: number;
     displayName: string;
     jersey: string | null;
+    headshotUrl: string | null;
     position: { abbreviation: string } | null;
+    age: number | null;
+    heightIn: number | null;
+    weightLb: number | null;
+    college: string | null;
     seasonStat: {
       gamesPlayed: number | null;
       pointsPerGame: number | null;
@@ -100,6 +105,7 @@ interface TeamDetail {
       shootingEfficiency: number | null;
     } | null;
   }[];
+  coach: { name: string; experienceYears: number | null } | null;
   schedule: GameRow[];
   divisionStandings: {
     id: number;
@@ -250,6 +256,11 @@ function seasonTypeLabel(type: string): string {
   }
 }
 
+function formatHeight(heightIn: number | null): string {
+  if (!heightIn) return "—";
+  return `${Math.floor(heightIn / 12)}'${heightIn % 12}"`;
+}
+
 function ordinal(n: number | null): string {
   if (n == null) return "—";
   const v = n % 100;
@@ -323,6 +334,7 @@ function TeamDetailContent() {
     availableSeasons,
     standing,
     roster,
+    coach,
     schedule,
     divisionStandings,
     news,
@@ -640,14 +652,17 @@ function TeamDetailContent() {
 
       {activeTab === "roster" && (
         <section>
-          <h2 className="text-lg font-medium text-neutral-300 mb-3">Roster</h2>
+          <h2 className="text-2xl font-bold text-neutral-100 mb-3">{team.displayName} Roster</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm whitespace-nowrap">
               <thead>
                 <tr className="text-left text-neutral-500 border-b border-neutral-800">
                   <th className="py-2 pr-3">Player</th>
                   <th className="py-2 pr-3">Pos</th>
-                  <th className="py-2 pr-3 text-right">GP</th>
+                  <th className="py-2 pr-3 text-right">Age</th>
+                  <th className="py-2 pr-3 text-right">HT</th>
+                  <th className="py-2 pr-3 text-right">WT</th>
+                  <th className="py-2 pr-3">College</th>
                   <th className="py-2 pr-3 text-right">PPG</th>
                   <th className="py-2 pr-3 text-right">RPG</th>
                   <th className="py-2 pr-3 text-right">APG</th>
@@ -658,13 +673,24 @@ function TeamDetailContent() {
                 {rosterByPoints.map((player) => (
                   <tr key={player.id} className="border-b border-neutral-900">
                     <td className="py-2 pr-3">
-                      <Link href={`/players/${player.id}`} className="hover:text-neutral-100">
-                        <span className="text-neutral-500 mr-1">#{player.jersey ?? "—"}</span>
-                        {player.displayName}
+                      <Link href={`/players/${player.id}`} className="flex items-center gap-2 hover:text-neutral-100">
+                        {player.headshotUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={player.headshotUrl}
+                            alt=""
+                            className="h-8 w-8 rounded-full bg-neutral-800 object-cover shrink-0"
+                          />
+                        )}
+                        <span>{player.displayName}</span>
+                        <span className="text-neutral-500">#{player.jersey ?? "—"}</span>
                       </Link>
                     </td>
                     <td className="py-2 pr-3 text-neutral-400">{player.position?.abbreviation ?? "—"}</td>
-                    <td className="py-2 pr-3 text-right">{player.seasonStat?.gamesPlayed ?? "—"}</td>
+                    <td className="py-2 pr-3 text-right text-neutral-400">{player.age ?? "—"}</td>
+                    <td className="py-2 pr-3 text-right text-neutral-400">{formatHeight(player.heightIn)}</td>
+                    <td className="py-2 pr-3 text-right text-neutral-400">{player.weightLb ? `${player.weightLb} lbs` : "—"}</td>
+                    <td className="py-2 pr-3 text-neutral-400">{player.college ?? "—"}</td>
                     <td className="py-2 pr-3 text-right">{player.seasonStat?.pointsPerGame?.toFixed(1) ?? "—"}</td>
                     <td className="py-2 pr-3 text-right">{player.seasonStat?.reboundsPerGame?.toFixed(1) ?? "—"}</td>
                     <td className="py-2 pr-3 text-right">{player.seasonStat?.assistsPerGame?.toFixed(1) ?? "—"}</td>
@@ -674,6 +700,12 @@ function TeamDetailContent() {
               </tbody>
             </table>
           </div>
+          {coach && (
+            <p className="mt-4 text-sm text-neutral-400">
+              <span className="text-neutral-500">Head Coach:</span> {coach.name}
+              {coach.experienceYears != null && ` (${coach.experienceYears} yr${coach.experienceYears === 1 ? "" : "s"})`}
+            </p>
+          )}
         </section>
       )}
 

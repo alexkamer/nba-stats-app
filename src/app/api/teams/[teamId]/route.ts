@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { resolveTeamIdentities } from "@/lib/team-identity";
 import { getTeamLeaders } from "@/lib/espn-team-leaders";
 import { getUpcomingGames } from "@/lib/espn-schedule";
+import { getTeamCoach } from "@/lib/espn-team-coach";
 import { NextResponse } from "next/server";
 
 // ESPN's own leaders endpoint is the source of truth for who leads the
@@ -35,6 +36,17 @@ function findStat(extraJson: string | null, statName: string): string | null {
 
 function fixed1(value: number | null | undefined): string | null {
   return value == null ? null : value.toFixed(1);
+}
+
+function calculateAge(birthDate: Date | null): number | null {
+  if (!birthDate) return null;
+  const now = new Date();
+  let age = now.getFullYear() - birthDate.getFullYear();
+  const hasHadBirthdayThisYear =
+    now.getMonth() > birthDate.getMonth() ||
+    (now.getMonth() === birthDate.getMonth() && now.getDate() >= birthDate.getDate());
+  if (!hasHadBirthdayThisYear) age -= 1;
+  return age;
 }
 
 function findStatNumber(extraJson: string | null, statName: string): number | null {
@@ -412,7 +424,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
         id: p.id,
         displayName: p.displayName,
         jersey: p.jersey,
+        headshotUrl: p.headshotUrl,
         position: p.position,
+        age: calculateAge(p.birthDate),
+        heightIn: p.heightIn,
+        weightLb: p.weightLb,
+        college: p.college,
         seasonStat,
         fullStat,
       };
@@ -429,6 +446,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
       upcomingGames = await getUpcomingGames(team.espnId, season.year);
     } catch {
       upcomingGames = [];
+    }
+    let coach: Awaited<ReturnType<typeof getTeamCoach>> = null;
+    try {
+      coach = await getTeamCoach(team.espnId);
+    } catch {
+      coach = null;
     }
     const upcomingGamesResolved = upcomingGames
       .filter((g) => !knownEspnIds.has(g.espnId))
@@ -591,6 +614,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
       extendedStats,
       nbaCupStanding,
       roster,
+      coach,
       schedule: fullSchedule,
       divisionStandings: divisionStandingsWithIdentities,
       news,
