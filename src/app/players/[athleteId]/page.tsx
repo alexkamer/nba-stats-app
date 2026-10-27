@@ -161,6 +161,52 @@ async function fetchPlayerSplits(athleteId: string, season?: string, category?: 
   return res.json();
 }
 
+interface GameLogGame {
+  eventId: string;
+  date: string;
+  atVs: string;
+  opponentAbbreviation: string;
+  opponentLogo: string | null;
+  opponentId: string;
+  result: "W" | "L" | null;
+  teamScore: string | null;
+  opponentScore: string | null;
+  stats: string[];
+}
+
+interface GameLogCategory {
+  displayName: string;
+  games: GameLogGame[];
+  totals: string[] | null;
+}
+
+interface GameLogSummaryRow {
+  displayName: string;
+  stats: string[];
+}
+
+interface GameLogSeasonType {
+  displayName: string;
+  displayTeam: string | null;
+  categories: GameLogCategory[];
+  summary: GameLogSummaryRow[];
+}
+
+interface PlayerGamelog {
+  labels: string[];
+  seasonTypes: GameLogSeasonType[];
+  filters: PlayerSplitsFilter[];
+}
+
+async function fetchPlayerGamelog(athleteId: string, season?: string): Promise<PlayerGamelog> {
+  const query = new URLSearchParams();
+  if (season) query.set("season", season);
+  const qs = query.toString();
+  const res = await fetch(`/api/players/${athleteId}/gamelog${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error("Failed to load player game log");
+  return res.json();
+}
+
 function formatHeight(heightIn: number | null): string {
   if (!heightIn) return "—";
   return `${Math.floor(heightIn / 12)}'${heightIn % 12}"`;
@@ -376,7 +422,7 @@ function PlayerDetailContent() {
       {activeTab === "stats" && <StatsTab seasons={player.playerSeasonStats} accentColor={accentColor} />}
       {activeTab === "bio" && <BioTab player={player} athleteId={athleteId} accentColor={accentColor} />}
       {activeTab === "splits" && <SplitsTab athleteId={athleteId} />}
-      {activeTab === "gameLog" && <PlaceholderTab label="Game Log" />}
+      {activeTab === "gameLog" && <GameLogTab athleteId={athleteId} accentColor={accentColor} />}
       {activeTab === "advanced" && <PlaceholderTab label="Advanced Stats" />}
     </div>
   );
@@ -695,6 +741,153 @@ function SplitsCategoryTable({ category, labels }: { category: PlayerSplitCatego
         </table>
       </div>
     </section>
+  );
+}
+
+function GameLogTab({ athleteId, accentColor }: { athleteId: string; accentColor: string }) {
+  const [season, setSeason] = useState<string | null>(null);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["player-gamelog", athleteId, season],
+    queryFn: () => fetchPlayerGamelog(athleteId, season ?? undefined),
+  });
+
+  if (isLoading && !data) return <p className="text-neutral-500">Loading…</p>;
+  if (error || !data || data.seasonTypes.length === 0) {
+    return <p className="text-neutral-500">No game log available.</p>;
+  }
+
+  const seasonFilter = data.filters.find((f) => f.name === "season");
+
+  return (
+    <div className="space-y-8">
+      {seasonFilter && (
+        <div className="flex justify-end">
+          <SplitsFilterSelect value={season ?? seasonFilter.value} options={seasonFilter.options} onChange={setSeason} />
+        </div>
+      )}
+      {data.seasonTypes.map((seasonType) => (
+        <GameLogSeasonTable key={seasonType.displayName} seasonType={seasonType} labels={data.labels} accentColor={accentColor} />
+      ))}
+    </div>
+  );
+}
+
+function GameLogSeasonTable({
+  seasonType,
+  labels,
+  accentColor,
+}: {
+  seasonType: GameLogSeasonType;
+  labels: string[];
+  accentColor: string;
+}) {
+  const hasGames = seasonType.categories.some((category) => category.games.length > 0);
+  if (!hasGames) return null;
+
+  return (
+    <section className="space-y-2">
+      <h2 className="text-xl font-bold tracking-wide text-neutral-100 uppercase">
+        {seasonType.displayName}
+        {seasonType.displayTeam && <span className="text-neutral-500"> ({seasonType.displayTeam})</span>}
+      </h2>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[920px] text-sm border-collapse">
+          <thead>
+            <tr className="text-neutral-200 text-xs uppercase">
+              <th className="text-left font-bold px-2 py-2 sticky left-0 bg-neutral-950">Date</th>
+              <th className="text-left font-bold px-2 py-2">Opp</th>
+              <th className="text-left font-bold px-2 py-2">Result</th>
+              {labels.map((label) => (
+                <th key={label} className="text-right font-bold px-2 py-2 whitespace-nowrap">
+                  {label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {seasonType.categories.map(
+              (category) =>
+                category.games.length > 0 && (
+                  <GameLogCategoryRows key={category.displayName} category={category} labelCount={labels.length} />
+                ),
+            )}
+            {seasonType.summary.map((row) => (
+              <tr key={row.displayName} className="border-t-2 font-semibold text-neutral-100" style={{ borderColor: accentColor }}>
+                <td className="px-2 py-2 sticky left-0 bg-neutral-950 whitespace-nowrap" colSpan={3}>
+                  {row.displayName}
+                </td>
+                {row.stats.map((value, i) => (
+                  <td key={labels[i] ?? i} className="text-right px-2 py-2 whitespace-nowrap tabular-nums">
+                    {value}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function GameLogCategoryRows({ category, labelCount }: { category: GameLogCategory; labelCount: number }) {
+  return (
+    <>
+      <tr>
+        <td colSpan={labelCount + 3} className="px-2 pt-4 pb-1 text-xs font-bold uppercase tracking-wide text-neutral-500 capitalize">
+          {category.displayName}
+        </td>
+      </tr>
+      {category.games.map((game) => (
+        <tr key={game.eventId} className="border-t border-neutral-800 hover:bg-neutral-900/60">
+          <td className="px-2 py-2 sticky left-0 bg-neutral-950 whitespace-nowrap text-neutral-300">
+            <Link href={`/games/${game.eventId}`} className="hover:text-neutral-100 hover:underline">
+              {new Date(game.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </Link>
+          </td>
+          <td className="px-2 py-2 whitespace-nowrap">
+            <span className="flex items-center gap-1.5 text-neutral-300">
+              <span className="text-neutral-500">{game.atVs}</span>
+              {game.opponentLogo && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={game.opponentLogo} alt="" className="h-4 w-4" />
+              )}
+              <Link href={`/teams/${game.opponentId}`} className="hover:text-neutral-100 hover:underline">
+                {game.opponentAbbreviation}
+              </Link>
+            </span>
+          </td>
+          <td className="px-2 py-2 whitespace-nowrap">
+            {game.result && (
+              <span className={game.result === "W" ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>
+                {game.result}
+              </span>
+            )}{" "}
+            <span className="text-neutral-400">
+              {game.teamScore}-{game.opponentScore}
+            </span>
+          </td>
+          {game.stats.map((value, i) => (
+            <td key={i} className="text-right px-2 py-2 text-neutral-200 whitespace-nowrap tabular-nums">
+              {value}
+            </td>
+          ))}
+        </tr>
+      ))}
+      {category.totals && (
+        <tr className="border-t border-neutral-800 font-medium text-neutral-100">
+          <td className="px-2 py-2 sticky left-0 bg-neutral-950" colSpan={3}>
+            Totals
+          </td>
+          {category.totals.map((value, i) => (
+            <td key={i} className="text-right px-2 py-2 whitespace-nowrap tabular-nums">
+              {value}
+            </td>
+          ))}
+        </tr>
+      )}
+    </>
   );
 }
 

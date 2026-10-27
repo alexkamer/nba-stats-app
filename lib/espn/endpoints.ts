@@ -23,7 +23,12 @@ export const espnEndpoints = {
     `${SITE}/transactions?team=${teamId}&season=${season}&page=${page}`,
 
   athleteOverview: (athleteId: string) => `${SITE_WEB}/athletes/${athleteId}/overview`,
-  athleteGamelog: (athleteId: string) => `${SITE_WEB}/athletes/${athleteId}/gamelog`,
+  athleteGamelog: (athleteId: string, params?: { season?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.season) query.set("season", params.season);
+    const qs = query.toString();
+    return `${SITE_WEB}/athletes/${athleteId}/gamelog${qs ? `?${qs}` : ""}`;
+  },
   athleteSplits: (athleteId: string, params?: { season?: string; category?: string }) => {
     const query = new URLSearchParams();
     if (params?.season) query.set("season", params.season);
