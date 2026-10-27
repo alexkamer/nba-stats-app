@@ -123,10 +123,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ath
       const teams = teamIdsPlayed
         .map((teamId) => {
           const identity = identities?.get(teamId);
-          return identity ? { id: teamId, abbreviation: identity.abbreviation, logoUrl: identity.logoUrl } : null;
+          return identity
+            ? { id: teamId, abbreviation: identity.abbreviation, displayName: identity.displayName, logoUrl: identity.logoUrl }
+            : null;
         })
         .filter((t) => t != null);
-      if (teams.length === 0) teams.push({ id: stat.teamId, abbreviation: stat.team.abbreviation, logoUrl: stat.team.logoUrl });
+      if (teams.length === 0)
+        teams.push({ id: stat.teamId, abbreviation: stat.team.abbreviation, displayName: stat.team.displayName, logoUrl: stat.team.logoUrl });
       const primaryIdentity = identities?.get(stat.teamId);
       return {
         ...stat,

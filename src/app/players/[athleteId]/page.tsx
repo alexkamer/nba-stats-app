@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 
 interface PlayerDetail {
   player: {
@@ -14,6 +14,7 @@ interface PlayerDetail {
     heightIn: number | null;
     weightLb: number | null;
     birthDate: string | null;
+    birthPlace: string | null;
     college: string | null;
     draftYear: number | null;
     draftRound: number | null;
@@ -24,7 +25,7 @@ interface PlayerDetail {
     playerSeasonStats: {
       season: { year: number; type: string };
       team: { abbreviation: string; logoUrl: string | null } | null;
-      teams: { id: number; abbreviation: string; logoUrl: string | null }[];
+      teams: { id: number; abbreviation: string; displayName: string; logoUrl: string | null }[];
       gamesPlayed: number | null;
       pointsPerGame: number | null;
       reboundsPerGame: number | null;
@@ -97,6 +98,24 @@ interface PlayerDetail {
 async function fetchPlayer(athleteId: string): Promise<PlayerDetail> {
   const res = await fetch(`/api/players/${athleteId}`);
   if (!res.ok) throw new Error("Failed to load player");
+  return res.json();
+}
+
+interface PlayerAward {
+  id: string;
+  league: string;
+  name: string;
+  displayCount: string;
+  seasons: string[];
+}
+
+interface PlayerBio {
+  awards: PlayerAward[];
+}
+
+async function fetchPlayerBio(athleteId: string): Promise<PlayerBio> {
+  const res = await fetch(`/api/players/${athleteId}/bio`);
+  if (!res.ok) throw new Error("Failed to load player bio");
   return res.json();
 }
 
@@ -328,7 +347,7 @@ function PlayerDetailContent() {
       )}
 
       {activeTab === "stats" && <StatsTab seasons={player.playerSeasonStats} accentColor={accentColor} />}
-      {activeTab === "bio" && <PlaceholderTab label="Bio" />}
+      {activeTab === "bio" && <BioTab player={player} athleteId={athleteId} accentColor={accentColor} />}
       {activeTab === "splits" && <PlaceholderTab label="Splits" />}
       {activeTab === "gameLog" && <PlaceholderTab label="Game Log" />}
       {activeTab === "advanced" && <PlaceholderTab label="Advanced Stats" />}
@@ -341,6 +360,196 @@ function PlaceholderTab({ label }: { label: string }) {
 }
 
 type SeasonStatRow = PlayerDetail["player"]["playerSeasonStats"][number];
+
+function formatExperience(seasons: SeasonStatRow[]): string {
+  const years = new Set(seasons.filter((s) => s.season.type === "REGULAR").map((s) => s.season.year));
+  return years.size > 0 ? `${ordinal(years.size)} Season` : "Rookie";
+}
+
+interface CareerHistoryEntry {
+  teamId: number;
+  abbreviation: string;
+  displayName: string;
+  logoUrl: string | null;
+  startYear: number;
+  endYear: number;
+  seasonCount: number;
+}
+
+function buildCareerHistory(seasons: SeasonStatRow[]): CareerHistoryEntry[] {
+  const regular = [...seasons].filter((s) => s.season.type === "REGULAR").sort((a, b) => a.season.year - b.season.year);
+
+  const groups: CareerHistoryEntry[] = [];
+  for (const season of regular) {
+    for (const team of season.teams) {
+      const last = groups[groups.length - 1];
+      if (last && last.teamId === team.id) {
+        last.endYear = season.season.year;
+        last.seasonCount += 1;
+      } else {
+        groups.push({
+          teamId: team.id,
+          abbreviation: team.abbreviation,
+          displayName: team.displayName,
+          logoUrl: team.logoUrl,
+          startYear: season.season.year,
+          endYear: season.season.year,
+          seasonCount: 1,
+        });
+      }
+    }
+  }
+  return groups.reverse();
+}
+
+function BioTab({
+  player,
+  athleteId,
+  accentColor,
+}: {
+  player: PlayerDetail["player"];
+  athleteId: string;
+  accentColor: string;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["player-bio", athleteId],
+    queryFn: () => fetchPlayerBio(athleteId),
+  });
+
+  const age = formatAge(player.birthDate);
+  const careerHistory = buildCareerHistory(player.playerSeasonStats);
+  const awards = data?.awards ?? [];
+
+  const awardsByLeague = new Map<string, PlayerAward[]>();
+  for (const award of awards) {
+    const list = awardsByLeague.get(award.league) ?? [];
+    list.push(award);
+    awardsByLeague.set(award.league, list);
+  }
+
+  return (
+    <div className="space-y-6">
+      <BioSection title="Biography" accentColor={accentColor}>
+        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4 text-sm">
+          <BioField label="Team" value={player.currentTeam?.displayName ?? "Free agent"} />
+          <BioField label="Position" value={player.position?.name ?? "—"} />
+          <BioField label="HT/WT" value={`${formatHeight(player.heightIn)}${player.weightLb ? `, ${player.weightLb} lbs` : ""}`} />
+          <BioField
+            label="Birthdate"
+            value={player.birthDate ? `${new Date(player.birthDate).toLocaleDateString()}${age != null ? ` (${age})` : ""}` : "—"}
+          />
+          <BioField label="College" value={player.college ?? "—"} />
+          <BioField
+            label="Draft Info"
+            value={player.draftYear ? `${player.draftYear}: Rd ${player.draftRound ?? "—"}, Pk ${player.draftPick ?? "—"}` : "—"}
+          />
+          <BioField
+            label="Status"
+            value={
+              <span className="flex items-center gap-1.5">
+                <span className={`h-2 w-2 rounded-full ${player.active ? "bg-emerald-500" : "bg-neutral-500"}`} />
+                {player.active ? "Active" : "Inactive"}
+              </span>
+            }
+          />
+          <BioField label="Experience" value={formatExperience(player.playerSeasonStats)} />
+          <BioField label="Birthplace" value={player.birthPlace ?? "—"} />
+        </dl>
+      </BioSection>
+
+      {careerHistory.length > 0 && (
+        <BioSection title="Career History" accentColor={accentColor}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+            {careerHistory.map((entry, i) => {
+              const isCurrent = i === 0 && player.active && entry.teamId === player.currentTeam?.id;
+              const years = isCurrent
+                ? `${entry.startYear}-CURRENT`
+                : entry.startYear === entry.endYear
+                  ? `${entry.startYear}`
+                  : `${entry.startYear}-${entry.endYear}`;
+              return (
+                <Link
+                  key={`${entry.teamId}-${entry.startYear}`}
+                  href={`/teams/${entry.teamId}`}
+                  className="flex items-center gap-3 border-b border-neutral-800 pb-2 hover:text-neutral-100"
+                >
+                  {entry.logoUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={entry.logoUrl} alt="" className="h-6 w-6 shrink-0" />
+                  )}
+                  <span>
+                    <span className="block font-medium text-neutral-100">{entry.displayName}</span>
+                    <span className="block text-xs text-neutral-500">
+                      {years} ({entry.seasonCount} Season{entry.seasonCount !== 1 ? "s" : ""})
+                    </span>
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </BioSection>
+      )}
+
+      <BioSection title="Career Highlights" accentColor={accentColor}>
+        {isLoading ? (
+          <p className="text-neutral-500">Loading…</p>
+        ) : awards.length === 0 ? (
+          <p className="text-neutral-500">No career highlights available.</p>
+        ) : (
+          <div className="space-y-5">
+            {[...awardsByLeague.entries()].map(([league, leagueAwards]) => (
+              <div key={league}>
+                <h3 className="text-xs font-semibold uppercase text-neutral-500 mb-2">{league}</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+                  {leagueAwards.map((award) => (
+                    <div key={award.id}>
+                      <p className="text-neutral-100">
+                        {award.displayCount !== "1x" && <span className="font-semibold">{award.displayCount} </span>}
+                        <span className="font-semibold">{award.name}</span>
+                      </p>
+                      <p className="text-xs text-neutral-500">{award.seasons.join(", ")}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </BioSection>
+    </div>
+  );
+}
+
+function BioSection({
+  title,
+  accentColor,
+  children,
+}: {
+  title: string;
+  accentColor: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-md border border-neutral-800 bg-neutral-900 overflow-hidden">
+      <h2
+        className="px-4 py-3 text-base font-semibold text-neutral-100 border-b border-neutral-800"
+        style={{ borderBottomColor: accentColor }}
+      >
+        {title}
+      </h2>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+}
+
+function BioField({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <dt className="text-xs uppercase tracking-wide text-neutral-500">{label}</dt>
+      <dd className="font-semibold text-neutral-100">{value}</dd>
+    </div>
+  );
+}
 
 interface StatColumn {
   label: string;
@@ -642,17 +851,110 @@ function SeasonStatsTable({
   );
 }
 
+const SEASON_TYPE_OPTIONS: { value: SeasonStatRow["season"]["type"]; label: string }[] = [
+  { value: "REGULAR", label: "Regular Season" },
+  { value: "POSTSEASON", label: "Postseason" },
+  { value: "PRESEASON", label: "Preseason" },
+];
+
 function StatsTab({ seasons, accentColor }: { seasons: SeasonStatRow[]; accentColor: string }) {
+  const [seasonType, setSeasonType] = useState<SeasonStatRow["season"]["type"]>("REGULAR");
+
   if (seasons.length === 0) return <p className="text-neutral-500">No season stats available.</p>;
 
-  const orderedSeasons = [...seasons].sort((a, b) => a.season.year - b.season.year);
+  const filteredSeasons = seasons.filter((s) => s.season.type === seasonType);
+  const orderedSeasons = [...filteredSeasons].sort((a, b) => a.season.year - b.season.year);
+  const typeLabel = SEASON_TYPE_OPTIONS.find((o) => o.value === seasonType)?.label ?? seasonType;
 
   return (
-    <div className="space-y-10">
-      <SeasonStatsTable title="Regular Season Averages" seasons={orderedSeasons} columns={AVERAGES_COLUMNS} accentColor={accentColor} />
-      <SeasonStatsTable title="Regular Season Totals" seasons={orderedSeasons} columns={TOTALS_COLUMNS} accentColor={accentColor} />
-      <SeasonStatsTable title="Regular Season Misc Totals" seasons={orderedSeasons} columns={MISC_COLUMNS} accentColor={accentColor} />
+    <div className="space-y-6">
+      <div className="flex justify-end">
+        <label className="inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900 py-1 pl-3 pr-1.5 shadow-sm shadow-black/20">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">Season</span>
+          <span className="relative inline-flex items-center">
+            <select
+              id="season-type"
+              value={seasonType}
+              onChange={(e) => setSeasonType(e.target.value as SeasonStatRow["season"]["type"])}
+              className="appearance-none rounded-full bg-neutral-800 py-1.5 pl-3 pr-8 text-sm font-semibold text-neutral-100 cursor-pointer transition-colors hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+            >
+              {SEASON_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value} className="text-neutral-100">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <svg
+              viewBox="0 0 20 20"
+              fill="none"
+              aria-hidden="true"
+              className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-neutral-400"
+            >
+              <path d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        </label>
+      </div>
+
+      {orderedSeasons.length === 0 ? (
+        <p className="text-neutral-500">No {typeLabel.toLowerCase()} stats available.</p>
+      ) : (
+        <div className="space-y-10">
+          <SeasonStatsTable title={`${typeLabel} Averages`} seasons={orderedSeasons} columns={AVERAGES_COLUMNS} accentColor={accentColor} />
+          <SeasonStatsTable title={`${typeLabel} Totals`} seasons={orderedSeasons} columns={TOTALS_COLUMNS} accentColor={accentColor} />
+          <SeasonStatsTable title={`${typeLabel} Misc Totals`} seasons={orderedSeasons} columns={MISC_COLUMNS} accentColor={accentColor} />
+        </div>
+      )}
+
+      <StatsGlossary />
     </div>
+  );
+}
+
+const STATS_GLOSSARY: { term: string; definition: string }[] = [
+  { term: "GP", definition: "Games Played" },
+  { term: "GS", definition: "Games Started" },
+  { term: "MIN", definition: "Minutes Per Game" },
+  { term: "FG", definition: "Field Goals Made-Attempted" },
+  { term: "FG%", definition: "Field Goal Percentage" },
+  { term: "3PT", definition: "3-Point Field Goals Made-Attempted" },
+  { term: "3P%", definition: "3-Point Field Goal Percentage" },
+  { term: "FT", definition: "Free Throws Made-Attempted" },
+  { term: "FT%", definition: "Free Throw Percentage" },
+  { term: "OR", definition: "Offensive Rebounds" },
+  { term: "DR", definition: "Defensive Rebounds" },
+  { term: "REB", definition: "Rebounds" },
+  { term: "AST", definition: "Assists" },
+  { term: "BLK", definition: "Blocks" },
+  { term: "STL", definition: "Steals" },
+  { term: "PF", definition: "Personal Fouls" },
+  { term: "TO", definition: "Turnovers" },
+  { term: "PTS", definition: "Points" },
+  { term: "DD2", definition: "Double Doubles" },
+  { term: "TD3", definition: "Triple Doubles" },
+  { term: "DQ", definition: "Disqualifications" },
+  { term: "EJECT", definition: "Ejections" },
+  { term: "TECH", definition: "Technical Fouls" },
+  { term: "FLAG", definition: "Flagrant Fouls" },
+  { term: "AST/TO", definition: "Assist to Turnover Ratio" },
+  { term: "STL/TO", definition: "Steal to Turnover Ratio" },
+  { term: "SC-EFF", definition: "Scoring Efficiency" },
+  { term: "SH-EFF", definition: "Shooting Efficiency" },
+];
+
+function StatsGlossary() {
+  return (
+    <section className="space-y-3 border-t border-neutral-800 pt-6">
+      <h2 className="text-lg font-medium text-neutral-300">Glossary</h2>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-2 text-sm">
+        {STATS_GLOSSARY.map(({ term, definition }) => (
+          <p key={term}>
+            <span className="text-neutral-200 font-medium">{term}</span>{" "}
+            <span className="text-neutral-500">— {definition}</span>
+          </p>
+        ))}
+      </div>
+    </section>
   );
 }
 
