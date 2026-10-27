@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { resolveTeamIdentities } from "@/lib/team-identity";
 import { getTeamLeaders } from "@/lib/espn-team-leaders";
+import { getUpcomingGames } from "@/lib/espn-schedule";
 import { NextResponse } from "next/server";
 
 // ESPN's own leaders endpoint is the source of truth for who leads the
@@ -34,6 +35,242 @@ function findStat(extraJson: string | null, statName: string): string | null {
 
 function fixed1(value: number | null | undefined): string | null {
   return value == null ? null : value.toFixed(1);
+}
+
+function findStatNumber(extraJson: string | null, statName: string): number | null {
+  const value = findStat(extraJson, statName);
+  if (value == null) return null;
+  const n = parseFloat(value);
+  return Number.isNaN(n) ? null : n;
+}
+
+// Extended per-player stat line for the team Stats tab's Player/Shooting
+// tables — the flat PlayerSeasonStat columns only cover the handful of
+// fields the leaders/roster UI needs, everything else lives in `extra`.
+function buildFullStat(extra: string | null) {
+  return {
+    gamesStarted: findStatNumber(extra, "gamesStarted"),
+    minutesPerGame: findStatNumber(extra, "avgMinutes"),
+    offReboundsPerGame: findStatNumber(extra, "avgOffensiveRebounds"),
+    defReboundsPerGame: findStatNumber(extra, "avgDefensiveRebounds"),
+    foulsPerGame: findStatNumber(extra, "avgFouls"),
+    assistTurnoverRatio: findStatNumber(extra, "assistTurnoverRatio"),
+    fgMadePerGame: findStatNumber(extra, "avgFieldGoalsMade"),
+    fgAttPerGame: findStatNumber(extra, "avgFieldGoalsAttempted"),
+    threeMadePerGame: findStatNumber(extra, "avgThreePointFieldGoalsMade"),
+    threeAttPerGame: findStatNumber(extra, "avgThreePointFieldGoalsAttempted"),
+    ftMadePerGame: findStatNumber(extra, "avgFreeThrowsMade"),
+    ftAttPerGame: findStatNumber(extra, "avgFreeThrowsAttempted"),
+    twoPointPct: findStatNumber(extra, "twoPointFieldGoalPct"),
+    twoMadePerGame: findStatNumber(extra, "avgTwoPointFieldGoalsMade"),
+    twoAttPerGame: findStatNumber(extra, "avgTwoPointFieldGoalsAttempted"),
+    scoringEfficiency: findStatNumber(extra, "scoringEfficiency"),
+    shootingEfficiency: findStatNumber(extra, "shootingEfficiency"),
+  };
+}
+
+type ScheduleGame = {
+  id: number;
+  date: Date;
+  status: string;
+  homeTeamId: number;
+  awayTeamId: number;
+  homeScore: number | null;
+  awayScore: number | null;
+};
+
+// Resolves a Splits-dropdown key to the set of this team's completed game
+// ids that satisfy it. "all" short-circuits to every completed game (the
+// season-aggregate PlayerSeasonStat row is used for that case instead of
+// this, so it never actually reaches here with games to filter).
+async function resolveSplitGameIds(
+  teamId: number,
+  schedule: ScheduleGame[],
+  split: string,
+  teamDivisionId: number | null,
+  teamConferenceId: number | null,
+): Promise<number[]> {
+  const finalGames = schedule.filter((g) => g.status === "FINAL");
+
+  if (split === "home") return finalGames.filter((g) => g.homeTeamId === teamId).map((g) => g.id);
+  if (split === "road") return finalGames.filter((g) => g.awayTeamId === teamId).map((g) => g.id);
+
+  if (split === "wins" || split === "losses") {
+    return finalGames
+      .filter((g) => {
+        const teamScore = g.homeTeamId === teamId ? g.homeScore : g.awayScore;
+        const oppScore = g.homeTeamId === teamId ? g.awayScore : g.homeScore;
+        if (teamScore == null || oppScore == null) return false;
+        return split === "wins" ? teamScore > oppScore : teamScore < oppScore;
+      })
+      .map((g) => g.id);
+  }
+
+  if (split.startsWith("month-")) {
+    const month = Number(split.slice("month-".length));
+    return finalGames.filter((g) => g.date.getUTCMonth() + 1 === month).map((g) => g.id);
+  }
+
+  if (split.startsWith("day-")) {
+    const day = Number(split.slice("day-".length));
+    return finalGames.filter((g) => g.date.getUTCDay() === day).map((g) => g.id);
+  }
+
+  if (split === "preAllStar" || split === "postAllStar") {
+    // No stored All-Star break date — approximate it as the chronological
+    // midpoint of this team's completed games for the season.
+    const sorted = finalGames.slice().sort((a, b) => a.date.getTime() - b.date.getTime());
+    const mid = Math.ceil(sorted.length / 2);
+    const half = split === "preAllStar" ? sorted.slice(0, mid) : sorted.slice(mid);
+    return half.map((g) => g.id);
+  }
+
+  if (split.startsWith("rest-")) {
+    const bucket = split.slice("rest-".length); // "0" | "1" | "2" | "3plus"
+    const sortedAll = schedule.slice().sort((a, b) => a.date.getTime() - b.date.getTime());
+    const restByGameId = new Map<number, number | null>();
+    for (let i = 0; i < sortedAll.length; i++) {
+      if (i === 0) {
+        restByGameId.set(sortedAll[i].id, null);
+        continue;
+      }
+      const days = Math.round((sortedAll[i].date.getTime() - sortedAll[i - 1].date.getTime()) / 86400000) - 1;
+      restByGameId.set(sortedAll[i].id, Math.max(days, 0));
+    }
+    return finalGames
+      .filter((g) => {
+        const rest = restByGameId.get(g.id);
+        if (rest == null) return false;
+        return bucket === "3plus" ? rest >= 3 : rest === Number(bucket);
+      })
+      .map((g) => g.id);
+  }
+
+  if (split === "vsDivision" || split === "vsConference") {
+    const opponentIds = [...new Set(finalGames.map((g) => (g.homeTeamId === teamId ? g.awayTeamId : g.homeTeamId)))];
+    const opponents = await prisma.team.findMany({
+      where: { id: { in: opponentIds } },
+      select: { id: true, divisionId: true, division: { select: { conferenceId: true } } },
+    });
+    const opponentById = new Map(opponents.map((o) => [o.id, o]));
+    return finalGames
+      .filter((g) => {
+        const oppId = g.homeTeamId === teamId ? g.awayTeamId : g.homeTeamId;
+        const opp = opponentById.get(oppId);
+        if (!opp) return false;
+        return split === "vsDivision" ? opp.divisionId === teamDivisionId : opp.division?.conferenceId === teamConferenceId;
+      })
+      .map((g) => g.id);
+  }
+
+  if (split.startsWith("vsTeam-")) {
+    const opponentTeamId = Number(split.slice("vsTeam-".length));
+    return finalGames
+      .filter((g) => (g.homeTeamId === teamId ? g.awayTeamId : g.homeTeamId) === opponentTeamId)
+      .map((g) => g.id);
+  }
+
+  return finalGames.map((g) => g.id);
+}
+
+type PlayerGameStatRow = {
+  playerId: number;
+  starter: boolean | null;
+  minutes: number | null;
+  points: number | null;
+  rebounds: number | null;
+  offensiveRebounds: number | null;
+  defensiveRebounds: number | null;
+  assists: number | null;
+  steals: number | null;
+  blocks: number | null;
+  turnovers: number | null;
+  fouls: number | null;
+  fgMade: number | null;
+  fgAtt: number | null;
+  threeMade: number | null;
+  threeAtt: number | null;
+  ftMade: number | null;
+  ftAtt: number | null;
+};
+
+type SplitStat = ReturnType<typeof buildFullStat> & {
+  gamesPlayed: number;
+  pointsPerGame: number;
+  reboundsPerGame: number;
+  assistsPerGame: number;
+  stealsPerGame: number;
+  blocksPerGame: number;
+  turnoversPerGame: number;
+  fieldGoalPct: number | null;
+  threePointPct: number | null;
+  freeThrowPct: number | null;
+};
+
+// Builds the same shape as `buildFullStat` + PlayerSeasonStat columns, but
+// computed on the fly from individual game logs for a non-"all" split.
+// `starter`/offensiveRebounds`/`defensiveRebounds` were added to
+// PlayerGameStat after many games were already ingested (see
+// backfill-game-stat-extras.ts) — games that predate the backfill still
+// have those columns null, so each is averaged/counted only over rows that
+// actually have it, falling back to null ("—" in the UI) if none do.
+// Efficiency formulas (SC-EFF/SH-EFF) aren't tracked per game at all.
+function aggregatePlayerGameStats(rows: PlayerGameStatRow[]): Map<number, SplitStat> {
+  const byPlayer = new Map<number, PlayerGameStatRow[]>();
+  for (const row of rows) {
+    const list = byPlayer.get(row.playerId) ?? [];
+    list.push(row);
+    byPlayer.set(row.playerId, list);
+  }
+
+  const result = new Map<number, SplitStat>();
+  for (const [playerId, playerRows] of byPlayer) {
+    const gp = playerRows.length;
+    const total = (pick: (r: PlayerGameStatRow) => number | null) => playerRows.reduce((acc, r) => acc + (pick(r) ?? 0), 0);
+    const avgOfKnown = (pick: (r: PlayerGameStatRow) => number | null) => {
+      const known = playerRows.filter((r) => pick(r) != null);
+      return known.length > 0 ? known.reduce((acc, r) => acc + (pick(r) ?? 0), 0) / known.length : null;
+    };
+    const totalFgm = total((r) => r.fgMade);
+    const totalFga = total((r) => r.fgAtt);
+    const total3m = total((r) => r.threeMade);
+    const total3a = total((r) => r.threeAtt);
+    const totalFtm = total((r) => r.ftMade);
+    const totalFta = total((r) => r.ftAtt);
+    const totalAst = total((r) => r.assists);
+    const totalTo = total((r) => r.turnovers);
+    const rowsWithStarterData = playerRows.filter((r) => r.starter != null);
+    result.set(playerId, {
+      gamesPlayed: gp,
+      gamesStarted: rowsWithStarterData.length > 0 ? rowsWithStarterData.filter((r) => r.starter).length : null,
+      minutesPerGame: total((r) => r.minutes) / gp,
+      pointsPerGame: total((r) => r.points) / gp,
+      offReboundsPerGame: avgOfKnown((r) => r.offensiveRebounds),
+      defReboundsPerGame: avgOfKnown((r) => r.defensiveRebounds),
+      reboundsPerGame: total((r) => r.rebounds) / gp,
+      assistsPerGame: totalAst / gp,
+      stealsPerGame: total((r) => r.steals) / gp,
+      blocksPerGame: total((r) => r.blocks) / gp,
+      turnoversPerGame: totalTo / gp,
+      foulsPerGame: total((r) => r.fouls) / gp,
+      assistTurnoverRatio: totalTo > 0 ? totalAst / totalTo : null,
+      fieldGoalPct: totalFga > 0 ? (totalFgm / totalFga) * 100 : null,
+      fgMadePerGame: totalFgm / gp,
+      fgAttPerGame: totalFga / gp,
+      threePointPct: total3a > 0 ? (total3m / total3a) * 100 : null,
+      threeMadePerGame: total3m / gp,
+      threeAttPerGame: total3a / gp,
+      freeThrowPct: totalFta > 0 ? (totalFtm / totalFta) * 100 : null,
+      ftMadePerGame: totalFtm / gp,
+      ftAttPerGame: totalFta / gp,
+      twoPointPct: totalFga - total3a > 0 ? ((totalFgm - total3m) / (totalFga - total3a)) * 100 : null,
+      twoMadePerGame: (totalFgm - total3m) / gp,
+      twoAttPerGame: (totalFga - total3a) / gp,
+      scoringEfficiency: null,
+      shootingEfficiency: null,
+    });
+  }
+  return result;
 }
 
 type LeaderSeasonStat = {
@@ -121,7 +358,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
       });
     }
 
-    const [identities, standing, teamSeasonStat, nbaCupStanding, players, schedule, divisionStandings, newsLinks] =
+    const [identities, standing, teamSeasonStat, nbaCupStanding, players, schedule, divisionStandings, newsLinks, allTeams] =
       await Promise.all([
         resolveTeamIdentities([id], season.year),
         prisma.standing.findUnique({ where: { teamId_seasonId: { teamId: id, seasonId: season.id } } }),
@@ -150,30 +387,136 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
           take: 8,
           include: { newsArticle: true },
         }),
+        prisma.team.findMany({ select: { id: true, espnId: true } }),
       ]);
 
     const identity = identities.get(id);
     const teamWithIdentity = identity ? { ...team, ...identity } : team;
 
-    const roster = players.map((p) => ({
-      id: p.id,
-      displayName: p.displayName,
-      jersey: p.jersey,
-      position: p.position,
-      seasonStat: p.playerSeasonStats[0] ?? null,
-    }));
+    const splitParam = searchParams.get("split") ?? "all";
+    let splitStatsByPlayerId: Map<number, SplitStat> | null = null;
+    if (splitParam !== "all") {
+      const gameIds = await resolveSplitGameIds(id, schedule, splitParam, team.divisionId, team.division?.conference.id ?? null);
+      const gameStats = await prisma.playerGameStat.findMany({ where: { teamId: id, gameId: { in: gameIds } } });
+      splitStatsByPlayerId = aggregatePlayerGameStats(gameStats);
+    }
 
-    // Opponents (schedule + division standings) should show the
-    // era-accurate identity for this season's year, same as the team header.
+    const roster = players.map((p) => {
+      const seasonStat = p.playerSeasonStats[0] ?? null;
+      const fullStat = splitStatsByPlayerId
+        ? splitStatsByPlayerId.get(p.id) ?? null
+        : seasonStat
+          ? { ...seasonStat, ...buildFullStat(seasonStat.extra) }
+          : null;
+      return {
+        id: p.id,
+        displayName: p.displayName,
+        jersey: p.jersey,
+        position: p.position,
+        seasonStat,
+        fullStat,
+      };
+    });
+
+    // `schedule` only has games `sync-completed-games.ts` has ingested,
+    // i.e. nothing that hasn't finished yet — fill the rest of the season
+    // in live from ESPN's team-schedule endpoint. Best-effort: an ESPN
+    // hiccup here shouldn't take down the whole page.
+    const knownEspnIds = new Set(schedule.map((g) => g.espnId));
+    const espnIdToTeamId = new Map(allTeams.map((t) => [t.espnId, t.id]));
+    let upcomingGames: Awaited<ReturnType<typeof getUpcomingGames>> = [];
+    try {
+      upcomingGames = await getUpcomingGames(team.espnId, season.year);
+    } catch {
+      upcomingGames = [];
+    }
+    const upcomingGamesResolved = upcomingGames
+      .filter((g) => !knownEspnIds.has(g.espnId))
+      .map((g) => ({
+        ...g,
+        homeTeamId: espnIdToTeamId.get(g.home.espnId) ?? null,
+        awayTeamId: espnIdToTeamId.get(g.away.espnId) ?? null,
+      }))
+      .filter(
+        (g): g is typeof g & { homeTeamId: number; awayTeamId: number } => g.homeTeamId != null && g.awayTeamId != null,
+      );
+
+    // Opponents (schedule + upcoming games + division standings) should
+    // show the era-accurate identity for this season's year, same as the
+    // team header.
     const opponentIds = [
-      ...new Set([...schedule.flatMap((g) => [g.homeTeamId, g.awayTeamId]), ...divisionStandings.map((s) => s.teamId)]),
+      ...new Set([
+        ...schedule.flatMap((g) => [g.homeTeamId, g.awayTeamId]),
+        ...upcomingGamesResolved.flatMap((g) => [g.homeTeamId, g.awayTeamId]),
+        ...divisionStandings.map((s) => s.teamId),
+      ]),
     ];
     const opponentIdentities = await resolveTeamIdentities(opponentIds, season.year);
+
+    // Per-game "Hi Points/Rebounds/Assists" for this team's own completed
+    // games — same box-score leaders ESPN's team schedule page shows next
+    // to each final score.
+    const finalGameIds = schedule.filter((g) => g.status === "FINAL").map((g) => g.id);
+    const gameStatRows = finalGameIds.length
+      ? await prisma.playerGameStat.findMany({
+          where: { teamId: id, gameId: { in: finalGameIds } },
+          select: {
+            gameId: true,
+            points: true,
+            rebounds: true,
+            assists: true,
+            player: { select: { id: true, displayName: true } },
+          },
+        })
+      : [];
+    type GameLeader = { playerId: number; displayName: string; value: number };
+    const gameLeadersById = new Map<number, { points: GameLeader | null; rebounds: GameLeader | null; assists: GameLeader | null }>();
+    for (const row of gameStatRows) {
+      const current = gameLeadersById.get(row.gameId) ?? { points: null, rebounds: null, assists: null };
+      const consider = (stat: "points" | "rebounds" | "assists") => {
+        const value = row[stat];
+        if (value == null) return;
+        if (current[stat] == null || value > current[stat]!.value) {
+          current[stat] = { playerId: row.player.id, displayName: row.player.displayName, value };
+        }
+      };
+      consider("points");
+      consider("rebounds");
+      consider("assists");
+      gameLeadersById.set(row.gameId, current);
+    }
+
     const scheduleWithIdentities = schedule.map((g) => ({
       ...g,
+      broadcast: null as string | null,
+      ticketLink: null as string | null,
+      ticketStartingPrice: null as number | null,
+      leaders: gameLeadersById.get(g.id) ?? null,
       homeTeam: { ...g.homeTeam, ...(opponentIdentities.get(g.homeTeamId) ?? {}) },
       awayTeam: { ...g.awayTeam, ...(opponentIdentities.get(g.awayTeamId) ?? {}) },
     }));
+    const upcomingSchedule = upcomingGamesResolved.map((g) => ({
+      // Negative, derived from the (numeric) ESPN event id so it can never
+      // collide with a real autoincrement `Game.id` — these rows don't
+      // exist in the DB yet, there's nothing else to key them by.
+      id: -Number(g.espnId),
+      espnId: g.espnId,
+      date: g.date,
+      status: g.status,
+      broadcast: g.broadcast,
+      ticketLink: g.ticketLink,
+      ticketStartingPrice: g.ticketStartingPrice,
+      leaders: null,
+      homeScore: null,
+      awayScore: null,
+      homeTeamId: g.homeTeamId,
+      awayTeamId: g.awayTeamId,
+      homeTeam: { id: g.homeTeamId, ...opponentIdentities.get(g.homeTeamId) },
+      awayTeam: { id: g.awayTeamId, ...opponentIdentities.get(g.awayTeamId) },
+    }));
+    const fullSchedule = [...scheduleWithIdentities, ...upcomingSchedule].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    );
     const divisionStandingsWithIdentities = divisionStandings.map((s) => ({
       ...s,
       team: { ...s.team, ...(opponentIdentities.get(s.teamId) ?? {}) },
@@ -223,6 +566,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
       const secondaryDefs = LEADER_SECONDARY_STATS[key] ?? [];
       return {
         group,
+        key,
         statName: entry?.categoryDisplayName ?? key,
         player: player
           ? {
@@ -247,7 +591,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
       extendedStats,
       nbaCupStanding,
       roster,
-      schedule: scheduleWithIdentities,
+      schedule: fullSchedule,
       divisionStandings: divisionStandingsWithIdentities,
       news,
       teamLeaders,

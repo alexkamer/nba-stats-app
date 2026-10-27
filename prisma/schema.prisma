@@ -234,52 +234,57 @@ model Play {
 }
 
 model TeamGameStat {
-  id        Int  @id @default(autoincrement())
-  gameId    Int  @map("game_id")
-  game      Game @relation(fields: [gameId], references: [id])
-  teamId    Int  @map("team_id")
-  team      Team @relation(fields: [teamId], references: [id])
-  points    Int?
-  rebounds  Int?
-  assists   Int?
-  steals    Int?
-  blocks    Int?
-  turnovers Int?
-  fouls     Int?
-  fgMade    Int? @map("fg_made")
-  fgAtt     Int? @map("fg_att")
-  threeMade Int? @map("three_made")
-  threeAtt  Int? @map("three_att")
-  ftMade    Int? @map("ft_made")
-  ftAtt     Int? @map("ft_att")
+  id                Int  @id @default(autoincrement())
+  gameId            Int  @map("game_id")
+  game              Game @relation(fields: [gameId], references: [id])
+  teamId            Int  @map("team_id")
+  team              Team @relation(fields: [teamId], references: [id])
+  points            Int?
+  rebounds          Int?
+  offensiveRebounds Int? @map("offensive_rebounds")
+  defensiveRebounds Int? @map("defensive_rebounds")
+  assists           Int?
+  steals            Int?
+  blocks            Int?
+  turnovers         Int?
+  fouls             Int?
+  fgMade            Int? @map("fg_made")
+  fgAtt             Int? @map("fg_att")
+  threeMade         Int? @map("three_made")
+  threeAtt          Int? @map("three_att")
+  ftMade            Int? @map("ft_made")
+  ftAtt             Int? @map("ft_att")
 
   @@unique([gameId, teamId])
   @@map("team_game_stat")
 }
 
 model PlayerGameStat {
-  id        Int    @id @default(autoincrement())
-  gameId    Int    @map("game_id")
-  game      Game   @relation(fields: [gameId], references: [id])
-  playerId  Int    @map("player_id")
-  player    Player @relation(fields: [playerId], references: [id])
-  teamId    Int    @map("team_id")
-  team      Team   @relation(fields: [teamId], references: [id])
-  minutes   Int?
-  points    Int?
-  rebounds  Int?
-  assists   Int?
-  steals    Int?
-  blocks    Int?
-  turnovers Int?
-  fouls     Int?
-  fgMade    Int?   @map("fg_made")
-  fgAtt     Int?   @map("fg_att")
-  threeMade Int?   @map("three_made")
-  threeAtt  Int?   @map("three_att")
-  ftMade    Int?   @map("ft_made")
-  ftAtt     Int?   @map("ft_att")
-  plusMinus Int?   @map("plus_minus")
+  id                Int     @id @default(autoincrement())
+  gameId            Int     @map("game_id")
+  game              Game    @relation(fields: [gameId], references: [id])
+  playerId          Int     @map("player_id")
+  player            Player  @relation(fields: [playerId], references: [id])
+  teamId            Int     @map("team_id")
+  team              Team    @relation(fields: [teamId], references: [id])
+  starter           Boolean?
+  minutes           Int?
+  points            Int?
+  rebounds          Int?
+  offensiveRebounds Int?    @map("offensive_rebounds")
+  defensiveRebounds Int?    @map("defensive_rebounds")
+  assists           Int?
+  steals            Int?
+  blocks            Int?
+  turnovers         Int?
+  fouls             Int?
+  fgMade            Int?    @map("fg_made")
+  fgAtt             Int?    @map("fg_att")
+  threeMade         Int?    @map("three_made")
+  threeAtt          Int?    @map("three_att")
+  ftMade            Int?    @map("ft_made")
+  ftAtt             Int?    @map("ft_att")
+  plusMinus         Int?    @map("plus_minus")
 
   @@unique([gameId, playerId])
   @@map("player_game_stat")

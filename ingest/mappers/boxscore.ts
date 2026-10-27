@@ -20,6 +20,7 @@ export interface EspnBoxscoreAthleteEntry {
     jersey?: string;
     position?: { name: string; abbreviation: string };
   };
+  starter?: boolean;
   didNotPlay?: boolean;
   stats: string[];
 }
@@ -39,6 +40,8 @@ export interface TeamGameStatInput {
   teamId: number;
   points: number | null;
   rebounds: number | null;
+  offensiveRebounds: number | null;
+  defensiveRebounds: number | null;
   assists: number | null;
   steals: number | null;
   blocks: number | null;
@@ -56,9 +59,12 @@ export interface PlayerGameStatInput {
   gameId: number;
   playerId: number;
   teamId: number;
+  starter: boolean | null;
   minutes: number | null;
   points: number | null;
   rebounds: number | null;
+  offensiveRebounds: number | null;
+  defensiveRebounds: number | null;
   assists: number | null;
   steals: number | null;
   blocks: number | null;
@@ -107,6 +113,8 @@ export function mapTeamGameStat(
     teamId,
     points,
     rebounds: toNumberOrNull(statValue(stats, "totalRebounds")),
+    offensiveRebounds: toNumberOrNull(statValue(stats, "offensiveRebounds")),
+    defensiveRebounds: toNumberOrNull(statValue(stats, "defensiveRebounds")),
     assists: toNumberOrNull(statValue(stats, "assists")),
     steals: toNumberOrNull(statValue(stats, "steals")),
     blocks: toNumberOrNull(statValue(stats, "blocks")),
@@ -143,9 +151,12 @@ export function mapPlayerGameStat(
       gameId,
       playerId,
       teamId,
+      starter: entry.starter ?? null,
       minutes: 0,
       points: null,
       rebounds: null,
+      offensiveRebounds: null,
+      defensiveRebounds: null,
       assists: null,
       steals: null,
       blocks: null,
@@ -170,9 +181,12 @@ export function mapPlayerGameStat(
     gameId,
     playerId,
     teamId,
+    starter: entry.starter ?? null,
     minutes: toNumberOrNull(byKey["minutes"]),
     points: toNumberOrNull(byKey["points"]),
     rebounds: toNumberOrNull(byKey["rebounds"]),
+    offensiveRebounds: toNumberOrNull(byKey["offensiveRebounds"]),
+    defensiveRebounds: toNumberOrNull(byKey["defensiveRebounds"]),
     assists: toNumberOrNull(byKey["assists"]),
     steals: toNumberOrNull(byKey["steals"]),
     blocks: toNumberOrNull(byKey["blocks"]),
