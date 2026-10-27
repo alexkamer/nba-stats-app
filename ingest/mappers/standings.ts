@@ -57,6 +57,8 @@ export interface StandingUpsertInput {
   streak: string | null;
   homeRecord: string | null;
   awayRecord: string | null;
+  divRecord: string | null;
+  confRecord: string | null;
   lastTen: string | null;
 }
 
@@ -91,6 +93,8 @@ export function mapStanding(
     streak: streakValue !== null ? String(streakValue) : null,
     homeRecord: findRecord(entry, "Home")?.summary ?? null,
     awayRecord: findRecord(entry, "Road")?.summary ?? null,
+    divRecord: findRecord(entry, "vs. Div.")?.summary ?? null,
+    confRecord: findRecord(entry, "vs. Conf.")?.summary ?? null,
     lastTen: findRecord(entry, "Last Ten Games")?.summary ?? null,
   };
 }

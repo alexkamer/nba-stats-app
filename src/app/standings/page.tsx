@@ -14,6 +14,13 @@ interface Standing {
   winPct: number | null;
   gamesBehind: number | null;
   streak: string | null;
+  homeRecord: string | null;
+  awayRecord: string | null;
+  divRecord: string | null;
+  confRecord: string | null;
+  lastTen: string | null;
+  pointsPerGame: number | null;
+  oppPointsPerGame: number | null;
   team: {
     id: number;
     displayName: string;
@@ -44,6 +51,12 @@ function formatStreak(streak: string | null): string {
   if (streak === null) return "";
   if (streak.startsWith("-")) return `L${streak.slice(1)}`;
   return `W${streak}`;
+}
+
+function formatDiff(ppg: number | null, oppPpg: number | null): string {
+  if (ppg === null || oppPpg === null) return "";
+  const diff = ppg - oppPpg;
+  return `${diff >= 0 ? "+" : ""}${diff.toFixed(1)}`;
 }
 
 async function fetchStandings(year: number | null): Promise<StandingsResponse> {
@@ -144,51 +157,63 @@ export default function StandingsPage() {
           )}
         </div>
       </div>
-      <div
-        className={
-          viewMode === "league"
-            ? "max-w-2xl"
-            : viewMode === "conference"
-              ? "grid md:grid-cols-2 gap-8"
-              : "grid md:grid-cols-2 lg:grid-cols-3 gap-8"
-        }
-      >
+      {/* One table per group, stacked vertically — with this many columns,
+          side-by-side grids get too cramped to read. */}
+      <div className="space-y-8">
         {groups.map((group) => (
           <section key={group.groupName}>
             <h2 className="text-lg font-medium text-neutral-300 mb-3">{group.groupName}</h2>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-neutral-500 border-b border-neutral-800">
-                  <th className="py-2 pr-2">#</th>
-                  <th className="py-2 pr-2">Team</th>
-                  <th className="py-2 pr-2 text-right">W</th>
-                  <th className="py-2 pr-2 text-right">L</th>
-                  <th className="py-2 pr-2 text-right">PCT</th>
-                  <th className="py-2 pr-2 text-right">GB</th>
-                  <th className="py-2 text-right">Streak</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.standings
-                  .slice()
-                  .sort((a, b) => (a[rankField] ?? 0) - (b[rankField] ?? 0))
-                  .map((s) => (
-                    <tr key={s.id} className="border-b border-neutral-900">
-                      <td className="py-2 pr-2 text-neutral-500">{s[rankField]}</td>
-                      <td className="py-2 pr-2">
-                        <Link href={`/teams/${s.team.id}`} className="hover:text-neutral-100">
-                          {s.team.displayName}
-                        </Link>
-                      </td>
-                      <td className="py-2 pr-2 text-right">{s.wins}</td>
-                      <td className="py-2 pr-2 text-right">{s.losses}</td>
-                      <td className="py-2 pr-2 text-right">{s.winPct?.toFixed(3)}</td>
-                      <td className="py-2 pr-2 text-right">{s.gamesBehind}</td>
-                      <td className="py-2 text-right">{formatStreak(s.streak)}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm whitespace-nowrap">
+                <thead>
+                  <tr className="text-left text-neutral-500 border-b border-neutral-800">
+                    <th className="py-2 pr-3">#</th>
+                    <th className="py-2 pr-3">Team</th>
+                    <th className="py-2 pr-3 text-right">W</th>
+                    <th className="py-2 pr-3 text-right">L</th>
+                    <th className="py-2 pr-3 text-right">PCT</th>
+                    <th className="py-2 pr-3 text-right">GB</th>
+                    <th className="py-2 pr-3 text-right">HOME</th>
+                    <th className="py-2 pr-3 text-right">AWAY</th>
+                    <th className="py-2 pr-3 text-right">DIV</th>
+                    <th className="py-2 pr-3 text-right">CONF</th>
+                    <th className="py-2 pr-3 text-right">PPG</th>
+                    <th className="py-2 pr-3 text-right">OPP PPG</th>
+                    <th className="py-2 pr-3 text-right">DIFF</th>
+                    <th className="py-2 pr-3 text-right">STRK</th>
+                    <th className="py-2 text-right">L10</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.standings
+                    .slice()
+                    .sort((a, b) => (a[rankField] ?? 0) - (b[rankField] ?? 0))
+                    .map((s) => (
+                      <tr key={s.id} className="border-b border-neutral-900">
+                        <td className="py-2 pr-3 text-neutral-500">{s[rankField]}</td>
+                        <td className="py-2 pr-3">
+                          <Link href={`/teams/${s.team.id}`} className="hover:text-neutral-100">
+                            {s.team.displayName}
+                          </Link>
+                        </td>
+                        <td className="py-2 pr-3 text-right">{s.wins}</td>
+                        <td className="py-2 pr-3 text-right">{s.losses}</td>
+                        <td className="py-2 pr-3 text-right">{s.winPct?.toFixed(3)}</td>
+                        <td className="py-2 pr-3 text-right">{s.gamesBehind}</td>
+                        <td className="py-2 pr-3 text-right">{s.homeRecord}</td>
+                        <td className="py-2 pr-3 text-right">{s.awayRecord}</td>
+                        <td className="py-2 pr-3 text-right">{s.divRecord}</td>
+                        <td className="py-2 pr-3 text-right">{s.confRecord}</td>
+                        <td className="py-2 pr-3 text-right">{s.pointsPerGame?.toFixed(1)}</td>
+                        <td className="py-2 pr-3 text-right">{s.oppPointsPerGame?.toFixed(1)}</td>
+                        <td className="py-2 pr-3 text-right">{formatDiff(s.pointsPerGame, s.oppPointsPerGame)}</td>
+                        <td className="py-2 pr-3 text-right">{formatStreak(s.streak)}</td>
+                        <td className="py-2 text-right">{s.lastTen}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
           </section>
         ))}
       </div>

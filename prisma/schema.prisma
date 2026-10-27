@@ -317,6 +317,8 @@ model Standing {
   streak         String?
   homeRecord     String? @map("home_record")
   awayRecord     String? @map("away_record")
+  divRecord      String? @map("div_record")
+  confRecord     String? @map("conf_record")
   lastTen        String? @map("last_ten")
 
   @@unique([teamId, seasonId])
