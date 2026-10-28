@@ -230,6 +230,7 @@ model Play {
   awayScore      Int?    @map("away_score")
   scoringPlay    Boolean @default(false) @map("scoring_play")
 
+  @@index([gameId, sequenceNumber])
   @@map("play")
 }
 
