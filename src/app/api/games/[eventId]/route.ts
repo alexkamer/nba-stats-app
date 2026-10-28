@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { getLiveGameDetail } from "@/lib/espn-live";
+import { getGameHeaderExtras, getLiveGameDetail } from "@/lib/espn-live";
 import { resolveTeamIdentities } from "@/lib/team-identity";
 import { NextResponse } from "next/server";
 
@@ -29,7 +29,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
       // Team espnIds are stable across relocation/rename (e.g. Seattle
       // SuperSonics -> OKC Thunder) — show the era-accurate name/logo for
       // this game's season year rather than always the current branding.
-      const identities = await resolveTeamIdentities([game.homeTeamId, game.awayTeamId], game.season.year);
+      const [identities, headerExtras] = await Promise.all([
+        resolveTeamIdentities([game.homeTeamId, game.awayTeamId], game.season.year),
+        getGameHeaderExtras(eventId),
+      ]);
       const homeIdentity = identities.get(game.homeTeamId);
       const awayIdentity = identities.get(game.awayTeamId);
       const gameWithIdentity = {
@@ -40,6 +43,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
           const identity = identities.get(s.teamId);
           return identity ? { ...s, team: { ...s.team, ...identity } } : s;
         }),
+        // Period scores / records are never persisted (SPEC.md Sec 6 has no
+        // linescore/record columns) — pulled live from ESPN regardless of
+        // whether the rest of the page is DB-sourced.
+        headerExtras,
       };
       return NextResponse.json({ game: gameWithIdentity, source: "db" });
     }
