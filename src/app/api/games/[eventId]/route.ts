@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { getGameHeaderExtras, getLiveGameDetail } from "@/lib/espn-live";
+import { getGameHeaderExtras, getLiveGameDetail, getWinProbability } from "@/lib/espn-live";
 import { resolveTeamIdentities } from "@/lib/team-identity";
 import { NextResponse } from "next/server";
 
@@ -29,9 +29,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
       // Team espnIds are stable across relocation/rename (e.g. Seattle
       // SuperSonics -> OKC Thunder) — show the era-accurate name/logo for
       // this game's season year rather than always the current branding.
-      const [identities, headerExtras] = await Promise.all([
+      const [identities, headerExtras, winProbability] = await Promise.all([
         resolveTeamIdentities([game.homeTeamId, game.awayTeamId], game.season.year),
         getGameHeaderExtras(eventId),
+        getWinProbability(eventId),
       ]);
       const homeIdentity = identities.get(game.homeTeamId);
       const awayIdentity = identities.get(game.awayTeamId);
@@ -47,6 +48,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
         // linescore/record columns) — pulled live from ESPN regardless of
         // whether the rest of the page is DB-sourced.
         headerExtras,
+        winProbability,
       };
       return NextResponse.json({ game: gameWithIdentity, source: "db" });
     }

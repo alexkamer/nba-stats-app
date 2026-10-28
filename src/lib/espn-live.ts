@@ -38,10 +38,32 @@ interface EspnScoreboardResponse {
   events: EspnScoreboardEvent[];
 }
 
+interface EspnWinProbabilityEntry {
+  homeWinPercentage: number;
+  tiePercentage: number;
+  playId: string;
+}
+
 interface EspnSummaryResponse {
   boxscore: EspnBoxscore;
   plays: EspnPlay[];
   pickcenter?: EspnPickcenterEntry[];
+  winprobability?: EspnWinProbabilityEntry[];
+}
+
+// Keyed by playId so the frontend can zip it against `plays[].espnId` —
+// never persisted (SPEC.md Sec 6 has no column for it), so both DB- and
+// live-sourced games pull this live from ESPN same as HeaderExtras.
+export interface WinProbabilityPoint {
+  playId: string;
+  homeWinPercentage: number;
+}
+
+function extractWinProbability(summary: { winprobability?: EspnWinProbabilityEntry[] }): WinProbabilityPoint[] {
+  return (summary.winprobability ?? []).map((entry) => ({
+    playId: entry.playId,
+    homeWinPercentage: entry.homeWinPercentage,
+  }));
 }
 
 export interface LiveOdds {
@@ -217,6 +239,15 @@ export async function getGameHeaderExtras(eventId: string): Promise<HeaderExtras
   }
 }
 
+export async function getWinProbability(eventId: string): Promise<WinProbabilityPoint[] | null> {
+  try {
+    const summary = await fetchEspnJson<{ winprobability?: EspnWinProbabilityEntry[] }>(espnEndpoints.summary(eventId));
+    return extractWinProbability(summary);
+  } catch {
+    return null;
+  }
+}
+
 export interface ScoreboardGameCard {
   espnId: string;
   date: string;
@@ -279,6 +310,7 @@ export interface LiveGameDetail {
   plays: ReturnType<typeof mapPlay>[];
   odds: LiveOdds | null;
   headerExtras: HeaderExtras;
+  winProbability: WinProbabilityPoint[];
 }
 
 /** Fetches a game live from ESPN and reshapes it into roughly the same
@@ -377,5 +409,6 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
     plays,
     odds,
     headerExtras: extractHeaderExtras(competition, summary),
+    winProbability: extractWinProbability(summary),
   };
 }

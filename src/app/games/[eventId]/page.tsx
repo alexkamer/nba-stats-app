@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useId, useState } from "react";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
 
 // The API returns one of two shapes depending on whether the game has been
@@ -84,6 +84,7 @@ interface DbGame {
   plays: PlayFields[];
   odds: DbOdds | null;
   headerExtras: HeaderExtras | null;
+  winProbability: WinProbabilityPoint[] | null;
 }
 
 interface LiveGame {
@@ -101,6 +102,7 @@ interface LiveGame {
   plays: PlayFields[];
   odds: LiveOdds | null;
   headerExtras: HeaderExtras;
+  winProbability: WinProbabilityPoint[];
 }
 
 interface TeamStatFields {
@@ -144,12 +146,21 @@ interface PlayerLeaderRow extends PlayerStatFields {
 
 interface PlayFields {
   id?: number;
+  espnId: string;
   period: number | null;
   clock: string | null;
   description: string | null;
   homeScore: number | null;
   awayScore: number | null;
   scoringPlay: boolean;
+}
+
+// Never persisted (SPEC.md Sec 6 has no column for it) — pulled live from
+// ESPN for both DB- and live-sourced games, keyed by playId so it can be
+// zipped against `plays[].espnId`.
+interface WinProbabilityPoint {
+  playId: string;
+  homeWinPercentage: number;
 }
 
 type TabKey = "gamecast" | "recap" | "boxscore" | "playbyplay" | "teamstats";
@@ -304,6 +315,7 @@ function GameDetailContent() {
 
   const plays = game.plays.map((p, i) => ({ ...p, key: p.id ?? i }));
   const visiblePlays = showAllPlays ? plays : plays.slice(-20);
+  const winProbability = (game as DbGame | LiveGame).winProbability ?? [];
 
   const awayPlayerRows = playerRowsByTeam(away.abbreviation, away.linkId);
   const homePlayerRows = playerRowsByTeam(home.abbreviation, home.linkId);
@@ -333,7 +345,9 @@ function GameDetailContent() {
               <TeamStatsCard away={away} home={home} awayStats={awayTeamStats} homeStats={homeTeamStats} />
               {headerExtras?.gameInfo && <GameInformationCard date={game.date} gameInfo={headerExtras.gameInfo} />}
             </div>
-            <div />
+            <div className="space-y-6">
+              <ProbabilityGameFlowCard away={away} home={home} plays={plays} winProbability={winProbability} />
+            </div>
             <div className="space-y-6">
               <OddsPanel away={away} home={home} odds={odds} />
               {headerExtras?.seasonSeries && (
@@ -911,6 +925,464 @@ function OddsPanel({ away, home, odds }: { away: ScoreboardTeam; home: Scoreboar
       ) : (
         <p className="px-4 py-3 text-sm text-neutral-500">No odds available for this game.</p>
       )}
+    </div>
+  );
+}
+
+const CHART_WIDTH = 400;
+const CHART_HEIGHT = 140;
+
+// "1st/2nd/3rd/4th/OT", distinct from periodLabel's plain "1/2/3/4/OT" used
+// in the header's linescore table columns.
+function ordinalPeriodLabel(index: number): string {
+  if (index === 4) return "OT";
+  if (index > 4) return `OT${index - 3}`;
+  return ["1st", "2nd", "3rd", "4th"][index];
+}
+
+function periodTicks(items: { period: number | null }[]): { label: string; x: number }[] {
+  if (items.length < 2) return [];
+  const seen = new Set<number>();
+  const ticks: { label: string; x: number }[] = [];
+  items.forEach((item, i) => {
+    if (item.period !== null && !seen.has(item.period)) {
+      seen.add(item.period);
+      ticks.push({ label: ordinalPeriodLabel(item.period - 1), x: i / (items.length - 1) });
+    }
+  });
+  return ticks;
+}
+
+interface ProbabilityPoint extends PlayFields {
+  homeWinPct: number;
+}
+
+// Win probability is never persisted (SPEC.md Sec 6 has no column for it) —
+// zipped here against this game's plays by espnId/playId, both pulled live.
+// Carries the full play along so hovering a point can drive the shared
+// last-play info bar below the chart.
+function buildWinProbabilitySeries(plays: PlayFields[], winProbability: WinProbabilityPoint[]): ProbabilityPoint[] {
+  if (winProbability.length === 0) return [];
+  const pctByPlayId = new Map(winProbability.map((w) => [w.playId, w.homeWinPercentage]));
+  return plays
+    .filter((p) => pctByPlayId.has(p.espnId))
+    .map((p) => ({ ...p, homeWinPct: (pctByPlayId.get(p.espnId) ?? 0.5) * 100 }));
+}
+
+// ESPN's play-by-play feed occasionally cuts off before the actual final
+// play (seen on some OT games — the last logged play's score trails the
+// real final score by several points), which would otherwise leave both
+// charts' last point short of the true result. If the series' last score
+// doesn't match the scoreboard's final score, append a synthetic "End of
+// Game" point snapped to it.
+function withFinalScoreFallback<T extends PlayFields>(
+  series: T[],
+  finalHome: number | null,
+  finalAway: number | null,
+  extra?: (last: T) => Partial<T>,
+): T[] {
+  if (series.length === 0 || finalHome === null || finalAway === null) return series;
+  const last = series[series.length - 1];
+  if (last.homeScore === finalHome && last.awayScore === finalAway) return series;
+  return [
+    ...series,
+    {
+      ...last,
+      ...(extra ? extra(last) : null),
+      description: "End of Game",
+      homeScore: finalHome,
+      awayScore: finalAway,
+    },
+  ];
+}
+
+// Translates mouse position over the chart into a data index — a fraction
+// of the hovered element's rendered width (0-1), independent of the SVG's
+// internal viewBox units, so it's unaffected by the non-uniform CSS scaling
+// `preserveAspectRatio="none"` applies. Hover state itself lives in the
+// parent card so both the chart and the percentage/last-play text below it
+// can react to the same index.
+function hoverIndexFromEvent(e: { currentTarget: HTMLElement; clientX: number }, length: number): number {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const fraction = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+  return Math.round(fraction * (length - 1));
+}
+
+function TeamProbabilityRow({ team }: { team: ScoreboardTeam }) {
+  return (
+    <div className="flex items-center gap-2">
+      {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-6 w-6 object-contain" />}
+      <span className="text-sm font-medium text-neutral-300">{team.abbreviation}</span>
+      <span className="h-0.5 w-4 rounded" style={{ backgroundColor: team.color ?? "#737373" }} />
+    </div>
+  );
+}
+
+// The fill/line color flips at the 50% baseline — same shape clipped to its
+// top half (home color, home favored) vs bottom half (away color, away
+// favored) rather than computing separate polygons per crossing.
+function ProbabilityChart({
+  series,
+  homeColor,
+  awayColor,
+  hoverIndex,
+  onHover,
+}: {
+  series: ProbabilityPoint[];
+  homeColor: string;
+  awayColor: string;
+  hoverIndex: number | null;
+  onHover: (index: number | null) => void;
+}) {
+  const clipId = useId();
+  const baseline = CHART_HEIGHT / 2;
+  // Top of the chart tracks the away team (whose row sits above it), bottom
+  // tracks home — so the away row is high when the line is high, not when
+  // home's win% happens to be low.
+  const points = series.map((s, i) => ({
+    x: (i / Math.max(series.length - 1, 1)) * CHART_WIDTH,
+    y: (s.homeWinPct / 100) * CHART_HEIGHT,
+  }));
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const last = points[points.length - 1];
+  const first = points[0];
+  const areaPath = `${linePath} L${last.x.toFixed(1)},${baseline} L${first.x.toFixed(1)},${baseline} Z`;
+  const ticks = periodTicks(series);
+  const hovered = hoverIndex !== null ? points[hoverIndex] ?? null : null;
+
+  return (
+    <div className="px-4 py-2">
+      <div
+        className="relative"
+        onMouseMove={(e) => onHover(hoverIndexFromEvent(e, series.length))}
+        onMouseLeave={() => onHover(null)}
+      >
+        <svg
+          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+          preserveAspectRatio="none"
+          className="h-36 w-full overflow-visible"
+        >
+          <defs>
+            <clipPath id={`${clipId}-top`}>
+              <rect x="0" y="0" width={CHART_WIDTH} height={baseline} />
+            </clipPath>
+            <clipPath id={`${clipId}-bottom`}>
+              <rect x="0" y={baseline} width={CHART_WIDTH} height={baseline} />
+            </clipPath>
+          </defs>
+          <line
+            x1="0"
+            y1={baseline}
+            x2={CHART_WIDTH}
+            y2={baseline}
+            stroke="#404040"
+            strokeDasharray="2,3"
+            vectorEffect="non-scaling-stroke"
+          />
+          <path d={areaPath} fill={awayColor} opacity={0.18} clipPath={`url(#${clipId}-top)`} />
+          <path d={areaPath} fill={homeColor} opacity={0.18} clipPath={`url(#${clipId}-bottom)`} />
+          <path
+            d={linePath}
+            fill="none"
+            stroke={awayColor}
+            strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke"
+            clipPath={`url(#${clipId}-top)`}
+          />
+          <path
+            d={linePath}
+            fill="none"
+            stroke={homeColor}
+            strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke"
+            clipPath={`url(#${clipId}-bottom)`}
+          />
+        </svg>
+        {/* Permanent marker on the final result — visible with or without
+            hover, so the winner's end-of-game value is never missed. */}
+        <div
+          className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-neutral-950"
+          style={{
+            left: `${(last.x / CHART_WIDTH) * 100}%`,
+            top: `${(last.y / CHART_HEIGHT) * 100}%`,
+            backgroundColor: last.y <= baseline ? awayColor : homeColor,
+          }}
+        />
+        {hovered && (
+          <>
+            <div
+              className="absolute top-0 bottom-0 w-px bg-neutral-600"
+              style={{ left: `${(hovered.x / CHART_WIDTH) * 100}%` }}
+            />
+            <div
+              className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-neutral-950 bg-neutral-100"
+              style={{ left: `${(hovered.x / CHART_WIDTH) * 100}%`, top: `${(hovered.y / CHART_HEIGHT) * 100}%` }}
+            />
+          </>
+        )}
+      </div>
+      <div className="relative mt-1 h-4 text-[10px] text-neutral-500">
+        {ticks.map((t) => (
+          <span key={t.label + t.x} className="absolute -translate-x-1/2" style={{ left: `${t.x * 100}%` }}>
+            {t.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ESPN's play-by-play feed occasionally logs a play (e.g. a turnover) with a
+// stale score snapshot lower than the previous play's — a score can only
+// ever go up, so each line is forced to a running max to avoid a fake dip.
+function runningMax(values: number[]): number[] {
+  let max = -Infinity;
+  return values.map((v) => (max = Math.max(max, v)));
+}
+
+function GameFlowChart({
+  plays,
+  homeColor,
+  awayColor,
+  hoverIndex,
+  onHover,
+}: {
+  plays: PlayFields[];
+  homeColor: string;
+  awayColor: string;
+  hoverIndex: number | null;
+  onHover: (index: number | null) => void;
+}) {
+  const homeScores = runningMax(plays.map((p) => p.homeScore ?? 0));
+  const awayScores = runningMax(plays.map((p) => p.awayScore ?? 0));
+  const maxScore = Math.max(1, ...homeScores, ...awayScores);
+  const toPoints = (scores: number[]) =>
+    scores.map((score, i) => ({
+      x: (i / Math.max(plays.length - 1, 1)) * CHART_WIDTH,
+      y: CHART_HEIGHT - (score / maxScore) * CHART_HEIGHT,
+    }));
+  const homePoints = toPoints(homeScores);
+  const awayPoints = toPoints(awayScores);
+  const toPath = (points: { x: number; y: number }[]) =>
+    points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const ticks = periodTicks(plays);
+  const hoveredHome = hoverIndex !== null ? homePoints[hoverIndex] ?? null : null;
+  const hoveredAway = hoverIndex !== null ? awayPoints[hoverIndex] ?? null : null;
+
+  return (
+    <div className="px-4 py-2">
+      <div
+        className="relative"
+        onMouseMove={(e) => onHover(hoverIndexFromEvent(e, plays.length))}
+        onMouseLeave={() => onHover(null)}
+      >
+        <svg
+          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+          preserveAspectRatio="none"
+          className="h-36 w-full overflow-visible"
+        >
+          <path d={toPath(awayPoints)} fill="none" stroke={awayColor} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+          <path
+            d={toPath(homePoints)}
+            fill="none"
+            stroke={homeColor}
+            strokeWidth={1.5}
+            strokeDasharray="3,2"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+        {hoveredHome && hoveredAway && (
+          <>
+            <div
+              className="absolute top-0 bottom-0 w-px bg-neutral-600"
+              style={{ left: `${(hoveredHome.x / CHART_WIDTH) * 100}%` }}
+            />
+            <div
+              className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-neutral-950"
+              style={{
+                left: `${(hoveredAway.x / CHART_WIDTH) * 100}%`,
+                top: `${(hoveredAway.y / CHART_HEIGHT) * 100}%`,
+                backgroundColor: awayColor,
+              }}
+            />
+            <div
+              className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-neutral-950"
+              style={{
+                left: `${(hoveredHome.x / CHART_WIDTH) * 100}%`,
+                top: `${(hoveredHome.y / CHART_HEIGHT) * 100}%`,
+                backgroundColor: homeColor,
+              }}
+            />
+          </>
+        )}
+      </div>
+      <div className="relative mt-1 h-4 text-[10px] text-neutral-500">
+        {ticks.map((t) => (
+          <span key={t.label + t.x} className="absolute -translate-x-1/2" style={{ left: `${t.x * 100}%` }}>
+            {t.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProbabilityGameFlowCard({
+  away,
+  home,
+  plays,
+  winProbability,
+}: {
+  away: ScoreboardTeam;
+  home: ScoreboardTeam;
+  plays: (PlayFields & { key: number })[];
+  winProbability: WinProbabilityPoint[];
+}) {
+  const [tab, setTab] = useState<"winprob" | "gameflow">("winprob");
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  const scoredPlaysRaw = plays.filter((p) => p.homeScore !== null && p.awayScore !== null);
+  if (scoredPlaysRaw.length === 0) return null;
+  const scoredPlays = withFinalScoreFallback(scoredPlaysRaw, home.score, away.score);
+
+  const probSeriesRaw = buildWinProbabilitySeries(plays, winProbability);
+  const probSeries = withFinalScoreFallback(probSeriesRaw, home.score, away.score, (last) => ({
+    homeWinPct:
+      home.score !== null && away.score !== null
+        ? home.score > away.score
+          ? 100
+          : home.score < away.score
+            ? 0
+            : last.homeWinPct
+        : last.homeWinPct,
+  }));
+  const awayColor = away.color ?? "#737373";
+  const homeColor = home.color ?? "#737373";
+
+  // Each chart clamps the shared hover index against its own series length
+  // independently — tab switching resets it, but this also keeps things
+  // sane if the two series happen to differ in length.
+  const gameFlowIndex = hoverIndex !== null ? Math.min(hoverIndex, scoredPlays.length - 1) : scoredPlays.length - 1;
+  const hoveredProb =
+    probSeries.length > 0 ? probSeries[hoverIndex !== null ? Math.min(hoverIndex, probSeries.length - 1) : probSeries.length - 1] : null;
+  const homeWinPct = hoveredProb?.homeWinPct ?? null;
+  const displayedPlay = tab === "winprob" && hoveredProb ? hoveredProb : scoredPlays[gameFlowIndex];
+
+  let leadChanges = 0;
+  let prevLeader: "home" | "away" | "tie" = "tie";
+  scoredPlays.forEach((p) => {
+    const diff = (p.homeScore ?? 0) - (p.awayScore ?? 0);
+    const leader = diff > 0 ? "home" : diff < 0 ? "away" : "tie";
+    if (leader !== "tie" && prevLeader !== "tie" && leader !== prevLeader) leadChanges++;
+    if (leader !== "tie") prevLeader = leader;
+  });
+
+  const switchTab = (key: "winprob" | "gameflow") => {
+    setTab(key);
+    setHoverIndex(null);
+  };
+
+  const TABS: { key: "winprob" | "gameflow"; label: string }[] = [
+    { key: "winprob", label: "Win Probability" },
+    { key: "gameflow", label: "Game Flow" },
+  ];
+
+  return (
+    <div className="w-full rounded-lg border border-neutral-800">
+      <div className="px-4 pt-4">
+        <h2 className="text-xs font-semibold tracking-wide text-neutral-400">PROBABILITIES & GAME FLOW</h2>
+      </div>
+      <div className="flex gap-1 px-4 pt-3">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => switchTab(t.key)}
+            className={`flex-1 rounded-full py-1.5 text-xs font-medium transition-colors ${
+              tab === t.key ? "bg-neutral-800 text-neutral-100" : "text-neutral-500 hover:text-neutral-300"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "winprob" ? (
+        probSeries.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm text-neutral-500">Win probability not available for this game.</p>
+        ) : (
+          <>
+            <div className="flex items-center justify-between px-4 pt-4">
+              <TeamProbabilityRow team={away} />
+              <span className="text-lg font-semibold text-neutral-100">{(100 - (homeWinPct ?? 50)).toFixed(1)}%</span>
+            </div>
+            <ProbabilityChart
+              series={probSeries}
+              homeColor={homeColor}
+              awayColor={awayColor}
+              hoverIndex={hoverIndex}
+              onHover={setHoverIndex}
+            />
+            <div className="flex items-center justify-between px-4 pb-3">
+              <TeamProbabilityRow team={home} />
+              <span className="text-lg font-semibold text-neutral-100">{(homeWinPct ?? 50).toFixed(1)}%</span>
+            </div>
+          </>
+        )
+      ) : (
+        <>
+          <div className="flex items-center justify-between px-4 pt-4 text-sm">
+            <div className="flex items-center gap-2">
+              {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-6 w-6 object-contain" />}
+              <div>
+                <div className="font-semibold text-neutral-100">{away.score}</div>
+                <div className="text-xs text-neutral-500">{away.abbreviation}</div>
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-sm font-semibold text-neutral-100">{leadChanges}</div>
+              <div className="text-xs text-neutral-500">Lead Changes</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="text-right">
+                <div className="font-semibold text-neutral-100">{home.score}</div>
+                <div className="text-xs text-neutral-500">{home.abbreviation}</div>
+              </div>
+              {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-6 w-6 object-contain" />}
+            </div>
+          </div>
+          <GameFlowChart
+            plays={scoredPlays}
+            homeColor={homeColor}
+            awayColor={awayColor}
+            hoverIndex={hoverIndex}
+            onHover={setHoverIndex}
+          />
+        </>
+      )}
+
+      <div className="border-t border-neutral-900 px-4 py-3 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <span className="text-neutral-200">{displayedPlay.description ?? "—"}</span>
+            <div className="mt-0.5 text-xs text-neutral-500">
+              Q{displayedPlay.period} {displayedPlay.clock}
+            </div>
+          </div>
+          <div className="flex shrink-0 gap-3 text-right">
+            <div>
+              <div className="tabular-nums text-neutral-200">{displayedPlay.awayScore}</div>
+              <div className="text-xs text-neutral-500">{away.abbreviation}</div>
+            </div>
+            <div>
+              <div className="tabular-nums text-neutral-200">{displayedPlay.homeScore}</div>
+              <div className="text-xs text-neutral-500">{home.abbreviation}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="border-t border-neutral-900 px-4 py-2 text-center text-xs text-neutral-600">
+        According to ESPN Analytics
+      </div>
     </div>
   );
 }
