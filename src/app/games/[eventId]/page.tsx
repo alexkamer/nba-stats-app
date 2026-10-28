@@ -72,8 +72,8 @@ interface DbGame {
   date: string;
   homeScore: number | null;
   awayScore: number | null;
-  homeTeam: { id: number; displayName: string; abbreviation: string; logoUrl: string | null; color: string | null };
-  awayTeam: { id: number; displayName: string; abbreviation: string; logoUrl: string | null; color: string | null };
+  homeTeam: { id: number; espnId: string; displayName: string; abbreviation: string; logoUrl: string | null; color: string | null };
+  awayTeam: { id: number; espnId: string; displayName: string; abbreviation: string; logoUrl: string | null; color: string | null };
   venue: { name: string } | null;
   teamGameStats: (TeamStatFields & { teamId: number; team: { abbreviation: string } })[];
   playerGameStats: (PlayerStatFields & {
@@ -85,6 +85,7 @@ interface DbGame {
   odds: DbOdds | null;
   headerExtras: HeaderExtras | null;
   winProbability: WinProbabilityPoint[] | null;
+  shots: Shot[] | null;
 }
 
 interface LiveGame {
@@ -103,6 +104,7 @@ interface LiveGame {
   odds: LiveOdds | null;
   headerExtras: HeaderExtras;
   winProbability: WinProbabilityPoint[];
+  shots: Shot[];
 }
 
 interface TeamStatFields {
@@ -161,6 +163,21 @@ interface PlayFields {
 interface WinProbabilityPoint {
   playId: string;
   homeWinPercentage: number;
+}
+
+// Shot locations are never persisted (SPEC.md Sec 6 has no columns for
+// them) — pulled live from ESPN for both DB- and live-sourced games.
+// x/y are half-court feet relative to the hoop (x: 0-50 cross-court,
+// 25 = straight on; y: distance from the basket).
+interface Shot {
+  playId: string;
+  teamId: string;
+  made: boolean;
+  x: number;
+  y: number;
+  period: number | null;
+  playType: string;
+  playerName: string | null;
 }
 
 type TabKey = "gamecast" | "recap" | "boxscore" | "playbyplay" | "teamstats";
@@ -316,6 +333,9 @@ function GameDetailContent() {
   const plays = game.plays.map((p, i) => ({ ...p, key: p.id ?? i }));
   const visiblePlays = showAllPlays ? plays : plays.slice(-20);
   const winProbability = (game as DbGame | LiveGame).winProbability ?? [];
+  const shots = (game as DbGame | LiveGame).shots ?? [];
+  const awayEspnId = source === "db" ? (game as DbGame).awayTeam.espnId : (game as LiveGame).away.espnId;
+  const homeEspnId = source === "db" ? (game as DbGame).homeTeam.espnId : (game as LiveGame).home.espnId;
 
   const awayPlayerRows = playerRowsByTeam(away.abbreviation, away.linkId);
   const homePlayerRows = playerRowsByTeam(home.abbreviation, home.linkId);
@@ -347,6 +367,7 @@ function GameDetailContent() {
             </div>
             <div className="space-y-6">
               <ProbabilityGameFlowCard away={away} home={home} plays={plays} winProbability={winProbability} />
+              <ShotChartCard away={away} home={home} awayEspnId={awayEspnId} homeEspnId={homeEspnId} shots={shots} />
             </div>
             <div className="space-y-6">
               <OddsPanel away={away} home={home} odds={odds} />
@@ -570,7 +591,17 @@ function headshotSrc(url: string): string {
   return `${url}?quality=80&h=144&w=144&scale=crop&transparent=true`;
 }
 
-function LeaderCell({ leader, value, secondary }: { leader: PlayerLeaderRow | null; value: number | null; secondary: string }) {
+function LeaderCell({
+  leader,
+  value,
+  secondary,
+  flip = false,
+}: {
+  leader: PlayerLeaderRow | null;
+  value: number | null;
+  secondary: string;
+  flip?: boolean;
+}) {
   if (!leader) return <div className="flex-1" />;
   return (
     <div className="flex flex-1 flex-col items-center gap-1 text-center">
@@ -579,10 +610,10 @@ function LeaderCell({ leader, value, secondary }: { leader: PlayerLeaderRow | nu
           <img
             src={headshotSrc(leader.headshotUrl)}
             alt={leader.name}
-            className="h-16 w-16 rounded-full bg-neutral-800 object-cover"
+            className={`h-16 w-16 rounded-full bg-neutral-800 object-cover ${flip ? "order-2" : ""}`}
           />
         ) : (
-          <div className="h-16 w-16 rounded-full bg-neutral-800" />
+          <div className={`h-16 w-16 rounded-full bg-neutral-800 ${flip ? "order-2" : ""}`} />
         )}
         <div className="text-xl font-bold text-neutral-100">{value}</div>
       </div>
@@ -652,6 +683,7 @@ function GameLeaders({
                 leader={homeLeader}
                 value={homeLeader?.[category.key] ?? null}
                 secondary={homeLeader ? leaderSecondary(category.key, homeLeader) : ""}
+                flip
               />
             </div>
           );
@@ -888,7 +920,38 @@ interface NormalizedOdds {
   homeIsFavorite: boolean;
 }
 
+// Highlights the market-winning cell (covered spread, hit total side, actual
+// game winner's moneyline) in green — distinct from the favorite/dog bolding
+// above, which reflects the pregame line rather than the result.
+function winningCell(won: boolean): string {
+  return won ? "text-emerald-400 font-semibold" : "";
+}
+
 function OddsPanel({ away, home, odds }: { away: ScoreboardTeam; home: ScoreboardTeam; odds: NormalizedOdds | null }) {
+  const awayScore = away.score;
+  const homeScore = home.score;
+  const hasFinalScore = awayScore !== null && homeScore !== null;
+
+  let awayCovered = false;
+  let homeCovered = false;
+  if (hasFinalScore && odds?.awaySpread !== null && odds?.homeSpread !== null && odds) {
+    const awayMargin = awayScore! - homeScore! + odds.awaySpread!;
+    const homeMargin = homeScore! - awayScore! + odds.homeSpread!;
+    if (awayMargin > 0) awayCovered = true;
+    else if (homeMargin > 0) homeCovered = true;
+  }
+
+  let overHit = false;
+  let underHit = false;
+  if (hasFinalScore && odds?.overUnder !== null && odds) {
+    const total = awayScore! + homeScore!;
+    if (total > odds.overUnder!) overHit = true;
+    else if (total < odds.overUnder!) underHit = true;
+  }
+
+  const awayWon = hasFinalScore && awayScore! > homeScore!;
+  const homeWon = hasFinalScore && homeScore! > awayScore!;
+
   return (
     <div className="w-full rounded-lg border border-neutral-800">
       <div className="flex items-center justify-between px-4 pt-4">
@@ -909,15 +972,15 @@ function OddsPanel({ away, home, odds }: { away: ScoreboardTeam; home: Scoreboar
             <tbody>
               <tr className={`border-b border-neutral-900 ${!odds.homeIsFavorite ? "font-semibold text-neutral-100" : "text-neutral-300"}`}>
                 <td className="py-2">{away.abbreviation}</td>
-                <td className="py-2 text-right">{formatSigned(odds.awaySpread)}</td>
-                <td className="py-2 text-right">{odds.overUnder !== null ? `o${odds.overUnder}` : "-"}</td>
-                <td className="py-2 text-right">{formatSigned(odds.awayMoneyline)}</td>
+                <td className={`py-2 text-right ${winningCell(awayCovered)}`}>{formatSigned(odds.awaySpread)}</td>
+                <td className={`py-2 text-right ${winningCell(overHit)}`}>{odds.overUnder !== null ? `o${odds.overUnder}` : "-"}</td>
+                <td className={`py-2 text-right ${winningCell(awayWon)}`}>{formatSigned(odds.awayMoneyline)}</td>
               </tr>
               <tr className={odds.homeIsFavorite ? "font-semibold text-neutral-100" : "text-neutral-300"}>
                 <td className="py-2">{home.abbreviation}</td>
-                <td className="py-2 text-right">{formatSigned(odds.homeSpread)}</td>
-                <td className="py-2 text-right">{odds.overUnder !== null ? `u${odds.overUnder}` : "-"}</td>
-                <td className="py-2 text-right">{formatSigned(odds.homeMoneyline)}</td>
+                <td className={`py-2 text-right ${winningCell(homeCovered)}`}>{formatSigned(odds.homeSpread)}</td>
+                <td className={`py-2 text-right ${winningCell(underHit)}`}>{odds.overUnder !== null ? `u${odds.overUnder}` : "-"}</td>
+                <td className={`py-2 text-right ${winningCell(homeWon)}`}>{formatSigned(odds.homeMoneyline)}</td>
               </tr>
             </tbody>
           </table>
@@ -1387,6 +1450,191 @@ function ProbabilityGameFlowCard({
   );
 }
 
+// court-image.svg's viewBox: a 94x50ft NBA court at a flat 10px/ft, baskets
+// drawn at (48,250) and (892,250). Shot coordinates are half-court feet
+// relative to a single hoop (x: 0-50 cross-court, 25 = straight on; y:
+// distance from the basket) — mirrored onto whichever basket the shooting
+// team is drawn at here (away always left, home always right).
+const SHOT_SVG_WIDTH = 940;
+const SHOT_SVG_HEIGHT = 500;
+const SHOT_SCALE = 10;
+const LEFT_BASKET_X = 48;
+const RIGHT_BASKET_X = 892;
+const COURT_CENTER_Y = 250;
+
+function shotPosition(shot: Shot, isAway: boolean): { leftPct: number; topPct: number } {
+  const svgX = isAway ? LEFT_BASKET_X + shot.y * SHOT_SCALE : RIGHT_BASKET_X - shot.y * SHOT_SCALE;
+  const svgY = COURT_CENTER_Y - (shot.x - 25) * SHOT_SCALE;
+  return {
+    leftPct: Math.min(100, Math.max(0, (svgX / SHOT_SVG_WIDTH) * 100)),
+    topPct: Math.min(100, Math.max(0, (svgY / SHOT_SVG_HEIGHT) * 100)),
+  };
+}
+
+function ShotChartFilterSelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded-full border border-neutral-700 bg-neutral-950 px-3 py-1 text-xs text-neutral-300 focus:outline-none"
+    >
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function LegendDot({ color, label, made }: { color: string; label: string; made: boolean }) {
+  return (
+    <div className="flex items-center gap-1">
+      <span
+        className="inline-block h-2.5 w-2.5 rounded-full"
+        style={{ backgroundColor: made ? color : "transparent", border: `1.5px solid ${color}` }}
+      />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function ShotChartCard({
+  away,
+  home,
+  awayEspnId,
+  homeEspnId,
+  shots,
+}: {
+  away: ScoreboardTeam;
+  home: ScoreboardTeam;
+  awayEspnId: string;
+  homeEspnId: string;
+  shots: Shot[];
+}) {
+  const [quarterFilter, setQuarterFilter] = useState("all");
+  const [playTypeFilter, setPlayTypeFilter] = useState("all");
+  const [playerFilter, setPlayerFilter] = useState("all");
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  if (shots.length === 0) return null;
+
+  const quarters = Array.from(new Set(shots.map((s) => s.period).filter((p): p is number => p !== null))).sort(
+    (a, b) => a - b,
+  );
+  const playTypes = Array.from(new Set(shots.map((s) => s.playType))).sort();
+  const players = Array.from(new Set(shots.map((s) => s.playerName).filter((n): n is string => !!n))).sort();
+
+  const filtered = shots.filter(
+    (s) =>
+      (quarterFilter === "all" || s.period === Number(quarterFilter)) &&
+      (playTypeFilter === "all" || s.playType === playTypeFilter) &&
+      (playerFilter === "all" || s.playerName === playerFilter),
+  );
+
+  const awayColor = away.color ?? "#737373";
+  const homeColor = home.color ?? "#737373";
+
+  return (
+    <div className="w-full rounded-lg border border-neutral-800">
+      <div className="px-4 pt-4">
+        <h2 className="text-xs font-semibold tracking-wide text-neutral-400">SHOT CHART</h2>
+      </div>
+      <div className="flex flex-wrap gap-2 px-4 pt-3">
+        <ShotChartFilterSelect
+          value={quarterFilter}
+          onChange={setQuarterFilter}
+          options={[
+            { value: "all", label: "All Quarters" },
+            ...quarters.map((q) => ({ value: String(q), label: ordinalPeriodLabel(q - 1) })),
+          ]}
+        />
+        <ShotChartFilterSelect
+          value={playTypeFilter}
+          onChange={setPlayTypeFilter}
+          options={[{ value: "all", label: "All Play Types" }, ...playTypes.map((t) => ({ value: t, label: t }))]}
+        />
+        <ShotChartFilterSelect
+          value={playerFilter}
+          onChange={setPlayerFilter}
+          options={[{ value: "all", label: "All Players" }, ...players.map((p) => ({ value: p, label: p }))]}
+        />
+      </div>
+      <div className="relative mx-4 mt-3">
+        <img src="/court-image.svg" alt="" className="block w-full rounded-md" />
+        {home.logoUrl && (
+          <img
+            src={home.logoUrl}
+            alt=""
+            className="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 object-contain opacity-80"
+          />
+        )}
+        {filtered.map((shot) => {
+          const isAway = shot.teamId === awayEspnId;
+          const isHome = shot.teamId === homeEspnId;
+          if (!isAway && !isHome) return null;
+          const color = isAway ? awayColor : homeColor;
+          const { leftPct, topPct } = shotPosition(shot, isAway);
+          const isHovered = hoveredId === shot.playId;
+          return (
+            <div
+              key={shot.playId}
+              className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform ${
+                isHovered ? "z-10 h-3.5 w-3.5" : "h-2.5 w-2.5"
+              }`}
+              style={{
+                left: `${leftPct}%`,
+                top: `${topPct}%`,
+                backgroundColor: shot.made ? color : "transparent",
+                border: `1.5px solid ${color}`,
+              }}
+              onMouseEnter={() => setHoveredId(shot.playId)}
+              onMouseLeave={() => setHoveredId(null)}
+            >
+              {isHovered && (
+                <div
+                  className="pointer-events-none absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs shadow-lg"
+                  style={{ marginTop: "-6px" }}
+                >
+                  <div className="font-medium text-neutral-100">{shot.playerName ?? "Unknown"}</div>
+                  <div className="text-neutral-400">
+                    {shot.playType} · {shot.made ? "Made" : "Missed"}
+                    {shot.period !== null && ` · ${ordinalPeriodLabel(shot.period - 1)}`}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-4 px-4 py-3 text-xs text-neutral-400">
+        <LegendDot color={awayColor} label="Shot Made" made />
+        <LegendDot color={awayColor} label="Shot Missed" made={false} />
+        <div className="flex items-center gap-2">
+          {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-5 w-5 object-contain" />}
+          <span className="text-neutral-700">|</span>
+          {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-5 w-5 object-contain" />}
+        </div>
+        <LegendDot color={homeColor} label="Shot Made" made />
+        <LegendDot color={homeColor} label="Shot Missed" made={false} />
+      </div>
+      <div className="border-t border-neutral-900 px-4 py-3 text-center">
+        <Link href="?tab=playbyplay" className="text-sm text-neutral-400 hover:text-neutral-100">
+          Full Play-By-Play
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 function formatMatchupDate(dateIso: string): string {
   return new Date(dateIso).toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
 }
@@ -1437,11 +1685,13 @@ function MatchupsCard({
         </div>
       </div>
       <div className="divide-y divide-neutral-900 border-t border-neutral-900">
-        {seasonSeries.events
-          .map((event, i) => ({ event, i }))
-          .filter(({ event }) => !event.completed)
-          .slice(0, 1)
-          .map(({ event, i }) => {
+        {(() => {
+          const rows = seasonSeries.events.map((event, i) => ({ event, i }));
+          // Every finished meeting, plus just the single next one still to
+          // come — not every remaining scheduled game in the series.
+          const firstUpcoming = rows.findIndex(({ event }) => !event.completed);
+          return firstUpcoming === -1 ? rows : rows.filter(({ i }) => i <= firstUpcoming);
+        })().map(({ event, i }) => {
           const awaySide = event.home.abbreviation === away.abbreviation ? event.home : event.away;
           const homeSide = event.home.abbreviation === home.abbreviation ? event.home : event.away;
           return (

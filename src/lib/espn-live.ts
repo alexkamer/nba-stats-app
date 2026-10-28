@@ -66,6 +66,76 @@ function extractWinProbability(summary: { winprobability?: EspnWinProbabilityEnt
   }));
 }
 
+// Shot locations are never persisted (SPEC.md Sec 6 has no columns for
+// them) — pulled live from the same summary `plays` array as everything
+// else here. `coordinate` is a half-court position relative to the hoop:
+// x 0-50 is cross-court (25 = straight on), y is feet from the basket.
+// Free throws (and the rare other non-FG "shooting" play) carry a sentinel
+// garbage coordinate rather than omitting it, so pointsAttempted doubles as
+// the filter for "is this actually a field goal attempt".
+export interface ShotChartShot {
+  playId: string;
+  teamId: string;
+  made: boolean;
+  x: number;
+  y: number;
+  period: number | null;
+  playType: string;
+  playerName: string | null;
+}
+
+function extractShooterName(text: string): string | null {
+  const blockMatch = text.match(/blocks\s+(.+?)\s*'s\s/);
+  if (blockMatch) return blockMatch[1].trim();
+  const makeMissMatch = text.match(/^(.+?)\s+(makes|misses)\s/);
+  if (makeMissMatch) return makeMissMatch[1].trim();
+  return null;
+}
+
+// Collapses ESPN's ~30 granular shot-type strings (e.g. "Driving Floating
+// Bank Jump Shot") into the broad buckets the "Play Types" filter shows.
+function simplifyPlayType(typeText: string): string {
+  if (/dunk/i.test(typeText)) return "Dunk";
+  if (/layup/i.test(typeText)) return "Layup";
+  if (/hook/i.test(typeText)) return "Hook Shot";
+  if (/tip/i.test(typeText)) return "Tip Shot";
+  return "Jump Shot";
+}
+
+function extractShots(plays: EspnPlay[]): ShotChartShot[] {
+  return plays
+    .filter(
+      (p) =>
+        p.shootingPlay &&
+        p.pointsAttempted !== 1 &&
+        p.coordinate &&
+        p.coordinate.x >= 0 &&
+        p.coordinate.x <= 50 &&
+        p.coordinate.y >= -10 &&
+        p.coordinate.y <= 50 &&
+        p.team?.id,
+    )
+    .map((p) => ({
+      playId: p.id,
+      teamId: p.team!.id,
+      made: p.scoringPlay ?? false,
+      x: p.coordinate!.x,
+      y: p.coordinate!.y,
+      period: p.period?.number ?? null,
+      playType: simplifyPlayType(p.type?.text ?? ""),
+      playerName: p.text ? extractShooterName(p.text) : null,
+    }));
+}
+
+export async function getShotChart(eventId: string): Promise<ShotChartShot[] | null> {
+  try {
+    const summary = await fetchEspnJson<{ plays?: EspnPlay[] }>(espnEndpoints.summary(eventId));
+    return extractShots(summary.plays ?? []);
+  } catch {
+    return null;
+  }
+}
+
 export interface LiveOdds {
   provider: string;
   spread: number | null;
@@ -311,6 +381,7 @@ export interface LiveGameDetail {
   odds: LiveOdds | null;
   headerExtras: HeaderExtras;
   winProbability: WinProbabilityPoint[];
+  shots: ShotChartShot[];
 }
 
 /** Fetches a game live from ESPN and reshapes it into roughly the same
@@ -410,5 +481,6 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
     odds,
     headerExtras: extractHeaderExtras(competition, summary),
     winProbability: extractWinProbability(summary),
+    shots: extractShots(summary.plays ?? []),
   };
 }

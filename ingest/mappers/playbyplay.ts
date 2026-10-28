@@ -11,6 +11,14 @@ export interface EspnPlay {
   clock?: { displayValue: string };
   scoringPlay?: boolean;
   team?: { id: string };
+  // Shot-chart-only fields (SPEC.md Sec 6 has no columns for these — pulled
+  // live, never persisted). coordinate is a sentinel garbage value for free
+  // throws and other non-field-goal "shooting" plays.
+  type?: { text?: string };
+  shootingPlay?: boolean;
+  pointsAttempted?: number;
+  participants?: { athlete?: { id?: string; displayName?: string } }[];
+  coordinate?: { x: number; y: number };
 }
 
 export interface PlayUpsertInput {

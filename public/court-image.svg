@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="NBA:_Flat" data-name="NBA: Flat" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 500">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #ddc8ad;
+      }
+
+      .cls-2 {
+        fill: #c4b199;
+      }
+
+      .cls-3, .cls-4 {
+        fill: none;
+        stroke: #988a77;
+        stroke-miterlimit: 10;
+        stroke-width: 2px;
+      }
+
+      .cls-4 {
+        stroke-dasharray: 9.58 7.56;
+      }
+    </style>
+  </defs>
+  <rect id="Court_Fill" data-name="Court Fill" class="cls-1" width="940" height="500"/>
+  <rect id="Paint_Fill" data-name="Paint Fill" class="cls-2" y="170" width="190" height="160"/>
+  <rect id="Paint_Fill-2" data-name="Paint Fill" class="cls-2" x="750" y="170" width="190" height="160"/>
+  <g id="Court_Lines" data-name="Court Lines">
+    <path class="cls-3" d="M0,30h140s150,55,150,220-150,220-150,220H0"/>
+    <polyline class="cls-3" points="0 170 190 170 190 330 0 330"/>
+    <line class="cls-3" x1="190" y1="310" y2="310"/>
+    <line class="cls-3" y1="190" x2="190" y2="190"/>
+    <path class="cls-3" d="M190,190c33.14,0,60,26.86,60,60s-26.86,60-60,60"/>
+    <g>
+      <path class="cls-3" d="M190,310c-1.6,0-3.18-.06-4.75-.19"/>
+      <path class="cls-4" d="M177.77,308.75c-27.27-5.65-47.77-29.81-47.77-58.75s22.39-55.27,51.49-59.4"/>
+      <path class="cls-3" d="M185.25,190.19c1.57-.12,3.15-.19,4.75-.19"/>
+    </g>
+    <line class="cls-3" x1="280" y1="480" x2="280" y2="500"/>
+    <line class="cls-3" x1="280" x2="280" y2="20"/>
+    <line class="cls-3" x1="470" x2="470" y2="500"/>
+    <path class="cls-3" d="M40,290h12.5c22.09,0,40-17.91,40-40s-17.91-40-40-40h-12.5"/>
+    <line class="cls-3" x1="145" y1="310" x2="145" y2="318"/>
+    <line class="cls-3" x1="115" y1="310" x2="115" y2="318"/>
+    <line class="cls-3" x1="85" y1="310" x2="85" y2="318"/>
+    <line class="cls-3" x1="70" y1="310" x2="70" y2="318"/>
+    <line class="cls-3" x1="145" y1="182" x2="145" y2="190"/>
+    <line class="cls-3" x1="115" y1="182" x2="115" y2="190"/>
+    <line class="cls-3" x1="85" y1="182" x2="85" y2="190"/>
+    <line class="cls-3" x1="70" y1="182" x2="70" y2="190"/>
+    <path class="cls-3" d="M940,470h-140s-150-55-150-220S800,30,800,30h140"/>
+    <polyline class="cls-3" points="940 330 750 330 750 170 940 170"/>
+    <line class="cls-3" x1="750" y1="190" x2="940" y2="190"/>
+    <line class="cls-3" x1="940" y1="310" x2="750" y2="310"/>
+    <path class="cls-3" d="M750,310c-33.14,0-60-26.86-60-60s26.86-60,60-60"/>
+    <g>
+      <path class="cls-3" d="M750,190c1.6,0,3.18.06,4.75.19"/>
+      <path class="cls-4" d="M762.23,191.25c27.27,5.65,47.77,29.81,47.77,58.75s-22.39,55.27-51.49,59.4"/>
+      <path class="cls-3" d="M754.75,309.81c-1.57.12-3.15.19-4.75.19"/>
+    </g>
+    <line class="cls-3" x1="660" y1="20" x2="660"/>
+    <line class="cls-3" x1="660" y1="500" x2="660" y2="480"/>
+    <path class="cls-3" d="M900,210h-12.5c-22.09,0-40,17.91-40,40s17.91,40,40,40h12.5"/>
+    <line class="cls-3" x1="795" y1="190" x2="795" y2="182"/>
+    <line class="cls-3" x1="825" y1="190" x2="825" y2="182"/>
+    <line class="cls-3" x1="855" y1="190" x2="855" y2="182"/>
+    <line class="cls-3" x1="870" y1="190" x2="870" y2="182"/>
+    <line class="cls-3" x1="795" y1="318" x2="795" y2="310"/>
+    <line class="cls-3" x1="825" y1="318" x2="825" y2="310"/>
+    <line class="cls-3" x1="855" y1="318" x2="855" y2="310"/>
+    <line class="cls-3" x1="870" y1="318" x2="870" y2="310"/>
+    <line id="Backboard" class="cls-3" x1="40" y1="222" x2="40" y2="278"/>
+    <circle id="Basket" class="cls-3" cx="48" cy="250" r="7.5"/>
+    <line id="Backboard-2" data-name="Backboard" class="cls-3" x1="900" y1="278" x2="900" y2="222"/>
+    <circle id="Basket-2" data-name="Basket" class="cls-3" cx="892" cy="250" r="7.5"/>
+  </g>
+</svg>
