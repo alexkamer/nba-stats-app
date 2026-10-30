@@ -127,15 +127,6 @@ function extractShots(plays: EspnPlay[]): ShotChartShot[] {
     }));
 }
 
-export async function getShotChart(eventId: string): Promise<ShotChartShot[] | null> {
-  try {
-    const summary = await fetchEspnJson<{ plays?: EspnPlay[] }>(espnEndpoints.summary(eventId));
-    return extractShots(summary.plays ?? []);
-  } catch {
-    return null;
-  }
-}
-
 export interface LiveOdds {
   provider: string;
   spread: number | null;
@@ -295,26 +286,32 @@ function extractHeaderExtras(
   };
 }
 
-export async function getGameHeaderExtras(eventId: string): Promise<HeaderExtras | null> {
+export interface GameSummaryExtras {
+  headerExtras: HeaderExtras | null;
+  winProbability: WinProbabilityPoint[] | null;
+  shots: ShotChartShot[] | null;
+}
+
+// headerExtras/winProbability/shots all come from the same ESPN `summary`
+// payload — one fetch instead of three separate (and identical) requests
+// for a game whose box score is already DB-backed.
+export async function getGameSummaryExtras(eventId: string): Promise<GameSummaryExtras> {
   try {
     const summary = await fetchEspnJson<{
       header: { competitions: [{ status: { type: { detail?: string; shortDetail?: string; name: string } }; competitors: EspnHeaderCompetitor[] }] };
       gameInfo?: EspnGameInfo;
       broadcasts?: EspnBroadcast[];
       seasonseries?: EspnSeasonSeries[];
+      winprobability?: EspnWinProbabilityEntry[];
+      plays?: EspnPlay[];
     }>(espnEndpoints.summary(eventId));
-    return extractHeaderExtras(summary.header.competitions[0], summary);
+    return {
+      headerExtras: extractHeaderExtras(summary.header.competitions[0], summary),
+      winProbability: extractWinProbability(summary),
+      shots: extractShots(summary.plays ?? []),
+    };
   } catch {
-    return null;
-  }
-}
-
-export async function getWinProbability(eventId: string): Promise<WinProbabilityPoint[] | null> {
-  try {
-    const summary = await fetchEspnJson<{ winprobability?: EspnWinProbabilityEntry[] }>(espnEndpoints.summary(eventId));
-    return extractWinProbability(summary);
-  } catch {
-    return null;
+    return { headerExtras: null, winProbability: null, shots: null };
   }
 }
 
