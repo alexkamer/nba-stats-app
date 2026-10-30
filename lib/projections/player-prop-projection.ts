@@ -2,7 +2,8 @@
  * v1 projection methodology (design.md "recency-weighted statistical
  * baseline"): blend a player's season per-game average for the tracked
  * stat with a recency-weighted average of their recent games for that same
- * stat, then adjust for a recent minutes trend. The caller is responsible
+ * stat, then adjust for a recent minutes trend and an opponent factor (see
+ * lib/projections/opponent-factor.ts). The caller is responsible
  * for extracting the right raw value per `PropStatType` (e.g. points +
  * rebounds for POINTS_REBOUNDS) — this module only blends numbers.
  */
@@ -13,6 +14,9 @@ export interface PlayerPropProjectionInput {
   recentValues: number[];
   /** Minutes played per game, same order/length as `recentValues`. */
   recentMinutes: number[];
+  /** How much more/less than average the opponent tends to allow in this
+   * stat (see `computeOpponentFactors`) - 1 (neutral) when unknown. */
+  opponentFactor?: number;
 }
 
 const MIN_RECENT_GAMES_FOR_BLEND = 3;
@@ -54,5 +58,5 @@ export function projectPlayerStat(input: PlayerPropProjectionInput): number | nu
   }
   if (blended === null) return null;
 
-  return blended * minutesTrendMultiplier(input.recentMinutes);
+  return blended * minutesTrendMultiplier(input.recentMinutes) * (input.opponentFactor ?? 1);
 }

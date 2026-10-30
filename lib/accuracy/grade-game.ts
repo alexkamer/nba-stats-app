@@ -23,6 +23,42 @@ export function gradeGameProjection(
   };
 }
 
+export interface CoverGradeResult {
+  /** `null` for a push — either our own pick or the actual result landed
+   * exactly on the market line, so there's no side to grade. */
+  correct: boolean | null;
+}
+
+/** Grades the spread side our projection favors (home if our margin beats
+ * the market's implied margin, away otherwise — see the betting-insights
+ * page's "Our pick" row) against whether that side actually covered. */
+export function gradeSpreadCoverage(
+  projectedMargin: number,
+  marketMargin: number | null,
+  actualMargin: number,
+): CoverGradeResult {
+  if (marketMargin === null || projectedMargin === marketMargin || actualMargin === marketMargin) {
+    return { correct: null };
+  }
+  const pickedHome = projectedMargin > marketMargin;
+  const homeCovered = actualMargin > marketMargin;
+  return { correct: pickedHome === homeCovered };
+}
+
+/** Same idea as `gradeSpreadCoverage`, for the total/over-under pick. */
+export function gradeTotalCoverage(
+  projectedTotal: number,
+  marketTotal: number | null,
+  actualTotal: number,
+): CoverGradeResult {
+  if (marketTotal === null || projectedTotal === marketTotal || actualTotal === marketTotal) {
+    return { correct: null };
+  }
+  const pickedOver = projectedTotal > marketTotal;
+  const wentOver = actualTotal > marketTotal;
+  return { correct: pickedOver === wentOver };
+}
+
 /** Grades a snapshotted ESPN `predictor` (win probabilities, not a score
  * margin — see ingest/mappers/predictor.ts). `marginError` is repurposed
  * here as a probability-error proxy: how far the actual winner's

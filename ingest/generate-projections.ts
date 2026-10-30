@@ -15,10 +15,70 @@ import { prisma } from "./lib/db";
 import { projectGame, type TeamProjectionInput, type TeamRecentGame } from "../lib/projections/game-projection";
 import { projectPlayerStat } from "../lib/projections/player-prop-projection";
 import { extractStatValue, type RawPlayerGameRow } from "../lib/projections/extract-prop-stat";
+import { computeOpponentFactors, type AllowedStatRow } from "../lib/projections/opponent-factor";
+import { computeStdev, combineStdev, isBettable } from "../lib/projections/confidence";
 import type { PropStatType } from "../lib/espn/prop-types";
 
 const METHOD = "v1-recency-weighted";
 const RECENT_GAMES_WINDOW = 10;
+
+// Stats with a clean team-level "allowed" analog (sum of raw box-score
+// categories). DOUBLE_DOUBLE/TRIPLE_DOUBLE are per-player achievement
+// flags, not a counting stat a team "allows" in the same sense, so they're
+// left out and always get a neutral opponent factor.
+const OPPONENT_ADJUSTABLE_STATS: PropStatType[] = [
+  "POINTS",
+  "REBOUNDS",
+  "ASSISTS",
+  "THREE_POINTERS_MADE",
+  "STEALS",
+  "BLOCKS",
+  "POINTS_ASSISTS",
+  "POINTS_REBOUNDS",
+  "REBOUNDS_ASSISTS",
+  "POINTS_REBOUNDS_ASSISTS",
+];
+
+// How much more/less than league average each team allows per tracked stat,
+// derived from already-ingested TeamGameStat rows (what a team "allowed" in
+// a game is just what its opponent put up that game) — no new ingest needed.
+async function loadOpponentFactors(): Promise<Map<PropStatType, Map<number, number>>> {
+  const teamGameStats = await prisma.teamGameStat.findMany({
+    where: { game: { status: "FINAL" } },
+    select: {
+      gameId: true,
+      teamId: true,
+      points: true,
+      rebounds: true,
+      assists: true,
+      threeMade: true,
+      steals: true,
+      blocks: true,
+    },
+  });
+
+  const byGame = new Map<number, typeof teamGameStats>();
+  for (const row of teamGameStats) {
+    const list = byGame.get(row.gameId);
+    if (list) list.push(row);
+    else byGame.set(row.gameId, [row]);
+  }
+
+  const factorsByStat = new Map<PropStatType, Map<number, number>>();
+  for (const statType of OPPONENT_ADJUSTABLE_STATS) {
+    const rows: AllowedStatRow[] = [];
+    for (const pair of byGame.values()) {
+      if (pair.length !== 2) continue; // only count games with both teams' box scores ingested
+      const [a, b] = pair;
+      const valueA = extractStatValue(statType, { ...a, minutes: null });
+      const valueB = extractStatValue(statType, { ...b, minutes: null });
+      rows.push({ teamId: a.teamId, allowedValue: valueB });
+      rows.push({ teamId: b.teamId, allowedValue: valueA });
+    }
+    factorsByStat.set(statType, computeOpponentFactors(rows));
+  }
+  return factorsByStat;
+}
 
 // How many recent final games a team has played, regardless of season, is
 // what the projection cares about — not a strict same-season cutoff, since
@@ -69,12 +129,35 @@ async function generateGameProjections() {
     const projection = projectGame(home, away);
     if (!projection) continue;
 
+    const marginStdev = combineStdev(
+      computeStdev(home.recentGames.map((g) => g.pointsFor - g.pointsAgainst)),
+      computeStdev(away.recentGames.map((g) => g.pointsFor - g.pointsAgainst)),
+    );
+    const totalStdev = combineStdev(
+      computeStdev(home.recentGames.map((g) => g.pointsFor + g.pointsAgainst)),
+      computeStdev(away.recentGames.map((g) => g.pointsFor + g.pointsAgainst)),
+    );
+
+    const odds = await prisma.odds.findUnique({ where: { gameId: game.id }, select: { spread: true, overUnder: true } });
+    // Odds.spread is home-team-relative favorite-negative, same convention
+    // the page's impliedSpread() uses — so the home-relative margin the
+    // market implies is the negation of it.
+    const marketMargin = odds?.spread != null ? -odds.spread : null;
+    const marketTotal = odds?.overUnder ?? null;
+    const projectedTotal = projection.projectedHomeScore + projection.projectedAwayScore;
+
     await prisma.gameProjection.create({
       data: {
         gameId: game.id,
         projectedHomeScore: projection.projectedHomeScore,
         projectedAwayScore: projection.projectedAwayScore,
         projectedMargin: projection.projectedMargin,
+        marginStdev,
+        totalStdev,
+        spreadBettable: isBettable(projection.projectedMargin, marketMargin, marginStdev),
+        totalBettable: isBettable(projectedTotal, marketTotal, totalStdev),
+        marketMarginAtPick: marketMargin,
+        marketTotalAtPick: marketTotal,
         method: METHOD,
       },
     });
@@ -102,9 +185,20 @@ async function loadPlayerGameLog(playerId: number): Promise<RawPlayerGameRow[]> 
 }
 
 async function generatePlayerPropProjections() {
+  const opponentFactorsByStat = await loadOpponentFactors();
+
   const propOddsRows = await prisma.playerPropOdds.findMany({
     where: { game: { status: "SCHEDULED" } },
-    select: { id: true, gameId: true, playerId: true, statType: true, side: true },
+    select: {
+      id: true,
+      gameId: true,
+      playerId: true,
+      statType: true,
+      side: true,
+      line: true,
+      game: { select: { homeTeamId: true, awayTeamId: true } },
+      player: { select: { currentTeamId: true } },
+    },
   });
   const existingProjections = await prisma.playerPropProjection.findMany({
     select: { gameId: true, playerId: true, statType: true },
@@ -131,8 +225,18 @@ async function generatePlayerPropProjections() {
     const recentMinutes = minutes.slice(-RECENT_GAMES_WINDOW);
     const seasonAverage = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null;
 
-    const projectedValue = projectPlayerStat({ seasonAverage, recentValues, recentMinutes });
+    const { homeTeamId, awayTeamId } = representative.game;
+    const currentTeamId = representative.player.currentTeamId;
+    const opponentTeamId =
+      currentTeamId === homeTeamId ? awayTeamId : currentTeamId === awayTeamId ? homeTeamId : null;
+    const opponentFactor =
+      opponentTeamId !== null ? opponentFactorsByStat.get(statType)?.get(opponentTeamId) ?? 1 : 1;
+
+    const projectedValue = projectPlayerStat({ seasonAverage, recentValues, recentMinutes, opponentFactor });
     if (projectedValue === null) continue;
+
+    const stdev = computeStdev(recentValues);
+    const bettable = isBettable(projectedValue, representative.line, stdev);
 
     await prisma.playerPropProjection.create({
       data: {
@@ -140,7 +244,10 @@ async function generatePlayerPropProjections() {
         playerId: representative.playerId,
         statType,
         propOddsId: representative.id,
+        line: representative.line,
         projectedValue,
+        stdev,
+        bettable,
         method: METHOD,
       },
     });

@@ -11,7 +11,12 @@
  * Run with: npx tsx ingest/grade-predictions.ts
  */
 import { prisma } from "./lib/db";
-import { gradeGameProjection, gradePredictorSnapshot } from "../lib/accuracy/grade-game";
+import {
+  gradeGameProjection,
+  gradePredictorSnapshot,
+  gradeSpreadCoverage,
+  gradeTotalCoverage,
+} from "../lib/accuracy/grade-game";
 import { gradePlayerProp } from "../lib/accuracy/grade-prop";
 import { extractStatValue } from "../lib/projections/extract-prop-stat";
 import type { PropStatType } from "../lib/espn/prop-types";
@@ -19,16 +24,38 @@ import type { PropStatType } from "../lib/espn/prop-types";
 async function gradeGameProjections() {
   const rows = await prisma.gameProjection.findMany({
     where: { gradedAt: null, game: { status: "FINAL" } },
-    select: { id: true, projectedMargin: true, game: { select: { homeScore: true, awayScore: true } } },
+    select: {
+      id: true,
+      projectedMargin: true,
+      projectedHomeScore: true,
+      projectedAwayScore: true,
+      marketMarginAtPick: true,
+      marketTotalAtPick: true,
+      game: { select: { homeScore: true, awayScore: true } },
+    },
   });
 
   let graded = 0;
   for (const row of rows) {
     if (row.game.homeScore === null || row.game.awayScore === null) continue;
     const result = gradeGameProjection(row.projectedMargin, row.game.homeScore, row.game.awayScore);
+    const actualMargin = row.game.homeScore - row.game.awayScore;
+    const actualTotal = row.game.homeScore + row.game.awayScore;
+    const spreadResult = gradeSpreadCoverage(row.projectedMargin, row.marketMarginAtPick, actualMargin);
+    const totalResult = gradeTotalCoverage(
+      row.projectedHomeScore + row.projectedAwayScore,
+      row.marketTotalAtPick,
+      actualTotal,
+    );
     await prisma.gameProjection.update({
       where: { id: row.id },
-      data: { gradedCorrect: result.correct, gradedMarginError: result.marginError, gradedAt: new Date() },
+      data: {
+        gradedCorrect: result.correct,
+        gradedMarginError: result.marginError,
+        gradedSpreadCorrect: spreadResult.correct,
+        gradedTotalCorrect: totalResult.correct,
+        gradedAt: new Date(),
+      },
     });
     graded += 1;
   }
@@ -68,14 +95,14 @@ async function gradePlayerPropProjections() {
       playerId: true,
       statType: true,
       projectedValue: true,
-      propOdds: { select: { line: true } },
+      line: true,
     },
   });
 
   let graded = 0;
   for (const row of rows) {
-    const line = row.propOdds?.line;
-    if (line === null || line === undefined) continue; // no line to grade against
+    const line = row.line;
+    if (line === null) continue; // no line to grade against
 
     const gameStat = await prisma.playerGameStat.findUnique({
       where: { gameId_playerId: { gameId: row.gameId, playerId: row.playerId } },

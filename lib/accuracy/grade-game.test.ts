@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gradeGameProjection, gradePredictorSnapshot } from "./grade-game";
+import { gradeGameProjection, gradePredictorSnapshot, gradeSpreadCoverage, gradeTotalCoverage } from "./grade-game";
 
 test("gradeGameProjection marks a correct pick when the predicted side matches the actual winner", () => {
   const result = gradeGameProjection(5, 110, 102);
@@ -29,4 +29,30 @@ test("gradePredictorSnapshot marks incorrect when the underdog wins", () => {
   const result = gradePredictorSnapshot(60, 40, 95, 100);
   assert.equal(result.correct, false);
   assert.equal(result.marginError, 60);
+});
+
+// Celtics -14.5 at home (market margin +14.5), we project them by only 6.4
+// (margin +6.4) — our model favors the away side (Bulls) against that line.
+test("gradeSpreadCoverage picks the away side when our margin is smaller than the market's favorite margin", () => {
+  const correctCall = gradeSpreadCoverage(6.4, 14.5, 10); // Celtics win by 10, still short of -14.5 -> Bulls covered
+  assert.equal(correctCall.correct, true);
+  const incorrectCall = gradeSpreadCoverage(6.4, 14.5, 20); // Celtics blow it out -> Bulls did not cover
+  assert.equal(incorrectCall.correct, false);
+});
+
+test("gradeSpreadCoverage returns a push (null) when there's no market line, or our pick or the result lands exactly on it", () => {
+  assert.equal(gradeSpreadCoverage(6.4, null, 10).correct, null);
+  assert.equal(gradeSpreadCoverage(14.5, 14.5, 10).correct, null);
+  assert.equal(gradeSpreadCoverage(6.4, 14.5, 14.5).correct, null);
+});
+
+test("gradeTotalCoverage picks over/under relative to the market total", () => {
+  assert.equal(gradeTotalCoverage(230, 220, 225).correct, true); // we picked over, game went over
+  assert.equal(gradeTotalCoverage(230, 220, 215).correct, false); // we picked over, game went under
+});
+
+test("gradeTotalCoverage returns a push (null) when there's no market line, or our pick or the result lands exactly on it", () => {
+  assert.equal(gradeTotalCoverage(230, null, 225).correct, null);
+  assert.equal(gradeTotalCoverage(220, 220, 225).correct, null);
+  assert.equal(gradeTotalCoverage(230, 220, 220).correct, null);
 });

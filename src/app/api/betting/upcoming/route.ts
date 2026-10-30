@@ -10,8 +10,13 @@ import { NextResponse } from "next/server";
 // no-data handling, not this route, decides what to show.
 export async function GET() {
   try {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+
     const games = await prisma.game.findMany({
-      where: { status: "SCHEDULED" },
+      where: { status: "SCHEDULED", date: { gte: startOfDay, lt: endOfDay } },
       orderBy: { date: "asc" },
       include: {
         homeTeam: { select: { id: true, abbreviation: true, name: true, logoUrl: true } },
@@ -22,7 +27,6 @@ export async function GET() {
         playerPropProjections: {
           include: {
             player: { select: { id: true, displayName: true } },
-            propOdds: { select: { line: true } },
           },
         },
       },
@@ -38,6 +42,10 @@ export async function GET() {
             projectedHomeScore: game.gameProjection.projectedHomeScore,
             projectedAwayScore: game.gameProjection.projectedAwayScore,
             projectedMargin: game.gameProjection.projectedMargin,
+            spreadBettable: game.gameProjection.spreadBettable,
+            totalBettable: game.gameProjection.totalBettable,
+            marginStdev: game.gameProjection.marginStdev,
+            totalStdev: game.gameProjection.totalStdev,
           }
         : null,
       market: game.odds
@@ -53,9 +61,9 @@ export async function GET() {
         ? { homeWinPct: game.predictorSnapshot.homeWinPct, awayWinPct: game.predictorSnapshot.awayWinPct }
         : null,
       playerProps: game.playerPropProjections
-        .filter((p) => p.propOdds?.line != null)
+        .filter((p) => p.line != null)
         .map((p) => {
-          const line = p.propOdds!.line!;
+          const line = p.line!;
           return {
             playerId: p.player.id,
             playerName: p.player.displayName,
@@ -63,6 +71,8 @@ export async function GET() {
             projectedValue: p.projectedValue,
             line,
             lean: p.projectedValue > line ? "OVER" : p.projectedValue < line ? "UNDER" : "PUSH",
+            bettable: p.bettable,
+            stdev: p.stdev,
           };
         }),
     }));

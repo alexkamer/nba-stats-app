@@ -38,3 +38,16 @@ test("projectPlayerStat falls back to season average alone below the recent-game
   const result = projectPlayerStat({ seasonAverage: 18, recentValues: [30], recentMinutes: [35] });
   assert.equal(result, 18);
 });
+
+test("projectPlayerStat applies the opponent factor as a final multiplier", () => {
+  const neutral = projectPlayerStat({ seasonAverage: 20, recentValues: [], recentMinutes: [] });
+  const softMatchup = projectPlayerStat({
+    seasonAverage: 20,
+    recentValues: [],
+    recentMinutes: [],
+    opponentFactor: 1.1,
+  });
+  assert.ok(neutral);
+  assert.ok(softMatchup);
+  assert.ok(Math.abs(softMatchup - neutral * 1.1) < 1e-9);
+});

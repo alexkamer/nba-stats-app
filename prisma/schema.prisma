@@ -312,13 +312,34 @@ model GameProjection {
   projectedHomeScore  Float    @map("projected_home_score")
   projectedAwayScore  Float    @map("projected_away_score")
   projectedMargin     Float    @map("projected_margin") // home-team-relative
+  // Recent-game variance for margin/total, and whether our pick clears the
+  // market by enough relative to that variance to be worth calling out
+  // (see lib/projections/confidence.ts) — same idea as a player prop's
+  // `bettable`, applied to the spread and the total independently. `false`
+  // when there's no market line yet to compare against.
+  marginStdev     Float?   @map("margin_stdev")
+  totalStdev      Float?   @map("total_stdev")
+  spreadBettable  Boolean  @default(false) @map("spread_bettable")
+  totalBettable   Boolean  @default(false) @map("total_bettable")
+  // The market's home-relative margin/total at the moment this projection
+  // was frozen (derived from `Odds.spread`/`overUnder` then, not read live
+  // later) — against-the-spread/total grading must compare our pick to the
+  // same line it was actually made against, not whatever the market has
+  // moved to since.
+  marketMarginAtPick Float? @map("market_margin_at_pick")
+  marketTotalAtPick  Float? @map("market_total_at_pick")
   method              String
   createdAt           DateTime @default(now()) @map("created_at")
 
-  // Graded once the game is FINAL. Null until then.
-  gradedCorrect     Boolean?  @map("graded_correct")
-  gradedMarginError Float?    @map("graded_margin_error")
-  gradedAt          DateTime? @map("graded_at")
+  // Graded once the game is FINAL. Null until then. `gradedCorrect` is the
+  // straight-up winner pick; `gradedSpreadCorrect`/`gradedTotalCorrect` are
+  // the against-the-spread/total picks shown on the page's "Our pick" row
+  // — a different bet, graded separately (see lib/accuracy/grade-game.ts).
+  gradedCorrect        Boolean?  @map("graded_correct")
+  gradedMarginError    Float?    @map("graded_margin_error")
+  gradedSpreadCorrect  Boolean?  @map("graded_spread_correct")
+  gradedTotalCorrect   Boolean?  @map("graded_total_correct")
+  gradedAt             DateTime? @map("graded_at")
 
   @@map("game_projection")
 }
@@ -334,7 +355,21 @@ model PlayerPropProjection {
   statType         PropStatType @map("stat_type")
   propOddsId       Int?         @unique @map("prop_odds_id")
   propOdds         PlayerPropOdds? @relation(fields: [propOddsId], references: [id])
+  // The line at the moment this projection was frozen — copied off `propOdds.line`
+  // at creation time rather than read live through the relation, since that row
+  // keeps getting overwritten by every sync until tip-off (and grading must never
+  // compare against a line that moved after the pick was made).
+  line             Float?
   projectedValue   Float        @map("projected_value")
+  // Recent-game standard deviation for this stat, frozen alongside the
+  // projection — used to size the pick's edge against the player's own
+  // typical game-to-game variance (see `bettable`).
+  stdev            Float?
+  // Whether the edge between `projectedValue` and `line` is large relative
+  // to `stdev` (see lib/projections/confidence.ts) — the subset of picks
+  // worth surfacing by default, instead of every tracked prop regardless of
+  // how close the call actually is.
+  bettable         Boolean      @default(false)
   method           String
   createdAt        DateTime     @default(now()) @map("created_at")
 

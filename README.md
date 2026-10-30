@@ -22,6 +22,10 @@ By default (`DATA_SOURCE` unset or `db`) the app reads from the local Prisma/SQL
 
 Set `DATA_SOURCE=espn` to skip the database entirely and run purely against live ESPN endpoints — no seeding required, at the cost of some simplifications (no multi-season history, no player season-rank, no news tagging, no per-game box-score splits). See `docs/DATA_SOURCES.md` for the full page-by-page breakdown.
 
+## Betting insights (`/betting`)
+
+See `docs/PREDICTIONS.md` for how our own game/player-prop projections are computed, how "confident" picks are chosen, and how everything gets graded against final results.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
