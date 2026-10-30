@@ -145,6 +145,9 @@ model Player {
   playerGameStats   PlayerGameStat[]
   playerSeasonStats PlayerSeasonStat[]
 
+  propOdds        PlayerPropOdds[]
+  propProjections PlayerPropProjection[]
+
   @@map("player")
 }
 
@@ -190,6 +193,11 @@ model Game {
   playerGameStats PlayerGameStat[]
   odds            Odds?
 
+  playerPropOdds        PlayerPropOdds[]
+  predictorSnapshot     PredictorSnapshot?
+  gameProjection        GameProjection?
+  playerPropProjections PlayerPropProjection[]
+
   @@map("game")
 }
 
@@ -202,17 +210,141 @@ model Game {
 // most games simply won't have a row here. Only the highest-priority
 // provider ESPN lists is kept, not every sportsbook.
 model Odds {
-  id             Int    @id @default(autoincrement())
-  gameId         Int    @unique @map("game_id")
-  game           Game   @relation(fields: [gameId], references: [id])
-  provider       String
-  spread         Float? // home-team-relative, matching ESPN's own convention
-  overUnder      Float?  @map("over_under")
-  homeMoneyline  Int?   @map("home_moneyline")
-  awayMoneyline  Int?   @map("away_moneyline")
-  favoriteTeamId Int?   @map("favorite_team_id")
+  id                Int    @id @default(autoincrement())
+  gameId            Int    @unique @map("game_id")
+  game              Game   @relation(fields: [gameId], references: [id])
+  provider          String
+  spread            Float? // home-team-relative, matching ESPN's own convention
+  overUnder         Float?  @map("over_under")
+  homeMoneyline     Int?   @map("home_moneyline")
+  awayMoneyline     Int?   @map("away_moneyline")
+  favoriteTeamId    Int?   @map("favorite_team_id")
+  // Opening line, captured the first time a scheduled game's odds are seen
+  // (see betting-odds-ingest capability) — `spread`/`overUnder`/moneylines
+  // above hold the current line, refreshed up to tip-off.
+  openSpread        Float? @map("open_spread")
+  openOverUnder     Float? @map("open_over_under")
+  openHomeMoneyline Int?   @map("open_home_moneyline")
+  openAwayMoneyline Int?   @map("open_away_moneyline")
 
   @@map("odds")
+}
+
+// ---------- Betting insights (forward-looking) ----------
+
+// Stat types the betting-insights page surfaces player props for — a
+// deliberate subset of the much larger set ESPN's propBets endpoint returns
+// (quarter/half markets, milestones, etc. are not ingested; see design.md
+// "Prop odds volume" risk).
+enum PropStatType {
+  POINTS
+  REBOUNDS
+  ASSISTS
+  THREE_POINTERS_MADE
+  STEALS
+  BLOCKS
+  POINTS_ASSISTS
+  POINTS_REBOUNDS
+  REBOUNDS_ASSISTS
+  POINTS_REBOUNDS_ASSISTS
+  DOUBLE_DOUBLE
+  TRIPLE_DOUBLE
+}
+
+enum PropSide {
+  OVER
+  UNDER
+}
+
+// Player prop market line for a scheduled game, one row per side (ESPN
+// returns the over and under for a given stat/line as separate entries).
+model PlayerPropOdds {
+  id            Int          @id @default(autoincrement())
+  gameId        Int          @map("game_id")
+  game          Game         @relation(fields: [gameId], references: [id])
+  playerId      Int          @map("player_id")
+  player        Player       @relation(fields: [playerId], references: [id])
+  provider      String
+  statType      PropStatType @map("stat_type")
+  side          PropSide
+  line          Float?
+  odds          Int?
+  openLine      Float?       @map("open_line")
+  openOdds      Int?         @map("open_odds")
+  lastUpdated   DateTime     @map("last_updated")
+
+  projection PlayerPropProjection?
+
+  @@unique([gameId, playerId, statType, side])
+  @@map("player_prop_odds")
+}
+
+// One-time snapshot of ESPN's own pre-game predictor (projected score /
+// win probability) for a scheduled game. ESPN does not retain this once a
+// game goes final, so it is captured proactively and never refreshed.
+model PredictorSnapshot {
+  id         Int      @id @default(autoincrement())
+  gameId     Int      @unique @map("game_id")
+  game       Game     @relation(fields: [gameId], references: [id])
+  // ESPN's `predictor` only exposes win probability (confusingly labeled
+  // `gameProjection` by ESPN itself) — no projected score/margin exists in
+  // this field, confirmed by direct probing.
+  homeWinPct Float    @map("home_win_pct")
+  awayWinPct Float    @map("away_win_pct")
+  capturedAt DateTime @map("captured_at")
+
+  // Graded once the game is FINAL (prediction-accuracy-tracking capability).
+  // Null until then.
+  gradedCorrect     Boolean? @map("graded_correct")
+  gradedMarginError Float?   @map("graded_margin_error")
+  gradedAt          DateTime? @map("graded_at")
+
+  @@map("predictor_snapshot")
+}
+
+// Our own game-level projection, computed and frozen before tip-off (see
+// design.md "Projections are persisted rows, computed once, frozen
+// pre-game") so grading never reflects hindsight.
+model GameProjection {
+  id                  Int      @id @default(autoincrement())
+  gameId              Int      @unique @map("game_id")
+  game                Game     @relation(fields: [gameId], references: [id])
+  projectedHomeScore  Float    @map("projected_home_score")
+  projectedAwayScore  Float    @map("projected_away_score")
+  projectedMargin     Float    @map("projected_margin") // home-team-relative
+  method              String
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  // Graded once the game is FINAL. Null until then.
+  gradedCorrect     Boolean?  @map("graded_correct")
+  gradedMarginError Float?    @map("graded_margin_error")
+  gradedAt          DateTime? @map("graded_at")
+
+  @@map("game_projection")
+}
+
+// Our own player-prop projection, one per (game, player, stat), frozen at
+// creation time the same way as GameProjection.
+model PlayerPropProjection {
+  id               Int          @id @default(autoincrement())
+  gameId           Int          @map("game_id")
+  game             Game         @relation(fields: [gameId], references: [id])
+  playerId         Int          @map("player_id")
+  player           Player       @relation(fields: [playerId], references: [id])
+  statType         PropStatType @map("stat_type")
+  propOddsId       Int?         @unique @map("prop_odds_id")
+  propOdds         PlayerPropOdds? @relation(fields: [propOddsId], references: [id])
+  projectedValue   Float        @map("projected_value")
+  method           String
+  createdAt        DateTime     @default(now()) @map("created_at")
+
+  // Graded once the game is FINAL. Null until then.
+  gradedCorrect      Boolean?  @map("graded_correct")
+  gradedActualValue  Float?    @map("graded_actual_value")
+  gradedAt           DateTime? @map("graded_at")
+
+  @@unique([gameId, playerId, statType])
+  @@map("player_prop_projection")
 }
 
 model Play {

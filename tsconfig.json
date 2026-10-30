@@ -20,7 +20,8 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
-      "@espn/*": ["./lib/espn/*"]
+      "@espn/*": ["./lib/espn/*"],
+      "@lib/*": ["./lib/*"]
     }
   },
   "include": [

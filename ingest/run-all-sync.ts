@@ -19,6 +19,9 @@ const SCRIPTS = [
   "sync-reference-data.ts",
   "sync-completed-games.ts",
   "sync-aggregates.ts",
+  "sync-betting-odds.ts", // discovers upcoming games + their odds/props/predictor
+  "generate-projections.ts", // needs sync-betting-odds's prop odds + discovered games
+  "grade-predictions.ts", // needs sync-completed-games' final scores + sync-aggregates' box scores
   "sync-news.ts", // M10 (stretch) — independent of the others, order doesn't matter
 ];
 

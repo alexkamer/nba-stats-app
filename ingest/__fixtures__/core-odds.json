@@ -1,0 +1,48 @@
+{
+  "provider": { "id": "100", "name": "DraftKings", "priority": 1 },
+  "details": "CHA -1.5",
+  "overUnder": 218.5,
+  "spread": 1.5,
+  "overOdds": -112.0,
+  "underOdds": -108.0,
+  "open": {
+    "over": { "american": "-110" },
+    "under": { "american": "-110" },
+    "total": { "alternateDisplayValue": "234.5", "american": "234.5" }
+  },
+  "current": {
+    "over": { "american": "-112" },
+    "under": { "american": "-108" },
+    "total": { "alternateDisplayValue": "218.5", "american": "218.5" }
+  },
+  "awayTeamOdds": {
+    "favorite": true,
+    "underdog": false,
+    "moneyLine": -115,
+    "spreadOdds": -108.0,
+    "open": {
+      "favorite": true,
+      "pointSpread": { "alternateDisplayValue": "-1.5", "american": "-1.5" },
+      "moneyLine": { "value": 1.86, "alternateDisplayValue": "-115", "american": "-115" }
+    },
+    "current": {
+      "pointSpread": { "alternateDisplayValue": "-1.5", "american": "-1.5" },
+      "moneyLine": { "value": 1.86, "alternateDisplayValue": "-115", "american": "-115" }
+    }
+  },
+  "homeTeamOdds": {
+    "favorite": false,
+    "underdog": true,
+    "moneyLine": -105,
+    "spreadOdds": -112.0,
+    "open": {
+      "favorite": false,
+      "pointSpread": { "alternateDisplayValue": "+1.5", "american": "+1.5" },
+      "moneyLine": { "value": 1.95, "alternateDisplayValue": "-105", "american": "-105" }
+    },
+    "current": {
+      "pointSpread": { "alternateDisplayValue": "+1.5", "american": "+1.5" },
+      "moneyLine": { "value": 1.95, "alternateDisplayValue": "-105", "american": "-105" }
+    }
+  }
+}

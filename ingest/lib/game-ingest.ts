@@ -13,7 +13,7 @@ import { prisma } from "./db";
 import { fetchEspnJson } from "../../lib/espn/client";
 import { espnEndpoints } from "../../lib/espn/endpoints";
 import {
-  isIngestableFinalGame,
+  isIngestableGame,
   mapGame,
   mapVenueFromEvent,
   type EspnScoreboardEvent,
@@ -49,7 +49,7 @@ async function loadExistingIdMaps() {
     prisma.venue.findMany({ select: { id: true, espnId: true } }),
     prisma.player.findMany({ select: { id: true, espnId: true } }),
     prisma.position.findMany({ select: { id: true, name: true } }),
-    prisma.game.findMany({ select: { espnId: true } }),
+    prisma.game.findMany({ select: { espnId: true, status: true } }),
   ]);
 
   return {
@@ -57,7 +57,10 @@ async function loadExistingIdMaps() {
     venueIdByEspnId: new Map(venues.map((v) => [v.espnId, v.id])),
     playerIdByEspnId: new Map(players.map((p) => [p.espnId, p.id])),
     positionIdByName: new Map(positions.map((p) => [p.name, p.id])),
-    existingGameEspnIds: new Set(existingGames.map((g) => g.espnId)),
+    // Status per already-known game, not just existence — a SCHEDULED/LIVE
+    // game must still be re-upserted on a later run so it can flip to
+    // FINAL; only a game already FINAL is truly done.
+    gameStatusByEspnId: new Map(existingGames.map((g) => [g.espnId, g.status])),
   };
 }
 
@@ -98,8 +101,8 @@ export async function discoverGames(dateStrings: Iterable<string>) {
 
   for (const board of boards) {
     for (const event of board.events ?? []) {
-      if (!isIngestableFinalGame(event)) continue;
-      if (maps.existingGameEspnIds.has(event.id)) {
+      if (!isIngestableGame(event)) continue;
+      if (maps.gameStatusByEspnId.get(event.id) === "FINAL") {
         skippedExisting += 1;
         continue;
       }
@@ -142,7 +145,7 @@ export async function discoverGames(dateStrings: Iterable<string>) {
         create: gameInput,
         update: gameInput,
       });
-      maps.existingGameEspnIds.add(game.espnId);
+      maps.gameStatusByEspnId.set(game.espnId, game.status);
       discovered += 1;
     }
   }
@@ -234,6 +237,11 @@ async function ingestOneGame(
   // for others (confirmed sparse/era-dependent coverage; see the Odds model
   // comment in schema.prisma). No extra API call: `pickcenter` rides along
   // on the same `summary` response already fetched above.
+  //
+  // Upserted, not created: `ingest/sync-betting-odds.ts` may already have
+  // written this game's Odds row (with open-line columns) while it was
+  // still scheduled, and `mapOdds` never touches those columns, so an
+  // update here leaves them untouched.
   const primaryOdds = pickPrimaryProvider(summary.pickcenter);
   const oddsInputs = primaryOdds ? [mapOdds(primaryOdds, gameId, game.homeTeamId, game.awayTeamId)] : [];
 
@@ -251,16 +259,20 @@ async function ingestOneGame(
     prisma.teamGameStat.createMany({ data: teamGameStatInputs }),
     prisma.playerGameStat.createMany({ data: playerGameStatInputs }),
     prisma.play.createMany({ data: playInputs }),
-    prisma.odds.createMany({ data: oddsInputs }),
+    ...oddsInputs.map((input) =>
+      prisma.odds.upsert({ where: { gameId: input.gameId }, create: input, update: input }),
+    ),
   ]);
 }
 
 export async function ingestMissingBoxscores(maps: Awaited<ReturnType<typeof loadExistingIdMaps>>) {
   // Self-healing: query for games missing a box score rather than trusting
   // "discovered this run" — a game with zero team_game_stat rows was never
-  // fully processed, regardless of which run discovered it.
+  // fully processed, regardless of which run discovered it. Scoped to
+  // FINAL games only — a SCHEDULED/LIVE game has no box score to fetch yet
+  // (discoverGames now also persists those; see betting-odds-ingest).
   const gamesNeedingBoxscore = await prisma.game.findMany({
-    where: { teamGameStats: { none: {} } },
+    where: { status: "FINAL", teamGameStats: { none: {} } },
     select: { id: true, espnId: true },
   });
 

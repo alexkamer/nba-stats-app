@@ -46,6 +46,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Link href="/news" className="text-foreground/82 hover:text-foreground">
                 News
               </Link>
+              <Link href="/betting" className="text-foreground/82 hover:text-foreground">
+                Betting
+              </Link>
               <span className="ml-auto">
                 <ThemeToggle />
               </span>

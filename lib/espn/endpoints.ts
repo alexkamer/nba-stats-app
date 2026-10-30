@@ -68,6 +68,17 @@ export const espnEndpoints = {
     `${CORE}/seasons/${year}/types/${seasonType}/groups/${groupId}/children`,
   groupTeams: (year: string, seasonType: string, groupId: string) =>
     `${CORE}/seasons/${year}/types/${seasonType}/groups/${groupId}/teams`,
+
+  // Betting insights (see openspec/changes/add-betting-insights-page) — core
+  // API resources confirmed during exploration to carry open/current line
+  // movement and player prop markets for scheduled games, unlike `summary`'s
+  // `pickcenter` (current-line-only, used by the existing Odds model).
+  // `providerId` is the single sportsbook kept (DraftKings = "100" in
+  // current testing, the highest-priority provider ESPN lists).
+  gameOdds: (eventId: string, providerId: string) =>
+    `${CORE}/events/${eventId}/competitions/${eventId}/odds/${providerId}?lang=en&region=us`,
+  gamePropBets: (eventId: string, providerId: string, page = 1) =>
+    `${CORE}/events/${eventId}/competitions/${eventId}/odds/${providerId}/propBets?lang=en&region=us&page=${page}`,
 };
 
 /** Pulls the trailing numeric id off an ESPN `$ref` URL, e.g.

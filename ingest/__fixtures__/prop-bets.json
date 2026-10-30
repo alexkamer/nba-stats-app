@@ -1,0 +1,42 @@
+[
+  {
+    "athlete": { "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/2027/athletes/6583?lang=en&region=us" },
+    "type": { "id": "1", "name": "Total Points" },
+    "odds": { "american": { "value": "-119", "open": "-115" } },
+    "lastUpdated": "2026-10-30T19:04Z",
+    "current": { "target": { "value": 20.5 } },
+    "open": { "target": { "value": 21.5 } }
+  },
+  {
+    "athlete": { "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/2027/athletes/6583?lang=en&region=us" },
+    "type": { "id": "1", "name": "Total Points" },
+    "odds": { "american": { "value": "-107", "open": "-111" } },
+    "lastUpdated": "2026-10-30T19:04Z",
+    "current": { "target": { "value": 20.5 } },
+    "open": { "target": { "value": 21.5 } }
+  },
+  {
+    "athlete": { "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/2027/athletes/9999?lang=en&region=us" },
+    "type": { "id": "1", "name": "Total Points" },
+    "odds": { "american": { "value": "-115", "open": "-115" } },
+    "lastUpdated": "2026-10-30T19:04Z",
+    "current": { "target": { "value": 15.5 } },
+    "open": { "target": { "value": 15.5 } }
+  },
+  {
+    "athlete": { "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/2027/athletes/9999?lang=en&region=us" },
+    "type": { "id": "1", "name": "Total Points" },
+    "odds": { "american": { "value": "-105", "open": "-105" } },
+    "lastUpdated": "2026-10-30T19:04Z",
+    "current": { "target": { "value": 15.5 } },
+    "open": { "target": { "value": 15.5 } }
+  },
+  {
+    "athlete": { "$ref": "http://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/2027/athletes/6583?lang=en&region=us" },
+    "type": { "id": "77", "name": "Points Milestones" },
+    "odds": { "american": { "value": "+150", "open": "+150" } },
+    "lastUpdated": "2026-10-30T19:04Z",
+    "current": { "target": { "value": 30.5 } },
+    "open": { "target": { "value": 30.5 } }
+  }
+]

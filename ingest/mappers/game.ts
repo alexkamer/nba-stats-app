@@ -41,7 +41,7 @@ export interface GameUpsertInput {
   seasonId: number;
   seasonType: "PRESEASON" | "REGULAR" | "POSTSEASON";
   date: Date;
-  status: "FINAL";
+  status: "SCHEDULED" | "LIVE" | "FINAL";
   period: number | null;
   homeTeamId: number;
   awayTeamId: number;
@@ -51,18 +51,27 @@ export interface GameUpsertInput {
   attendance: number | null;
 }
 
-/** Is this event something our scope cares about: a completed game that
- * isn't preseason (SPEC.md Sec 9.5/9.7)? Some historical events are
- * malformed (missing `status` entirely — confirmed during the historical
- * backfill), so every level here is optional-chained rather than assumed. */
-export function isIngestableFinalGame(event: EspnScoreboardEvent): boolean {
+/** Is this event something our scope cares about: a non-preseason game,
+ * regardless of whether it has finished (SPEC.md Sec 9.5/9.7, extended by
+ * the betting-insights-page change to also cover scheduled/live games, so
+ * forward-looking odds/projections have a Game row to attach to)? Some
+ * historical events are malformed (missing `status` entirely — confirmed
+ * during the historical backfill), so every level here is optional-chained
+ * rather than assumed. */
+export function isIngestableGame(event: EspnScoreboardEvent): boolean {
   const seasonType = event.season?.type;
   return (
-    event.status?.type?.completed === true &&
+    event.status?.type?.name !== undefined &&
     seasonType !== undefined &&
     seasonType !== 1 &&
     seasonType in SEASON_TYPE_MAP
   );
+}
+
+function statusFromEvent(event: EspnScoreboardEvent): "SCHEDULED" | "LIVE" | "FINAL" {
+  if (event.status.type.completed) return "FINAL";
+  if (event.status.type.name.includes("IN_PROGRESS")) return "LIVE";
+  return "SCHEDULED";
 }
 
 export function mapGame(
@@ -77,20 +86,24 @@ export function mapGame(
   const away = competition.competitors.find((c) => c.homeAway === "away");
   const seasonType = SEASON_TYPE_MAP[event.season!.type as SeasonTypeCode];
   if (seasonType === "PRESEASON") {
-    throw new Error(`mapGame called on a preseason event ${event.id} — caller must filter via isIngestableFinalGame`);
+    throw new Error(`mapGame called on a preseason event ${event.id} — caller must filter via isIngestableGame`);
   }
+  const status = statusFromEvent(event);
 
   return {
     espnId: event.id,
     seasonId,
     seasonType,
     date: new Date(event.date),
-    status: "FINAL",
+    status,
     period: competition.status.period ?? null,
     homeTeamId,
     awayTeamId,
-    homeScore: home?.score !== undefined ? Number(home.score) : null,
-    awayScore: away?.score !== undefined ? Number(away.score) : null,
+    // A scheduled/live game's score is only meaningful once it's FINAL —
+    // ESPN sometimes reports "0" pregame, which would otherwise read as an
+    // actual final score of 0.
+    homeScore: status === "FINAL" && home?.score !== undefined ? Number(home.score) : null,
+    awayScore: status === "FINAL" && away?.score !== undefined ? Number(away.score) : null,
     venueId,
     attendance: competition.attendance ?? null,
   };
