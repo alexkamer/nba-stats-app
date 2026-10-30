@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db";
+import { isEspnOnly } from "@/lib/data-source";
+import { getPlayerProfileLive } from "@/lib/espn-player-profile";
 import { getUpcomingGames } from "@/lib/espn-schedule";
 import { resolveTeamIdentities } from "@/lib/team-identity";
 import { NextResponse } from "next/server";
@@ -80,6 +82,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ath
   }
 
   try {
+    if (isEspnOnly()) {
+      const profile = await getPlayerProfileLive(athleteId);
+      if (!profile) {
+        return NextResponse.json({ error: "Player not found" }, { status: 404 });
+      }
+      return NextResponse.json(profile);
+    }
+
     const player = await prisma.player.findUnique({
       where: { id },
       include: {

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { isEspnOnly } from "@/lib/data-source";
 import { getGameHeaderExtras, getLiveGameDetail, getShotChart, getWinProbability } from "@/lib/espn-live";
 import { resolveTeamIdentities } from "@/lib/team-identity";
 import { NextResponse } from "next/server";
@@ -6,24 +7,26 @@ import { NextResponse } from "next/server";
 // Branches per SPEC.md Sec 4: `final` games are served from the DB
 // (ingested by the sync jobs); anything else (scheduled/in-progress, or
 // simply not ingested yet) falls back to the live ESPN proxy, which is
-// never persisted.
+// never persisted. In espn-only mode, always take the live branch.
 export async function GET(_request: Request, { params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = await params;
 
   try {
-    const game = await prisma.game.findUnique({
-      where: { espnId: eventId },
-      include: {
-        homeTeam: true,
-        awayTeam: true,
-        venue: true,
-        season: true,
-        teamGameStats: { include: { team: true } },
-        playerGameStats: { include: { player: true, team: true } },
-        plays: { orderBy: { sequenceNumber: "asc" } },
-        odds: true,
-      },
-    });
+    const game = isEspnOnly()
+      ? null
+      : await prisma.game.findUnique({
+          where: { espnId: eventId },
+          include: {
+            homeTeam: true,
+            awayTeam: true,
+            venue: true,
+            season: true,
+            teamGameStats: { include: { team: true } },
+            playerGameStats: { include: { player: true, team: true } },
+            plays: { orderBy: { sequenceNumber: "asc" } },
+            odds: true,
+          },
+        });
 
     if (game) {
       // Team espnIds are stable across relocation/rename (e.g. Seattle

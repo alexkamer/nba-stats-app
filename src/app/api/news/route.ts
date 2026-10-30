@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db";
+import { isEspnOnly } from "@/lib/data-source";
+import { getNewsLive } from "@/lib/espn-news-live";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -8,6 +10,13 @@ export async function GET(request: NextRequest) {
     const playerId = playerIdParam ? Number(playerIdParam) : null;
     const limitParam = searchParams.get("limit");
     const take = limitParam ? Number(limitParam) : 50;
+
+    if (isEspnOnly()) {
+      // playerId filtering requires a local join we don't have live —
+      // return the general feed regardless (see docs/DATA_SOURCES.md).
+      const articles = await getNewsLive(take);
+      return NextResponse.json({ articles });
+    }
 
     const articles = await prisma.newsArticle.findMany({
       where: playerId ? { players: { some: { playerId } } } : undefined,

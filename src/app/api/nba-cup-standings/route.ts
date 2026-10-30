@@ -1,9 +1,15 @@
 import { prisma } from "@/lib/db";
+import { isEspnOnly } from "@/lib/data-source";
+import { getNbaCupStandingsLive } from "@/lib/espn-standings-live";
 import { resolveTeamIdentities } from "@/lib/team-identity";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
   try {
+    if (isEspnOnly()) {
+      return NextResponse.json(await getNbaCupStandingsLive());
+    }
+
     const { searchParams } = new URL(request.url);
     const yearParam = searchParams.get("year");
 

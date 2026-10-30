@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db";
+import { isEspnOnly } from "@/lib/data-source";
+import { getTeamProfileLiveCached } from "@/lib/espn-team-profile";
 import { resolveTeamIdentities } from "@/lib/team-identity";
 import { getTeamLeaders } from "@/lib/espn-team-leaders";
 import { getUpcomingGames } from "@/lib/espn-schedule";
@@ -334,6 +336,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ team
   }
 
   try {
+    if (isEspnOnly()) {
+      const profile = await getTeamProfileLiveCached(teamId);
+      if (!profile) {
+        return NextResponse.json({ error: "Team not found" }, { status: 404 });
+      }
+      return NextResponse.json(profile);
+    }
+
     const team = await prisma.team.findUnique({
       where: { id },
       include: { division: { include: { conference: true } }, venue: true },

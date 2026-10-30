@@ -16,6 +16,12 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Data source
+
+By default (`DATA_SOURCE` unset or `db`) the app reads from the local Prisma/SQLite database (`prisma/dev.db`), which needs seeding via `npx tsx ingest/run-all-sync.ts` and a recurring refresh to stay current (see `scripts/run-daily-sync.sh`).
+
+Set `DATA_SOURCE=espn` to skip the database entirely and run purely against live ESPN endpoints — no seeding required, at the cost of some simplifications (no multi-season history, no player season-rank, no news tagging, no per-game box-score splits). See `docs/DATA_SOURCES.md` for the full page-by-page breakdown.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
