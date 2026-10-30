@@ -1120,7 +1120,7 @@ function ScheduleTab({
         <div className="space-y-1">
           <p className="text-xs font-semibold text-foreground/72">{season && seasonTypeLabel(season.type)}</p>
           <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-sm whitespace-nowrap table-fixed">
+            <table className="w-full min-w-[1080px] text-sm whitespace-nowrap table-fixed">
               <thead>
                 <tr className="text-left text-foreground/72 border-b border-border">
                   <th className="py-2 pl-3 pr-8 w-32">Date</th>
@@ -1172,7 +1172,10 @@ function ScheduleTab({
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={opponent.logoUrl} alt="" className="h-5 w-5" />
                               )}
-                              <span className="truncate">{opponent.displayName}</span>
+                              <span className="min-w-0 truncate">
+                                <span className="hidden sm:inline">{opponent.name}</span>
+                                <span className="sm:hidden">{opponent.abbreviation}</span>
+                              </span>
                             </Link>
                           </td>
                           <td className="py-2 pr-3">
@@ -1255,7 +1258,10 @@ function ScheduleTab({
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={opponent.logoUrl} alt="" className="h-5 w-5" />
                             )}
-                            <span className="truncate">{opponent.displayName}</span>
+                            <span className="min-w-0 truncate">
+                              <span className="hidden sm:inline">{opponent.name}</span>
+                              <span className="sm:hidden">{opponent.abbreviation}</span>
+                            </span>
                           </Link>
                         </td>
                         <td className="py-2 pr-6 text-right">
