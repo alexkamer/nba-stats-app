@@ -365,8 +365,8 @@ export interface LiveGameDetail {
   statusName: string;
   statusDetail: string;
   date: string;
-  home: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null };
-  away: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null };
+  home: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; alternateColor: string | null };
+  away: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; alternateColor: string | null };
   teamGameStats: (ReturnType<typeof mapTeamGameStat> & { teamEspnId: string })[];
   playerGameStats: (ReturnType<typeof mapPlayerGameStat> & {
     playerDisplayName: string;
@@ -395,7 +395,7 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
           status: { type: { name: string; detail?: string; shortDetail?: string } };
           competitors: (EspnHeaderCompetitor & {
             score?: string;
-            team: { id: string; abbreviation: string; displayName: string; color?: string; logos?: { href: string }[] };
+            team: { id: string; abbreviation: string; displayName: string; color?: string; alternateColor?: string; logos?: { href: string }[] };
           })[];
         },
       ];
@@ -463,6 +463,7 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
       score: home.score !== undefined ? Number(home.score) : null,
       logoUrl: home.team.logos?.[0]?.href ?? null,
       color: home.team.color ? `#${home.team.color}` : null,
+      alternateColor: home.team.alternateColor ? `#${home.team.alternateColor}` : null,
     },
     away: {
       espnId: away.team.id,
@@ -471,6 +472,7 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
       score: away.score !== undefined ? Number(away.score) : null,
       logoUrl: away.team.logos?.[0]?.href ?? null,
       color: away.team.color ? `#${away.team.color}` : null,
+      alternateColor: away.team.alternateColor ? `#${away.team.alternateColor}` : null,
     },
     teamGameStats,
     playerGameStats,

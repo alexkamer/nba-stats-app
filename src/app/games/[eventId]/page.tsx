@@ -72,8 +72,8 @@ interface DbGame {
   date: string;
   homeScore: number | null;
   awayScore: number | null;
-  homeTeam: { id: number; espnId: string; displayName: string; abbreviation: string; logoUrl: string | null; color: string | null };
-  awayTeam: { id: number; espnId: string; displayName: string; abbreviation: string; logoUrl: string | null; color: string | null };
+  homeTeam: { id: number; espnId: string; displayName: string; abbreviation: string; logoUrl: string | null; color: string | null; alternateColor: string | null };
+  awayTeam: { id: number; espnId: string; displayName: string; abbreviation: string; logoUrl: string | null; color: string | null; alternateColor: string | null };
   venue: { name: string } | null;
   teamGameStats: (TeamStatFields & { teamId: number; team: { abbreviation: string } })[];
   playerGameStats: (PlayerStatFields & {
@@ -91,8 +91,8 @@ interface DbGame {
 interface LiveGame {
   date: string;
   statusDetail: string;
-  home: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null };
-  away: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null };
+  home: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; alternateColor: string | null };
+  away: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; alternateColor: string | null };
   teamGameStats: (TeamStatFields & { teamEspnId: string })[];
   playerGameStats: (PlayerStatFields & {
     teamEspnId: string;
@@ -200,11 +200,115 @@ function toHexColor(color: string | null): string | null {
   return color.startsWith("#") ? color : `#${color}`;
 }
 
+// The app's chart background is a fixed near-black (see bg-neutral-950 in
+// layout.tsx) regardless of the OS/browser color scheme, so "dark mode" here
+// just means team colors that are themselves near-black (e.g. Spurs, Nets)
+// render invisible lines. NEEDS_FIX_CONTRAST only flags colors that are
+// genuinely hard to see (true black/near-black) — ordinary dark team colors
+// like Lakers purple or Wizards navy keep their real color. LIGHTEN_TARGET
+// is the more modest bar used once we're already lightening a bad color, so
+// it doesn't overshoot all the way to white.
+const CHART_BACKGROUND = "#0a0a0a";
+const NEEDS_FIX_CONTRAST = 1.3;
+const LIGHTEN_TARGET = 2.0;
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  const match = hex.replace("#", "").match(/^([0-9a-f]{6})$/i);
+  if (!match) return null;
+  const n = parseInt(match[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function relativeLuminance([r, g, b]: [number, number, number]): number {
+  const channel = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+function contrastRatio(hexA: string, hexB: string): number {
+  const rgbA = hexToRgb(hexA);
+  const rgbB = hexToRgb(hexB);
+  if (!rgbA || !rgbB) return 1;
+  const lA = relativeLuminance(rgbA) + 0.05;
+  const lB = relativeLuminance(rgbB) + 0.05;
+  return lA > lB ? lA / lB : lB / lA;
+}
+
+function lighten(hex: string, amount: number): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const blended = rgb.map((c) => Math.round(c + (255 - c) * amount));
+  return `#${blended.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** Keeps a team's own color whenever it's already visible against the chart
+ * background. Only reaches for the alternate color, then progressive
+ * lightening of the primary color, when the primary is too close to the
+ * background to see — so two teams never collapse onto the same fallback
+ * (e.g. both landing on white) just because white has the highest contrast. */
+function pickChartColor(color: string | null, alternateColor: string | null): string {
+  if (color && hexToRgb(color) && contrastRatio(color, CHART_BACKGROUND) >= NEEDS_FIX_CONTRAST) {
+    return color;
+  }
+  if (alternateColor && hexToRgb(alternateColor) && contrastRatio(alternateColor, CHART_BACKGROUND) >= NEEDS_FIX_CONTRAST) {
+    return alternateColor;
+  }
+
+  const base = color && hexToRgb(color) ? color : alternateColor;
+  if (!base || !hexToRgb(base)) return "#737373";
+
+  let result = base;
+  let ratio = contrastRatio(base, CHART_BACKGROUND);
+  let amount = 0;
+  while (ratio < LIGHTEN_TARGET && amount < 1) {
+    amount += 0.15;
+    result = lighten(base, amount);
+    ratio = contrastRatio(result, CHART_BACKGROUND);
+  }
+  return result;
+}
+
 // Periods beyond the 4th are overtime — ESPN's linescores array has no
 // period labels of its own, just one entry per period played.
 function periodLabel(index: number): string {
   if (index < 4) return String(index + 1);
   return index === 4 ? "OT" : `OT${index - 3}`;
+}
+
+// ESPN's own sequenceNumber occasionally orders a clock-buzzer play (e.g. a
+// substitution logged with "3.9" seconds left) after that period's "End of
+// Nth Quarter" marker, even though the marker's clock (0.0) is later. Re-sort
+// by period, then by time remaining within the period, forcing end-of-period
+// markers to the end of their period — falling back to the original
+// (sequenceNumber) order for any remaining ties, since Array#sort is stable.
+function parseClockSeconds(clock: string | null): number {
+  if (!clock) return 0;
+  if (clock.includes(":")) {
+    const [minutes, seconds] = clock.split(":").map(Number);
+    return minutes * 60 + (seconds || 0);
+  }
+  return parseFloat(clock) || 0;
+}
+
+function isEndOfPeriodPlay(description: string | null): boolean {
+  return /^end of/i.test(description?.trim() ?? "");
+}
+
+function sortPlaysChronologically<T extends { period: number | null; clock: string | null; description: string | null }>(
+  plays: T[],
+): T[] {
+  return [...plays].sort((a, b) => {
+    const periodDiff = (a.period ?? 0) - (b.period ?? 0);
+    if (periodDiff !== 0) return periodDiff;
+
+    const aEnd = isEndOfPeriodPlay(a.description);
+    const bEnd = isEndOfPeriodPlay(b.description);
+    if (aEnd !== bEnd) return aEnd ? 1 : -1;
+
+    return parseClockSeconds(b.clock) - parseClockSeconds(a.clock);
+  });
 }
 
 function formatGameDateTime(dateIso: string): string {
@@ -252,6 +356,10 @@ function GameDetailContent() {
           score: (game as DbGame).homeScore,
           logoUrl: (game as DbGame).homeTeam.logoUrl,
           color: toHexColor((game as DbGame).homeTeam.color),
+          chartColor: pickChartColor(
+            toHexColor((game as DbGame).homeTeam.color),
+            toHexColor((game as DbGame).homeTeam.alternateColor),
+          ),
         }
       : {
           linkId: null,
@@ -260,6 +368,10 @@ function GameDetailContent() {
           score: (game as LiveGame).home.score,
           logoUrl: (game as LiveGame).home.logoUrl,
           color: toHexColor((game as LiveGame).home.color),
+          chartColor: pickChartColor(
+            toHexColor((game as LiveGame).home.color),
+            toHexColor((game as LiveGame).home.alternateColor),
+          ),
         };
   const away =
     source === "db"
@@ -270,6 +382,10 @@ function GameDetailContent() {
           score: (game as DbGame).awayScore,
           logoUrl: (game as DbGame).awayTeam.logoUrl,
           color: toHexColor((game as DbGame).awayTeam.color),
+          chartColor: pickChartColor(
+            toHexColor((game as DbGame).awayTeam.color),
+            toHexColor((game as DbGame).awayTeam.alternateColor),
+          ),
         }
       : {
           linkId: null,
@@ -278,6 +394,10 @@ function GameDetailContent() {
           score: (game as LiveGame).away.score,
           logoUrl: (game as LiveGame).away.logoUrl,
           color: toHexColor((game as LiveGame).away.color),
+          chartColor: pickChartColor(
+            toHexColor((game as LiveGame).away.color),
+            toHexColor((game as LiveGame).away.alternateColor),
+          ),
         };
 
   const headerExtras = (game as DbGame | LiveGame).headerExtras;
@@ -330,7 +450,7 @@ function GameDetailContent() {
       }
     : null;
 
-  const plays = game.plays.map((p, i) => ({ ...p, key: p.id ?? i }));
+  const plays = sortPlaysChronologically(game.plays).map((p, i) => ({ ...p, key: p.id ?? i }));
   const visiblePlays = showAllPlays ? plays : plays.slice(-20);
   const winProbability = (game as DbGame | LiveGame).winProbability ?? [];
   const shots = (game as DbGame | LiveGame).shots ?? [];
@@ -558,6 +678,7 @@ interface ScoreboardTeam {
   score: number | null;
   logoUrl: string | null;
   color: string | null;
+  chartColor: string;
 }
 
 function topBy(rows: PlayerLeaderRow[], key: "points" | "rebounds" | "assists"): PlayerLeaderRow | null {
@@ -1319,8 +1440,8 @@ function ProbabilityGameFlowCard({
             : last.homeWinPct
         : last.homeWinPct,
   }));
-  const awayColor = away.color ?? "#737373";
-  const homeColor = home.color ?? "#737373";
+  const awayColor = away.chartColor;
+  const homeColor = home.chartColor;
 
   // Each chart clamps the shared hover index against its own series length
   // independently — tab switching resets it, but this also keeps things
@@ -1540,8 +1661,8 @@ function ShotChartCard({
       (playerFilter === "all" || s.playerName === playerFilter),
   );
 
-  const awayColor = away.color ?? "#737373";
-  const homeColor = home.color ?? "#737373";
+  const awayColor = away.chartColor;
+  const homeColor = home.chartColor;
 
   return (
     <div className="w-full rounded-lg border border-neutral-800">
