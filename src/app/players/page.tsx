@@ -42,28 +42,28 @@ export default function PlayersPage() {
         placeholder="Search by name or team…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="w-full max-w-sm rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-600"
+        className="w-full max-w-sm rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
       />
 
-      {isLoading && <p className="text-neutral-400">Loading players…</p>}
-      {error && <p className="text-red-400">Failed to load players.</p>}
+      {isLoading && <p className="text-foreground/60">Loading players…</p>}
+      {error && <p className="text-red-600 dark:text-red-400">Failed to load players.</p>}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
         {filtered.map((player) => (
           <Link
             key={player.id}
             href={`/players/${player.id}`}
-            className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm hover:border-neutral-600"
+            className="rounded-md border border-border bg-surface px-3 py-2 text-sm hover:border-accent"
           >
             <div>{player.displayName}</div>
-            <div className="text-neutral-500 text-xs">
+            <div className="text-foreground/50 text-xs">
               {player.currentTeam?.abbreviation ?? "FA"}
               {player.position && ` · ${player.position.abbreviation}`}
             </div>
           </Link>
         ))}
       </div>
-      {players && filtered.length === 0 && <p className="text-neutral-500">No players match &ldquo;{search}&rdquo;.</p>}
+      {players && filtered.length === 0 && <p className="text-foreground/50">No players match &ldquo;{search}&rdquo;.</p>}
     </div>
   );
 }

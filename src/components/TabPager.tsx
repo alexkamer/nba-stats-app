@@ -44,15 +44,15 @@ export function TabPager<T extends string>({
   accentColor: string;
 }) {
   return (
-    <div className="mx-auto max-w-6xl flex border-t border-neutral-800 px-6 text-sm">
+    <div className="mx-auto max-w-6xl flex border-t border-border px-6 text-sm">
       {tabs.map((tab) => (
         <button
           key={tab.value}
           onClick={() => onChange(tab.value)}
           className={`flex-1 px-3 py-2 text-center whitespace-nowrap ${
             activeTab === tab.value
-              ? "text-neutral-100 font-semibold border-b-2"
-              : "text-neutral-400 hover:text-neutral-200 border-b-2 border-transparent"
+              ? "text-foreground font-semibold border-b-2"
+              : "text-foreground/60 hover:text-foreground/80 border-b-2 border-transparent"
           }`}
           style={activeTab === tab.value ? { borderColor: accentColor } : undefined}
         >

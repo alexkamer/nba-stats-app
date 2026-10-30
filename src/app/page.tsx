@@ -34,7 +34,7 @@ async function fetchScoreboard(date: string): Promise<GameCard[]> {
 
 export default function Home() {
   return (
-    <Suspense fallback={<p className="text-neutral-400">Loading…</p>}>
+    <Suspense fallback={<p className="text-foreground/60">Loading…</p>}>
       <ScoreboardContent />
     </Suspense>
   );
@@ -60,29 +60,29 @@ function ScoreboardContent() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Scoreboard</h1>
         <div className="flex items-center gap-3">
-          <button onClick={() => shiftDay(-1)} className="text-neutral-400 hover:text-neutral-100">
+          <button onClick={() => shiftDay(-1)} className="text-foreground/60 hover:text-foreground">
             ← Prev
           </button>
-          <span className="text-neutral-300">{fromYyyymmdd(date).toLocaleDateString()}</span>
-          <button onClick={() => shiftDay(1)} className="text-neutral-400 hover:text-neutral-100">
+          <span className="text-foreground/80">{fromYyyymmdd(date).toLocaleDateString()}</span>
+          <button onClick={() => shiftDay(1)} className="text-foreground/60 hover:text-foreground">
             Next →
           </button>
-          <button onClick={() => setDate(toYyyymmdd(new Date()))} className="text-neutral-500 hover:text-neutral-100 text-sm">
+          <button onClick={() => setDate(toYyyymmdd(new Date()))} className="text-foreground/50 hover:text-foreground text-sm">
             Today
           </button>
         </div>
       </div>
 
-      {isLoading && <p className="text-neutral-400">Loading…</p>}
-      {error && <p className="text-red-400">Failed to load scoreboard.</p>}
-      {games && games.length === 0 && <p className="text-neutral-500">No games on this date.</p>}
+      {isLoading && <p className="text-foreground/60">Loading…</p>}
+      {error && <p className="text-red-600 dark:text-red-400">Failed to load scoreboard.</p>}
+      {games && games.length === 0 && <p className="text-foreground/50">No games on this date.</p>}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         {games?.map((game) => (
           <Link
             key={game.espnId}
             href={`/games/${game.espnId}`}
-            className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 hover:border-neutral-600 space-y-2"
+            className="rounded-lg border border-border bg-surface p-4 hover:border-accent space-y-2"
           >
             <div className="flex items-center justify-between text-sm">
               <span>{game.away.abbreviation}</span>
@@ -92,7 +92,7 @@ function ScoreboardContent() {
               <span>{game.home.abbreviation}</span>
               <span className="font-medium">{game.home.score ?? "-"}</span>
             </div>
-            <div className="text-xs text-neutral-500 pt-1 border-t border-neutral-800">
+            <div className="text-xs text-foreground/50 pt-1 border-t border-border">
               {game.statusName === "STATUS_IN_PROGRESS" ? `Q${game.period} ${game.clock ?? ""}` : game.statusDetail}
             </div>
           </Link>

@@ -3,8 +3,10 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useTheme } from "next-themes";
 import { Fragment, Suspense, useState } from "react";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
+import { getTeamAccent } from "@/lib/team-accent";
 
 interface SeasonInfo {
   id: number;
@@ -328,7 +330,7 @@ const TEAM_TABS: { value: TeamTab; label: string }[] = [
 
 export default function TeamDetailPage() {
   return (
-    <Suspense fallback={<p className="text-neutral-400">Loading…</p>}>
+    <Suspense fallback={<p className="text-foreground/60">Loading…</p>}>
       <TeamDetailContent />
     </Suspense>
   );
@@ -348,9 +350,10 @@ function TeamDetailContent() {
     queryKey: ["leagueTeams"],
     queryFn: fetchLeagueTeams,
   });
+  const { resolvedTheme } = useTheme();
 
-  if (isLoading) return <p className="text-neutral-400">Loading…</p>;
-  if (error || !data) return <p className="text-red-400">Failed to load team.</p>;
+  if (isLoading) return <p className="text-foreground/60">Loading…</p>;
+  if (error || !data) return <p className="text-red-600 dark:text-red-400">Failed to load team.</p>;
 
   const {
     team,
@@ -367,7 +370,7 @@ function TeamDetailContent() {
     injuries,
     splitsSupported = true,
   } = data;
-  const accentColor = team.color ? `#${team.color}` : "#525252";
+  const accentColor = getTeamAccent(team.color, resolvedTheme === "dark" ? "dark" : "light").accent;
   // Falls back to "all" when the data source can't apply a split (espn-only
   // mode) — the select itself is disabled too, but this also covers a
   // lingering non-"all" selection left over from before the mode switched.
@@ -390,7 +393,7 @@ function TeamDetailContent() {
   return (
     <div className="space-y-8">
       <div
-        className="relative left-1/2 right-1/2 -mx-[50vw] w-screen bg-neutral-900 border-b border-neutral-800"
+        className="relative left-1/2 right-1/2 -mx-[50vw] w-screen bg-surface border-b border-border"
         style={{ borderTopColor: accentColor, borderTopWidth: 4 }}
       >
         <div className="mx-auto max-w-6xl flex items-center gap-4 px-6 py-5 sm:py-6">
@@ -400,7 +403,7 @@ function TeamDetailContent() {
           )}
           <div>
             <h1 className="text-2xl font-semibold">{team.displayName}</h1>
-            <p className="text-neutral-400 text-sm">
+            <p className="text-foreground/60 text-sm">
               {standing
                 ? `${standing.wins}-${standing.losses} · ${ordinal(standing.divisionRank)} in ${team.division?.name} Division`
                 : `${team.division?.conference.name} · ${team.division?.name} Division`}
@@ -412,12 +415,12 @@ function TeamDetailContent() {
 
       {activeTab === "home" && (
         <div className="grid grid-cols-1 md:grid-cols-[220px_1fr_320px] gap-6">
-          <aside className="self-start rounded-lg border border-neutral-800 p-4 space-y-3">
-            <h2 className="text-lg font-medium text-neutral-300">
+          <aside className="self-start rounded-lg border border-border p-4 space-y-3">
+            <h2 className="text-lg font-medium text-foreground/80">
               {season ? seasonLabel(season.year) : ""} Schedule
             </h2>
-            {orderedSchedule.length > 0 && <p className="text-xs font-semibold text-neutral-500">Regular Season</p>}
-            <div className="divide-y divide-neutral-800">
+            {orderedSchedule.length > 0 && <p className="text-xs font-semibold text-foreground/50">Regular Season</p>}
+            <div className="divide-y divide-border">
               {orderedSchedule.map((game) => {
                 const isHome = game.homeTeamId === team.id;
                 const opponent = isHome ? game.awayTeam : game.homeTeam;
@@ -430,30 +433,30 @@ function TeamDetailContent() {
                   <Link
                     key={game.id}
                     href={`/games/${game.espnId}`}
-                    className="flex items-center justify-between gap-2 w-full py-3 text-sm hover:text-neutral-100"
+                    className="flex items-center justify-between gap-2 w-full py-3 text-sm hover:text-foreground"
                   >
                     <span className="flex items-center gap-1.5 truncate min-w-0">
-                      <span className="text-neutral-500 shrink-0">{isHome ? "vs." : "@"}</span>
+                      <span className="text-foreground/50 shrink-0">{isHome ? "vs." : "@"}</span>
                       {opponent.logoUrl && (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={opponent.logoUrl} alt="" className="h-6 w-6 shrink-0" />
                       )}
-                      <span className="truncate font-semibold text-neutral-100">{opponent.name}</span>
+                      <span className="truncate font-semibold text-foreground">{opponent.name}</span>
                     </span>
                     <span className="shrink-0 text-right">
                       {game.status === "FINAL" ? (
                         <>
-                          <span className={`font-bold ${won ? "text-emerald-400" : "text-red-400"}`}>{won ? "W" : "L"}</span>{" "}
-                          <span className="font-semibold text-neutral-100">
+                          <span className={`font-bold ${won ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>{won ? "W" : "L"}</span>{" "}
+                          <span className="font-semibold text-foreground">
                             {highScore}-{lowScore}
                           </span>
                         </>
                       ) : (
                         <span className="flex flex-col items-end leading-tight">
-                          <span className="font-semibold text-neutral-100">
+                          <span className="font-semibold text-foreground">
                             {new Date(game.date).toLocaleDateString(undefined, { month: "numeric", day: "numeric" })}
                           </span>
-                          <span className="font-semibold text-neutral-100">
+                          <span className="font-semibold text-foreground">
                             {new Date(game.date).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                           </span>
                         </span>
@@ -462,34 +465,34 @@ function TeamDetailContent() {
                   </Link>
                 );
               })}
-              {orderedSchedule.length === 0 && <p className="text-neutral-500 text-sm p-3">No games found.</p>}
+              {orderedSchedule.length === 0 && <p className="text-foreground/50 text-sm p-3">No games found.</p>}
             </div>
             <button
               onClick={() => setActiveTab("schedule")}
-              className="block w-full text-center text-sm text-neutral-400 hover:text-neutral-100"
+              className="block w-full text-center text-sm text-foreground/60 hover:text-foreground"
             >
               Full Schedule
             </button>
           </aside>
 
           <main className="space-y-4">
-            <h2 className="text-lg font-medium text-neutral-300">News</h2>
+            <h2 className="text-lg font-medium text-foreground/80">News</h2>
             {mostRecentGame && (
               <Link
                 href={`/games/${mostRecentGame.espnId}`}
-                className="block rounded-lg border border-neutral-800 bg-neutral-900 p-4 hover:border-neutral-600"
+                className="block rounded-lg border border-border bg-surface p-4 hover:border-accent"
               >
-                <p className="text-xs text-neutral-500 mb-1">Latest game</p>
+                <p className="text-xs text-foreground/50 mb-1">Latest game</p>
                 <p className="font-medium">
                   {mostRecentGame.awayTeam.displayName} {mostRecentGame.awayScore} @ {mostRecentGame.homeTeam.displayName}{" "}
                   {mostRecentGame.homeScore}
                 </p>
-                <p className="text-neutral-500 text-sm">{new Date(mostRecentGame.date).toLocaleDateString()}</p>
+                <p className="text-foreground/50 text-sm">{new Date(mostRecentGame.date).toLocaleDateString()}</p>
               </Link>
             )}
             <div className="space-y-3">
               {news.map((article) => (
-                <div key={article.id} className="flex gap-4 rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                <div key={article.id} className="flex gap-4 rounded-lg border border-border bg-surface p-4">
                   {article.imageUrl && (
                     // eslint-disable-next-line @next/next/no-img-element -- external ESPN CDN images
                     <img src={article.imageUrl} alt="" className="h-20 w-32 object-cover rounded-md shrink-0" />
@@ -499,29 +502,29 @@ function TeamDetailContent() {
                       href={article.url ?? "#"}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-medium hover:text-neutral-300"
+                      className="font-medium hover:text-foreground/80"
                     >
                       {article.headline}
                     </a>
                     {article.description && article.description !== article.headline && (
-                      <p className="text-neutral-400 text-sm">{article.description}</p>
+                      <p className="text-foreground/60 text-sm">{article.description}</p>
                     )}
                     {article.publishedAt && (
-                      <p className="text-neutral-500 text-xs">{new Date(article.publishedAt).toLocaleDateString()}</p>
+                      <p className="text-foreground/50 text-xs">{new Date(article.publishedAt).toLocaleDateString()}</p>
                     )}
                   </div>
                 </div>
               ))}
-              {news.length === 0 && <p className="text-neutral-500 text-sm">No recent news.</p>}
+              {news.length === 0 && <p className="text-foreground/50 text-sm">No recent news.</p>}
             </div>
           </main>
 
           <aside className="space-y-6">
             <div className="space-y-3">
-              <h2 className="text-lg font-medium text-neutral-300">{team.division?.name} Division</h2>
+              <h2 className="text-lg font-medium text-foreground/80">{team.division?.name} Division</h2>
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-left text-neutral-500 border-b border-neutral-800">
+                  <tr className="text-left text-foreground/50 border-b border-border">
                     <th className="py-1.5 pr-2">Team</th>
                     <th className="py-1.5 pr-2 text-right">W</th>
                     <th className="py-1.5 pr-2 text-right">L</th>
@@ -534,12 +537,12 @@ function TeamDetailContent() {
                   {divisionStandings.map((s) => (
                     <tr
                       key={s.id}
-                      className={`border-b border-neutral-900 ${
-                        s.team.id === team.id ? "text-neutral-100 font-semibold" : "text-neutral-400"
+                      className={`border-b border-border/60 ${
+                        s.team.id === team.id ? "text-foreground font-semibold" : "text-foreground/60"
                       }`}
                     >
                       <td className="py-1.5 pr-2">
-                        <Link href={`/teams/${s.team.id}`} className="flex items-center gap-1.5 hover:text-neutral-100">
+                        <Link href={`/teams/${s.team.id}`} className="flex items-center gap-1.5 hover:text-foreground">
                           {s.team.logoUrl && (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={s.team.logoUrl} alt="" className="h-4 w-4" />
@@ -556,7 +559,7 @@ function TeamDetailContent() {
                   ))}
                 </tbody>
               </table>
-              <Link href="/standings" className="block w-full text-center text-sm text-neutral-400 hover:text-neutral-100">
+              <Link href="/standings" className="block w-full text-center text-sm text-foreground/60 hover:text-foreground">
                 Full Standings
               </Link>
             </div>
@@ -582,7 +585,7 @@ function TeamDetailContent() {
                 const picked = availableSeasons.find((s) => s.id === Number(e.target.value));
                 if (picked) setSelectedSeasonYear(picked.year);
               }}
-              className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-600"
+              className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
             >
               {availableSeasons.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -595,7 +598,7 @@ function TeamDetailContent() {
               onChange={(e) => setStatsSplit(e.target.value)}
               disabled={!splitsSupported}
               title={splitsSupported ? undefined : "Stat splits aren't available in live-data (no database) mode"}
-              className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
               <optgroup label="Season">
                 <option value="all">All Splits</option>
@@ -670,11 +673,11 @@ function TeamDetailContent() {
 
       {activeTab === "roster" && (
         <section>
-          <h2 className="text-2xl font-bold text-neutral-100 mb-3">{team.displayName} Roster</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-3">{team.displayName} Roster</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm whitespace-nowrap">
               <thead>
-                <tr className="text-left text-neutral-500 border-b border-neutral-800">
+                <tr className="text-left text-foreground/50 border-b border-border">
                   <th className="py-2 pr-3">Player</th>
                   <th className="py-2 pr-3">Pos</th>
                   <th className="py-2 pr-3 text-right">Age</th>
@@ -689,26 +692,26 @@ function TeamDetailContent() {
               </thead>
               <tbody>
                 {rosterByPoints.map((player) => (
-                  <tr key={player.id} className="border-b border-neutral-900">
+                  <tr key={player.id} className="border-b border-border/60">
                     <td className="py-2 pr-3">
-                      <Link href={`/players/${player.id}`} className="flex items-center gap-2 hover:text-neutral-100">
+                      <Link href={`/players/${player.id}`} className="flex items-center gap-2 hover:text-foreground">
                         {player.headshotUrl && (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={player.headshotUrl}
                             alt=""
-                            className="h-8 w-8 rounded-full bg-neutral-800 object-cover shrink-0"
+                            className="h-8 w-8 rounded-full bg-surface-muted object-cover shrink-0"
                           />
                         )}
                         <span>{player.displayName}</span>
-                        <span className="text-neutral-500">#{player.jersey ?? "—"}</span>
+                        <span className="text-foreground/50">#{player.jersey ?? "—"}</span>
                       </Link>
                     </td>
-                    <td className="py-2 pr-3 text-neutral-400">{player.position?.abbreviation ?? "—"}</td>
-                    <td className="py-2 pr-3 text-right text-neutral-400">{player.age ?? "—"}</td>
-                    <td className="py-2 pr-3 text-right text-neutral-400">{formatHeight(player.heightIn)}</td>
-                    <td className="py-2 pr-3 text-right text-neutral-400">{player.weightLb ? `${player.weightLb} lbs` : "—"}</td>
-                    <td className="py-2 pr-3 text-neutral-400">{player.college ?? "—"}</td>
+                    <td className="py-2 pr-3 text-foreground/60">{player.position?.abbreviation ?? "—"}</td>
+                    <td className="py-2 pr-3 text-right text-foreground/60">{player.age ?? "—"}</td>
+                    <td className="py-2 pr-3 text-right text-foreground/60">{formatHeight(player.heightIn)}</td>
+                    <td className="py-2 pr-3 text-right text-foreground/60">{player.weightLb ? `${player.weightLb} lbs` : "—"}</td>
+                    <td className="py-2 pr-3 text-foreground/60">{player.college ?? "—"}</td>
                     <td className="py-2 pr-3 text-right">{player.seasonStat?.pointsPerGame?.toFixed(1) ?? "—"}</td>
                     <td className="py-2 pr-3 text-right">{player.seasonStat?.reboundsPerGame?.toFixed(1) ?? "—"}</td>
                     <td className="py-2 pr-3 text-right">{player.seasonStat?.assistsPerGame?.toFixed(1) ?? "—"}</td>
@@ -719,8 +722,8 @@ function TeamDetailContent() {
             </table>
           </div>
           {coach && (
-            <p className="mt-4 text-sm text-neutral-400">
-              <span className="text-neutral-500">Head Coach:</span> {coach.name}
+            <p className="mt-4 text-sm text-foreground/60">
+              <span className="text-foreground/50">Head Coach:</span> {coach.name}
               {coach.experienceYears != null && ` (${coach.experienceYears} yr${coach.experienceYears === 1 ? "" : "s"})`}
             </p>
           )}
@@ -780,15 +783,15 @@ function shortName(displayName: string): string {
 
 // Positive margin = hit (covered the spread / went over the total), 0 = push.
 function hitColorClass(margin: number | null): string {
-  if (margin == null || margin === 0) return "text-neutral-500";
-  return margin > 0 ? "text-emerald-400" : "text-red-400";
+  if (margin == null || margin === 0) return "text-foreground/50";
+  return margin > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
 }
 
 function GameLeaderCell({ leader }: { leader: GameLeader | null }) {
-  if (!leader) return <span className="text-neutral-500">—</span>;
+  if (!leader) return <span className="text-foreground/50">—</span>;
   return (
-    <Link href={`/players/${leader.playerId}`} className="hover:text-neutral-100">
-      <span className="text-neutral-400">{shortName(leader.displayName)}</span> <span className="font-medium">{leader.value}</span>
+    <Link href={`/players/${leader.playerId}`} className="hover:text-foreground">
+      <span className="text-foreground/60">{shortName(leader.displayName)}</span> <span className="font-medium">{leader.value}</span>
     </Link>
   );
 }
@@ -803,17 +806,17 @@ function DepthChartTab({
   depthChart: TeamDetail["depthChart"];
 }) {
   if (depthChart.length === 0) {
-    return <p className="text-neutral-500">Depth chart unavailable.</p>;
+    return <p className="text-foreground/50">Depth chart unavailable.</p>;
   }
 
   return (
     <section>
-      <h2 className="text-2xl font-bold text-neutral-100 mb-3">{team.displayName} Depth Chart</h2>
+      <h2 className="text-2xl font-bold text-foreground mb-3">{team.displayName} Depth Chart</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm whitespace-nowrap">
           <thead>
-            <tr className="text-left text-neutral-500 border-b border-neutral-800">
-              <th className="py-2 pr-6 border-r border-neutral-800" />
+            <tr className="text-left text-foreground/50 border-b border-border">
+              <th className="py-2 pr-6 border-r border-border" />
               {DEPTH_CHART_COLUMN_LABELS.map((label, i) => (
                 <th key={label} className={`py-2 pr-6 font-medium ${i === 0 ? "pl-3" : ""}`}>
                   {label}
@@ -823,8 +826,8 @@ function DepthChartTab({
           </thead>
           <tbody>
             {depthChart.map((position) => (
-              <tr key={position.abbreviation} className="border-b border-neutral-900">
-                <td className="py-2 pr-6 text-neutral-500 border-r border-neutral-800">{position.abbreviation}</td>
+              <tr key={position.abbreviation} className="border-b border-border/60">
+                <td className="py-2 pr-6 text-foreground/50 border-r border-border">{position.abbreviation}</td>
                 {DEPTH_CHART_COLUMN_LABELS.map((label, i) => {
                   const player = position.players[i] ?? null;
                   return (
@@ -832,12 +835,12 @@ function DepthChartTab({
                       {player ? (
                         <Link
                           href={`/players/${player.id}`}
-                          className={`hover:text-neutral-100 ${i === 0 ? "font-semibold text-neutral-100" : "text-neutral-400"}`}
+                          className={`hover:text-foreground ${i === 0 ? "font-semibold text-foreground" : "text-foreground/60"}`}
                         >
                           {player.displayName}
                         </Link>
                       ) : (
-                        <span className="text-neutral-500">-</span>
+                        <span className="text-foreground/50">-</span>
                       )}
                     </td>
                   );
@@ -850,26 +853,26 @@ function DepthChartTab({
 
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
         <p>
-          <span className="text-neutral-400 font-medium">PG:</span> <span className="text-neutral-500">Point Guard</span>
+          <span className="text-foreground/60 font-medium">PG:</span> <span className="text-foreground/50">Point Guard</span>
         </p>
         <p>
-          <span className="text-neutral-400 font-medium">SF:</span> <span className="text-neutral-500">Small Forward</span>
+          <span className="text-foreground/60 font-medium">SF:</span> <span className="text-foreground/50">Small Forward</span>
         </p>
         <p>
-          <span className="text-neutral-400 font-medium">C:</span> <span className="text-neutral-500">Center</span>
+          <span className="text-foreground/60 font-medium">C:</span> <span className="text-foreground/50">Center</span>
         </p>
         <p>
-          <span className="text-neutral-400 font-medium">SG:</span> <span className="text-neutral-500">Shooting Guard</span>
+          <span className="text-foreground/60 font-medium">SG:</span> <span className="text-foreground/50">Shooting Guard</span>
         </p>
         <p>
-          <span className="text-neutral-400 font-medium">PF:</span> <span className="text-neutral-500">Power Forward</span>
+          <span className="text-foreground/60 font-medium">PF:</span> <span className="text-foreground/50">Power Forward</span>
         </p>
         <span />
         <p>
-          <span className="text-red-400 font-medium">DD:</span> <span className="text-neutral-500">Day-to-Day</span>
+          <span className="text-red-600 dark:text-red-400 font-medium">DD:</span> <span className="text-foreground/50">Day-to-Day</span>
         </p>
         <p>
-          <span className="text-red-400 font-medium">O:</span> <span className="text-neutral-500">Out</span>
+          <span className="text-red-600 dark:text-red-400 font-medium">O:</span> <span className="text-foreground/50">Out</span>
         </p>
       </div>
     </section>
@@ -880,10 +883,10 @@ function DepthChartTab({
 // Out, amber for Day-To-Day, etc.) — fall back to neutral for anything new.
 function injuryStatusColorClass(status: string): string {
   const normalized = status.toLowerCase();
-  if (normalized.includes("out")) return "text-red-400";
-  if (normalized.includes("day")) return "text-amber-400";
-  if (normalized.includes("questionable") || normalized.includes("doubtful")) return "text-amber-400";
-  return "text-neutral-400";
+  if (normalized.includes("out")) return "text-red-600 dark:text-red-400";
+  if (normalized.includes("day")) return "text-amber-600 dark:text-amber-400";
+  if (normalized.includes("questionable") || normalized.includes("doubtful")) return "text-amber-600 dark:text-amber-400";
+  return "text-foreground/60";
 }
 
 function formatInjuryDate(dateStr: string): string {
@@ -902,19 +905,19 @@ function InjuriesTab({
   if (injuries.length === 0) {
     return (
       <section>
-        <h2 className="text-2xl font-bold text-neutral-100 mb-3">{team.displayName} Injuries</h2>
-        <p className="text-neutral-500">No reported injuries.</p>
+        <h2 className="text-2xl font-bold text-foreground mb-3">{team.displayName} Injuries</h2>
+        <p className="text-foreground/50">No reported injuries.</p>
       </section>
     );
   }
 
   return (
     <section>
-      <h2 className="text-2xl font-bold text-neutral-100 mb-3">{team.displayName} Injuries</h2>
+      <h2 className="text-2xl font-bold text-foreground mb-3">{team.displayName} Injuries</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-neutral-500 border-b border-neutral-800">
+            <tr className="text-left text-foreground/50 border-b border-border">
               <th className="py-2 pr-8">Player</th>
               <th className="py-2 pr-8">Pos</th>
               <th className="py-2 pr-8">Updated</th>
@@ -924,31 +927,31 @@ function InjuriesTab({
           </thead>
           <tbody>
             {injuries.map((injury, i) => (
-              <tr key={injury.playerId ?? i} className="border-b border-neutral-900 align-top">
+              <tr key={injury.playerId ?? i} className="border-b border-border/60 align-top">
                 <td className="py-3 pr-8 whitespace-nowrap">
                   {injury.playerId ? (
-                    <Link href={`/players/${injury.playerId}`} className="flex items-center gap-2 hover:text-neutral-100">
+                    <Link href={`/players/${injury.playerId}`} className="flex items-center gap-2 hover:text-foreground">
                       {injury.headshotUrl && (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={injury.headshotUrl}
                           alt=""
-                          className="h-8 w-8 rounded-full bg-neutral-800 object-cover shrink-0"
+                          className="h-8 w-8 rounded-full bg-surface-muted object-cover shrink-0"
                         />
                       )}
                       <span>{injury.displayName}</span>
-                      <span className="text-neutral-500">#{injury.jersey ?? "—"}</span>
+                      <span className="text-foreground/50">#{injury.jersey ?? "—"}</span>
                     </Link>
                   ) : (
                     <span>{injury.displayName}</span>
                   )}
                 </td>
-                <td className="py-3 pr-8 text-neutral-400 whitespace-nowrap">{injury.position ?? "—"}</td>
-                <td className="py-3 pr-8 text-neutral-400 whitespace-nowrap">{formatInjuryDate(injury.date)}</td>
+                <td className="py-3 pr-8 text-foreground/60 whitespace-nowrap">{injury.position ?? "—"}</td>
+                <td className="py-3 pr-8 text-foreground/60 whitespace-nowrap">{formatInjuryDate(injury.date)}</td>
                 <td className={`py-3 pr-8 font-medium whitespace-nowrap ${injuryStatusColorClass(injury.status)}`}>
                   {injury.status}
                 </td>
-                <td className="py-3 text-neutral-400 min-w-[320px]">{injury.comment ?? "—"}</td>
+                <td className="py-3 text-foreground/60 min-w-[320px]">{injury.comment ?? "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -1006,13 +1009,13 @@ function TransactionsTab({
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-medium text-neutral-300">
+        <h2 className="text-lg font-medium text-foreground/80">
           {team.displayName} Transactions {year}
         </h2>
         <select
           value={year}
           onChange={(e) => setYear(Number(e.target.value))}
-          className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-600"
+          className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
         >
           {calendarYears.map((y) => (
             <option key={y} value={y}>
@@ -1022,27 +1025,27 @@ function TransactionsTab({
         </select>
       </div>
 
-      {isLoading && <p className="text-neutral-500 text-sm">Loading…</p>}
-      {!isLoading && transactions?.length === 0 && <p className="text-neutral-500 text-sm">No transactions found.</p>}
+      {isLoading && <p className="text-foreground/50 text-sm">Loading…</p>}
+      {!isLoading && transactions?.length === 0 && <p className="text-foreground/50 text-sm">No transactions found.</p>}
 
       {grouped.map(([label, rows]) => (
         <div key={label} className="space-y-1">
-          <h3 className="text-base font-semibold text-neutral-100">{label.split(" ")[0]}</h3>
-          <div className="overflow-x-auto rounded-lg border border-neutral-800">
+          <h3 className="text-base font-semibold text-foreground">{label.split(" ")[0]}</h3>
+          <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm table-fixed">
               <thead>
-                <tr className="text-left text-neutral-500 border-b border-neutral-800">
+                <tr className="text-left text-foreground/50 border-b border-border">
                   <th className="py-2 pl-3 pr-3 w-40">Date</th>
                   <th className="py-2 pr-3">Transaction</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((t, i) => (
-                  <tr key={`${t.date}-${i}`} className="border-b border-neutral-900 last:border-0 align-top">
-                    <td className="py-2 pl-3 pr-3 text-neutral-400 whitespace-nowrap">
+                  <tr key={`${t.date}-${i}`} className="border-b border-border/60 last:border-0 align-top">
+                    <td className="py-2 pl-3 pr-3 text-foreground/60 whitespace-nowrap">
                       {new Date(t.date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
                     </td>
-                    <td className="py-2 pr-3 text-neutral-300">{t.description}</td>
+                    <td className="py-2 pr-3 text-foreground/80">{t.description}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1089,14 +1092,14 @@ function ScheduleTab({
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-medium text-neutral-300">{season && seasonLabel(season.year)} Schedule</h2>
+        <h2 className="text-lg font-medium text-foreground/80">{season && seasonLabel(season.year)} Schedule</h2>
         <select
           value={season?.id ?? ""}
           onChange={(e) => {
             const picked = availableSeasons.find((s) => s.id === Number(e.target.value));
             if (picked) onSeasonChange(picked.year);
           }}
-          className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-600"
+          className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
         >
           {availableSeasons.map((s) => (
             <option key={s.id} value={s.id}>
@@ -1106,22 +1109,22 @@ function ScheduleTab({
         </select>
       </div>
 
-      {rows.length === 0 && <p className="text-neutral-500 text-sm">No games found.</p>}
+      {rows.length === 0 && <p className="text-foreground/50 text-sm">No games found.</p>}
 
       {completedRows.length > 0 && (
         <div className="space-y-1">
-          <p className="text-xs font-semibold text-neutral-500">{season && seasonTypeLabel(season.type)}</p>
-          <div className="overflow-x-auto rounded-lg border border-neutral-800">
+          <p className="text-xs font-semibold text-foreground/50">{season && seasonTypeLabel(season.type)}</p>
+          <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm whitespace-nowrap table-fixed">
               <thead>
-                <tr className="text-left text-neutral-500 border-b border-neutral-800">
+                <tr className="text-left text-foreground/50 border-b border-border">
                   <th className="py-2 pl-3 pr-8 w-32">Date</th>
                   <th className="py-2 pr-3">Opponent</th>
                   <th className="py-2 pr-3 w-28">Result</th>
                   <th className="py-2 pr-3 text-right w-16">W-L</th>
-                  <th className="py-2 pl-3 pr-3 text-right w-20 border-l border-neutral-800">Line</th>
+                  <th className="py-2 pl-3 pr-3 text-right w-20 border-l border-border">Line</th>
                   <th className="py-2 pr-6 text-right w-24">O/U</th>
-                  <th className="py-2 pl-3 pr-3 w-32 border-l border-neutral-800">Hi Points</th>
+                  <th className="py-2 pl-3 pr-3 w-32 border-l border-border">Hi Points</th>
                   <th className="py-2 pr-3 w-32">Hi Rebounds</th>
                   <th className="py-2 pr-3 w-32">Hi Assists</th>
                 </tr>
@@ -1129,8 +1132,8 @@ function ScheduleTab({
               <tbody>
                 {groupByMonth(completedRows).map(([label, groupRows]) => (
                   <Fragment key={label}>
-                    <tr className="border-b border-neutral-900">
-                      <td colSpan={9} className="pt-3 pb-1 pl-3 text-xs font-semibold text-neutral-500">
+                    <tr className="border-b border-border/60">
+                      <td colSpan={9} className="pt-3 pb-1 pl-3 text-xs font-semibold text-foreground/50">
                         {label}
                       </td>
                     </tr>
@@ -1153,13 +1156,13 @@ function ScheduleTab({
                           ? teamScore + oppScore - overUnder
                           : null;
                       return (
-                        <tr key={game.id} className="border-b border-neutral-900 last:border-0">
-                          <td className="py-2 pl-3 pr-8 text-neutral-400">
+                        <tr key={game.id} className="border-b border-border/60 last:border-0">
+                          <td className="py-2 pl-3 pr-8 text-foreground/60">
                             {date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
                           </td>
                           <td className="py-2 pr-3">
-                            <Link href={`/teams/${opponent.id}`} className="flex items-center gap-2 hover:text-neutral-100">
-                              <span className="text-neutral-500">{isHome ? "vs" : "@"}</span>
+                            <Link href={`/teams/${opponent.id}`} className="flex items-center gap-2 hover:text-foreground">
+                              <span className="text-foreground/50">{isHome ? "vs" : "@"}</span>
                               {opponent.logoUrl && (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={opponent.logoUrl} alt="" className="h-5 w-5" />
@@ -1168,17 +1171,17 @@ function ScheduleTab({
                             </Link>
                           </td>
                           <td className="py-2 pr-3">
-                            <Link href={`/games/${game.espnId}`} className="hover:text-neutral-100">
-                              <span className={`font-semibold ${won ? "text-emerald-400" : "text-red-400"}`}>
+                            <Link href={`/games/${game.espnId}`} className="hover:text-foreground">
+                              <span className={`font-semibold ${won ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
                                 {won ? "W" : "L"}
                               </span>{" "}
-                              <span className="text-neutral-400">
+                              <span className="text-foreground/60">
                                 {teamScore}-{oppScore}
                               </span>
                             </Link>
                           </td>
-                          <td className="py-2 pr-3 text-right text-neutral-500">{record ?? "—"}</td>
-                          <td className={`py-2 pl-3 pr-3 text-right border-l border-neutral-900 ${hitColorClass(coverMargin)}`}>
+                          <td className="py-2 pr-3 text-right text-foreground/50">{record ?? "—"}</td>
+                          <td className={`py-2 pl-3 pr-3 text-right border-l border-border/60 ${hitColorClass(coverMargin)}`}>
                             {teamSpread != null ? `${teamSpread > 0 ? "+" : ""}${teamSpread}` : "—"}
                           </td>
                           <td className={`py-2 pr-6 text-right ${hitColorClass(totalMargin)}`}>
@@ -1194,7 +1197,7 @@ function ScheduleTab({
                               "—"
                             )}
                           </td>
-                          <td className="py-2 pl-3 pr-3 border-l border-neutral-900">
+                          <td className="py-2 pl-3 pr-3 border-l border-border/60">
                             <GameLeaderCell leader={game.leaders?.points ?? null} />
                           </td>
                           <td className="py-2 pr-3">
@@ -1215,10 +1218,10 @@ function ScheduleTab({
       )}
 
       {upcomingRows.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-neutral-800">
+        <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm whitespace-nowrap table-fixed">
             <thead>
-              <tr className="text-left text-neutral-500 border-b border-neutral-800">
+              <tr className="text-left text-foreground/50 border-b border-border">
                 <th className="py-2 pl-3 pr-3 w-28">Date</th>
                 <th className="py-2 pr-3">Opponent</th>
                 <th className="py-2 pr-6 text-right w-40">Time</th>
@@ -1228,21 +1231,21 @@ function ScheduleTab({
             <tbody>
               {groupByMonth(upcomingRows).map(([label, groupRows]) => (
                 <Fragment key={label}>
-                  <tr className="border-b border-neutral-900">
-                    <td colSpan={4} className="pt-3 pb-1 pl-3 text-xs font-semibold text-neutral-500">
+                  <tr className="border-b border-border/60">
+                    <td colSpan={4} className="pt-3 pb-1 pl-3 text-xs font-semibold text-foreground/50">
                       {label}
                     </td>
                   </tr>
                   {groupRows.map(({ game, isHome, opponent }) => {
                     const date = new Date(game.date);
                     return (
-                      <tr key={game.id} className="border-b border-neutral-900 last:border-0">
-                        <td className="py-2 pl-3 pr-8 text-neutral-400">
+                      <tr key={game.id} className="border-b border-border/60 last:border-0">
+                        <td className="py-2 pl-3 pr-8 text-foreground/60">
                           {date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
                         </td>
                         <td className="py-2 pr-3">
-                          <Link href={`/games/${game.espnId}`} className="flex items-center gap-2 hover:text-neutral-100">
-                            <span className="text-neutral-500">{isHome ? "vs" : "@"}</span>
+                          <Link href={`/games/${game.espnId}`} className="flex items-center gap-2 hover:text-foreground">
+                            <span className="text-foreground/50">{isHome ? "vs" : "@"}</span>
                             {opponent.logoUrl && (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={opponent.logoUrl} alt="" className="h-5 w-5" />
@@ -1251,13 +1254,13 @@ function ScheduleTab({
                           </Link>
                         </td>
                         <td className="py-2 pr-6 text-right">
-                          <Link href={`/games/${game.espnId}`} className="text-neutral-500 hover:text-neutral-100">
+                          <Link href={`/games/${game.espnId}`} className="text-foreground/50 hover:text-foreground">
                             {game.status === "LIVE"
                               ? "Live"
                               : date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                           </Link>
                         </td>
-                        <td className="py-2 pr-3 text-center text-neutral-500">{game.broadcast ?? "—"}</td>
+                        <td className="py-2 pr-3 text-center text-foreground/50">{game.broadcast ?? "—"}</td>
                       </tr>
                     );
                   })}
@@ -1284,33 +1287,33 @@ function TeamLeadersRow({ teamLeaders }: { teamLeaders: TeamDetail["teamLeaders"
 
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-medium text-neutral-300">Team Leaders</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-neutral-800 rounded-lg border border-neutral-800 overflow-hidden">
+      <h2 className="text-lg font-medium text-foreground/80">Team Leaders</h2>
+      <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-border rounded-lg border border-border overflow-hidden">
         {LEADER_ROW_CARDS.map(({ key, label }) => {
           const entry = byKey.get(key);
           return (
             <div key={key} className="p-4 space-y-2">
-              <p className="text-sm font-medium text-neutral-300">{label}</p>
+              <p className="text-sm font-medium text-foreground/80">{label}</p>
               {entry?.player ? (
-                <Link href={`/players/${entry.player.id}`} className="flex items-start gap-3 hover:text-neutral-100">
+                <Link href={`/players/${entry.player.id}`} className="flex items-start gap-3 hover:text-foreground">
                   {entry.player.headshotUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={entry.player.headshotUrl}
                       alt=""
-                      className="h-14 w-14 rounded-full bg-neutral-800 object-cover shrink-0"
+                      className="h-14 w-14 rounded-full bg-surface-muted object-cover shrink-0"
                     />
                   )}
                   <span className="min-w-0 space-y-1">
                     <span className="block text-sm truncate">
                       {entry.player.displayName}{" "}
-                      <span className="text-neutral-500">{entry.player.position?.abbreviation}</span>
+                      <span className="text-foreground/50">{entry.player.position?.abbreviation}</span>
                     </span>
                     <span className="block text-2xl font-semibold">{entry.displayValue ?? "—"}</span>
                   </span>
                 </Link>
               ) : (
-                <p className="text-neutral-500 text-sm">—</p>
+                <p className="text-foreground/50 text-sm">—</p>
               )}
             </div>
           );
@@ -1336,17 +1339,17 @@ function TeamLeadersCard({
   onViewAll?: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-neutral-800 p-4 space-y-3">
-      <h2 className="text-lg font-medium text-neutral-300">{season ? seasonLabel(season.year) : ""} Team Leaders</h2>
-      <div className="flex border-b border-neutral-800 text-sm">
+    <div className="rounded-lg border border-border p-4 space-y-3">
+      <h2 className="text-lg font-medium text-foreground/80">{season ? seasonLabel(season.year) : ""} Team Leaders</h2>
+      <div className="flex border-b border-border text-sm">
         {LEADERS_GROUPS.map((group) => (
           <button
             key={group.value}
             onClick={() => setLeadersGroup(group.value)}
             className={`flex-1 pb-2 text-center border-b-2 ${
               leadersGroup === group.value
-                ? "text-neutral-100 font-semibold"
-                : "text-neutral-500 border-transparent hover:text-neutral-300"
+                ? "text-foreground font-semibold"
+                : "text-foreground/50 border-transparent hover:text-foreground/80"
             }`}
             style={leadersGroup === group.value ? { borderColor: accentColor } : undefined}
           >
@@ -1354,47 +1357,47 @@ function TeamLeadersCard({
           </button>
         ))}
       </div>
-      <div className="divide-y divide-neutral-800">
+      <div className="divide-y divide-border">
         {visibleLeaders.map(({ statName, player, displayValue, secondary }) => (
           <div key={statName} className="w-full py-3 space-y-2">
-            <p className="text-sm text-neutral-300">{statName}</p>
+            <p className="text-sm text-foreground/80">{statName}</p>
             {player ? (
-              <Link href={`/players/${player.id}`} className="flex items-center justify-between gap-3 hover:text-neutral-100">
+              <Link href={`/players/${player.id}`} className="flex items-center justify-between gap-3 hover:text-foreground">
                 <div className="flex items-center gap-3 min-w-0">
                   {player.headshotUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={player.headshotUrl}
                       alt=""
-                      className="h-12 w-12 rounded-full bg-neutral-800 object-cover shrink-0"
+                      className="h-12 w-12 rounded-full bg-surface-muted object-cover shrink-0"
                     />
                   )}
                   <div className="min-w-0">
                     <p className="text-sm truncate">
                       {player.displayName}{" "}
-                      <span className="text-neutral-500">
+                      <span className="text-foreground/50">
                         {player.position?.abbreviation} #{player.jersey ?? "—"}
                       </span>
                     </p>
                     <p className="text-2xl font-semibold">{displayValue}</p>
                   </div>
                 </div>
-                <div className="text-right text-xs text-neutral-500 shrink-0 space-y-0.5">
+                <div className="text-right text-xs text-foreground/50 shrink-0 space-y-0.5">
                   {secondary.map((s) => (
                     <p key={s.label}>
-                      {s.label} <span className="text-neutral-300 font-medium">{s.value ?? "—"}</span>
+                      {s.label} <span className="text-foreground/80 font-medium">{s.value ?? "—"}</span>
                     </p>
                   ))}
                 </div>
               </Link>
             ) : (
-              <p className="text-neutral-500 text-sm">—</p>
+              <p className="text-foreground/50 text-sm">—</p>
             )}
           </div>
         ))}
       </div>
       {onViewAll && (
-        <button onClick={onViewAll} className="block w-full text-center text-sm text-neutral-400 hover:text-neutral-100">
+        <button onClick={onViewAll} className="block w-full text-center text-sm text-foreground/60 hover:text-foreground">
           Full Team Statistics
         </button>
       )}
@@ -1471,12 +1474,12 @@ function SortableTh({
   const active = column.key === sortKey;
   return (
     <th
-      className={`py-2 pr-3 cursor-pointer select-none hover:text-neutral-200 ${align === "right" ? "text-right" : "text-left"}`}
+      className={`py-2 pr-3 cursor-pointer select-none hover:text-foreground/80 ${align === "right" ? "text-right" : "text-left"}`}
       onClick={() => onSort(column.key)}
     >
       <span className={`inline-flex items-center gap-1 ${align === "right" ? "flex-row-reverse" : ""}`}>
         {column.label}
-        <span className="text-[10px] text-neutral-600 w-2 inline-block">{active ? (sortDir === "asc" ? "▲" : "▼") : ""}</span>
+        <span className="text-[10px] text-foreground/40 w-2 inline-block">{active ? (sortDir === "asc" ? "▲" : "▼") : ""}</span>
       </span>
     </th>
   );
@@ -1509,11 +1512,11 @@ function PlayerStatsTable({ roster, splitLabel }: { roster: RosterRow[]; splitLa
 
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-medium text-neutral-300">Player Stats - {splitLabel}</h2>
+      <h2 className="text-lg font-medium text-foreground/80">Player Stats - {splitLabel}</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm whitespace-nowrap">
           <thead>
-            <tr className="text-left text-neutral-500 border-b border-neutral-800">
+            <tr className="text-left text-foreground/50 border-b border-border">
               {PLAYER_STAT_COLUMNS.map((col) => (
                 <SortableTh
                   key={col.key}
@@ -1528,10 +1531,10 @@ function PlayerStatsTable({ roster, splitLabel }: { roster: RosterRow[]; splitLa
           </thead>
           <tbody>
             {sorted.map((p) => (
-              <tr key={p.id} className="border-b border-neutral-900">
+              <tr key={p.id} className="border-b border-border/60">
                 <td className="py-2 pr-3">
-                  <Link href={`/players/${p.id}`} className="hover:text-neutral-100">
-                    {p.displayName} <span className="text-neutral-500">{p.position?.abbreviation ?? "—"}</span>
+                  <Link href={`/players/${p.id}`} className="hover:text-foreground">
+                    {p.displayName} <span className="text-foreground/50">{p.position?.abbreviation ?? "—"}</span>
                   </Link>
                 </td>
                 <td className="py-2 pr-3 text-right">{p.fullStat?.gamesPlayed ?? "—"}</td>
@@ -1550,7 +1553,7 @@ function PlayerStatsTable({ roster, splitLabel }: { roster: RosterRow[]; splitLa
               </tr>
             ))}
             {rows.length > 0 && (
-              <tr className="font-semibold text-neutral-200">
+              <tr className="font-semibold text-foreground/80">
                 <td className="py-2 pr-3">Total</td>
                 <td className="py-2 pr-3 text-right">{totalGP}</td>
                 <td className="py-2 pr-3 text-right"></td>
@@ -1569,7 +1572,7 @@ function PlayerStatsTable({ roster, splitLabel }: { roster: RosterRow[]; splitLa
             )}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={14} className="py-3 text-neutral-500">
+                <td colSpan={14} className="py-3 text-foreground/50">
                   No stats available.
                 </td>
               </tr>
@@ -1613,11 +1616,11 @@ function ShootingStatsTable({ roster, splitLabel }: { roster: RosterRow[]; split
 
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-medium text-neutral-300">Shooting Stats - {splitLabel}</h2>
+      <h2 className="text-lg font-medium text-foreground/80">Shooting Stats - {splitLabel}</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm whitespace-nowrap">
           <thead>
-            <tr className="text-left text-neutral-500 border-b border-neutral-800">
+            <tr className="text-left text-foreground/50 border-b border-border">
               {SHOOTING_STAT_COLUMNS.map((col) => (
                 <SortableTh
                   key={col.key}
@@ -1632,10 +1635,10 @@ function ShootingStatsTable({ roster, splitLabel }: { roster: RosterRow[]; split
           </thead>
           <tbody>
             {sorted.map((p) => (
-              <tr key={p.id} className="border-b border-neutral-900">
+              <tr key={p.id} className="border-b border-border/60">
                 <td className="py-2 pr-3">
-                  <Link href={`/players/${p.id}`} className="hover:text-neutral-100">
-                    {p.displayName} <span className="text-neutral-500">{p.position?.abbreviation ?? "—"}</span>
+                  <Link href={`/players/${p.id}`} className="hover:text-foreground">
+                    {p.displayName} <span className="text-foreground/50">{p.position?.abbreviation ?? "—"}</span>
                   </Link>
                 </td>
                 <td className="py-2 pr-3 text-right">{fmt1(p.fullStat?.fgMadePerGame)}</td>
@@ -1655,7 +1658,7 @@ function ShootingStatsTable({ roster, splitLabel }: { roster: RosterRow[]; split
               </tr>
             ))}
             {rows.length > 0 && (
-              <tr className="font-semibold text-neutral-200">
+              <tr className="font-semibold text-foreground/80">
                 <td className="py-2 pr-3">Total</td>
                 <td className="py-2 pr-3 text-right">{fmt1(totalFgm)}</td>
                 <td className="py-2 pr-3 text-right">{fmt1(totalFga)}</td>
@@ -1675,7 +1678,7 @@ function ShootingStatsTable({ roster, splitLabel }: { roster: RosterRow[]; split
             )}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={14} className="py-3 text-neutral-500">
+                <td colSpan={14} className="py-3 text-foreground/50">
                   No stats available.
                 </td>
               </tr>
@@ -1720,12 +1723,12 @@ const STATS_GLOSSARY: { term: string; definition: string }[] = [
 function StatsGlossary() {
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-medium text-neutral-300">Glossary</h2>
+      <h2 className="text-lg font-medium text-foreground/80">Glossary</h2>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-2 text-sm">
         {STATS_GLOSSARY.map(({ term, definition }) => (
           <p key={term}>
-            <span className="text-neutral-200 font-medium">{term}</span>{" "}
-            <span className="text-neutral-500">— {definition}</span>
+            <span className="text-foreground/80 font-medium">{term}</span>{" "}
+            <span className="text-foreground/50">— {definition}</span>
           </p>
         ))}
       </div>

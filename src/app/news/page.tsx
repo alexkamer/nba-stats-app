@@ -24,9 +24,9 @@ async function fetchNews(): Promise<NewsArticle[]> {
 export default function NewsPage() {
   const { data: articles, isLoading, error } = useQuery({ queryKey: ["news"], queryFn: fetchNews });
 
-  if (isLoading) return <p className="text-neutral-400">Loading news…</p>;
-  if (error) return <p className="text-red-400">Failed to load news.</p>;
-  if (!articles || articles.length === 0) return <p className="text-neutral-500">No news available.</p>;
+  if (isLoading) return <p className="text-foreground/60">Loading news…</p>;
+  if (error) return <p className="text-red-600 dark:text-red-400">Failed to load news.</p>;
+  if (!articles || articles.length === 0) return <p className="text-foreground/50">No news available.</p>;
 
   return (
     <div className="space-y-4">
@@ -39,7 +39,7 @@ export default function NewsPage() {
           // hydration error (confirmed during M10).
           <div
             key={article.id}
-            className="flex gap-4 rounded-lg border border-neutral-800 bg-neutral-900 p-4"
+            className="flex gap-4 rounded-lg border border-border bg-surface p-4"
           >
             {article.imageUrl && (
               // eslint-disable-next-line @next/next/no-img-element -- external ESPN CDN images
@@ -50,17 +50,17 @@ export default function NewsPage() {
                 href={article.url ?? "#"}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-medium hover:text-neutral-300"
+                className="font-medium hover:text-foreground/80"
               >
                 {article.headline}
               </a>
               {article.description && article.description !== article.headline && (
-                <p className="text-neutral-400 text-sm">{article.description}</p>
+                <p className="text-foreground/60 text-sm">{article.description}</p>
               )}
-              <div className="flex gap-2 text-xs text-neutral-500">
+              <div className="flex gap-2 text-xs text-foreground/50">
                 {article.publishedAt && <span>{new Date(article.publishedAt).toLocaleDateString()}</span>}
                 {article.teams.map((t) => (
-                  <Link key={t.id} href={`/teams/${t.id}`} className="hover:text-neutral-200">
+                  <Link key={t.id} href={`/teams/${t.id}`} className="hover:text-foreground/80">
                     {t.abbreviation}
                   </Link>
                 ))}

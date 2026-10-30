@@ -154,7 +154,7 @@ const EXTRA_COLUMNS: Record<PageMode, ExtraColumn[]> = {
 const PLAY_IN_START_YEAR = 2021;
 
 // Vertical divider between column groups: Team | W-L-PCT-GB | HOME-AWAY-DIV-CONF | PPG-OPP PPG-DIFF | STRK-L10
-const COLUMN_DIVIDER = "border-l border-neutral-800 pl-3";
+const COLUMN_DIVIDER = "border-l border-border pl-3";
 
 async function fetchStandings(year: number | null): Promise<StandingsResponse> {
   const url = year ? `/api/standings?year=${year}` : "/api/standings";
@@ -233,15 +233,15 @@ export default function StandingsPage() {
   }, [data]);
 
   const pageModeToggle = (
-    <div className="flex rounded-md border border-neutral-800 overflow-hidden text-sm w-fit">
+    <div className="flex rounded-md border border-border overflow-hidden text-sm w-fit">
       {PAGE_MODES.map((mode) => (
         <button
           key={mode.value}
           onClick={() => setPageMode(mode.value)}
           className={`px-3 py-2 ${
             pageMode === mode.value
-              ? "bg-neutral-800 text-neutral-100 font-semibold"
-              : "bg-neutral-900 text-neutral-400 hover:text-neutral-200"
+              ? "bg-accent text-accent-foreground font-semibold"
+              : "bg-surface text-foreground/60 hover:text-foreground/80"
           }`}
         >
           {mode.label}
@@ -251,8 +251,8 @@ export default function StandingsPage() {
   );
 
   if (pageMode === "nba-cup") {
-    if (cupIsLoading) return <p className="text-neutral-400">Loading NBA Cup standings…</p>;
-    if (cupError || !cupData) return <p className="text-red-400">Failed to load NBA Cup standings.</p>;
+    if (cupIsLoading) return <p className="text-foreground/60">Loading NBA Cup standings…</p>;
+    if (cupError || !cupData) return <p className="text-red-600 dark:text-red-400">Failed to load NBA Cup standings.</p>;
 
     return (
       <div className="space-y-8">
@@ -260,7 +260,7 @@ export default function StandingsPage() {
           <h1 className="text-2xl font-semibold">
             NBA Standings
             {cupData.season && (
-              <span className="text-neutral-500 text-base ml-2">{seasonLabel(cupData.season.year)}</span>
+              <span className="text-foreground/50 text-base ml-2">{seasonLabel(cupData.season.year)}</span>
             )}
           </h1>
           {pageModeToggle}
@@ -268,7 +268,7 @@ export default function StandingsPage() {
             <select
               value={cupData.season?.year ?? ""}
               onChange={(e) => setSelectedCupYear(Number(e.target.value))}
-              className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-600"
+              className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
             >
               {cupData.availableSeasons.map((s) => (
                 <option key={s.year} value={s.year}>
@@ -281,11 +281,11 @@ export default function StandingsPage() {
         <div className="space-y-8">
           {cupData.groups.map((group) => (
             <section key={group.groupName}>
-              <h2 className="text-lg font-medium text-neutral-300 mb-3">{group.groupName}</h2>
+              <h2 className="text-lg font-medium text-foreground/80 mb-3">{group.groupName}</h2>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm whitespace-nowrap">
                   <thead>
-                    <tr className="text-left text-neutral-500 border-b border-neutral-800">
+                    <tr className="text-left text-foreground/50 border-b border-border">
                       <th className="py-2 pr-3"></th>
                       <th className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>W</th>
                       <th className="py-2 pr-3 text-right">L</th>
@@ -304,11 +304,11 @@ export default function StandingsPage() {
                       .slice()
                       .sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0))
                       .map((s) => (
-                        <tr key={s.id} className="border-b border-neutral-900">
+                        <tr key={s.id} className="border-b border-border/60">
                           <td className="py-2 pr-3">
                             <Link
                               href={`/teams/${s.team.id}`}
-                              className="flex items-center gap-2 hover:text-neutral-100"
+                              className="flex items-center gap-2 hover:text-foreground/80"
                             >
                               {s.team.logoUrl && (
                                 // eslint-disable-next-line @next/next/no-img-element
@@ -344,8 +344,8 @@ export default function StandingsPage() {
     );
   }
 
-  if (isLoading) return <p className="text-neutral-400">Loading standings…</p>;
-  if (error || !data) return <p className="text-red-400">Failed to load standings.</p>;
+  if (isLoading) return <p className="text-foreground/60">Loading standings…</p>;
+  if (error || !data) return <p className="text-red-600 dark:text-red-400">Failed to load standings.</p>;
 
   const groups =
     viewMode === "league"
@@ -363,19 +363,19 @@ export default function StandingsPage() {
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">
           NBA Standings
-          {data.season && <span className="text-neutral-500 text-base ml-2">{seasonLabel(data.season.year)}</span>}
+          {data.season && <span className="text-foreground/50 text-base ml-2">{seasonLabel(data.season.year)}</span>}
         </h1>
         {pageModeToggle}
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex rounded-md border border-neutral-800 overflow-hidden text-sm">
+          <div className="flex rounded-md border border-border overflow-hidden text-sm">
             {(["league", "conference", "division"] as const).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
                 className={`px-3 py-2 capitalize ${
                   viewMode === mode
-                    ? "bg-neutral-800 text-neutral-100 font-semibold"
-                    : "bg-neutral-900 text-neutral-400 hover:text-neutral-200"
+                    ? "bg-accent text-accent-foreground font-semibold"
+                    : "bg-surface text-foreground/60 hover:text-foreground/80"
                 }`}
               >
                 {mode}
@@ -386,7 +386,7 @@ export default function StandingsPage() {
             <select
               value={data.season?.year ?? ""}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-600"
+              className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
             >
               {data.availableSeasons.map((s) => (
                 <option key={s.year} value={s.year}>
@@ -402,11 +402,11 @@ export default function StandingsPage() {
       <div className="space-y-8">
         {groups.map((group) => (
           <section key={group.groupName}>
-            <h2 className="text-lg font-medium text-neutral-300 mb-3">{group.groupName}</h2>
+            <h2 className="text-lg font-medium text-foreground/80 mb-3">{group.groupName}</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm whitespace-nowrap">
                 <thead>
-                  <tr className="text-left text-neutral-500 border-b border-neutral-800">
+                  <tr className="text-left text-foreground/50 border-b border-border">
                     <th className="py-2 pr-3"></th>
                     <th className="py-2 pr-3"></th>
                     <th className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>W</th>
@@ -431,19 +431,19 @@ export default function StandingsPage() {
                       const rank = s[rankField] ?? 0;
                       const borderClass = showPlayInLines
                         ? rank === 6
-                          ? "border-b-2 border-dotted border-neutral-600"
+                          ? "border-b-2 border-dotted border-foreground/40"
                           : rank === 10
-                            ? "border-b-2 border-solid border-neutral-500"
-                            : "border-b border-neutral-900"
-                        : "border-b border-neutral-900";
+                            ? "border-b-2 border-solid border-foreground/60"
+                            : "border-b border-border/60"
+                        : "border-b border-border/60";
                       const hideRank = showPlayInLines && rank >= 11;
                       return (
                         <tr key={s.id} className={borderClass}>
-                          <td className="py-2 pr-3 text-neutral-500">{hideRank ? "" : rank}</td>
+                          <td className="py-2 pr-3 text-foreground/50">{hideRank ? "" : rank}</td>
                           <td className="py-2 pr-3">
                             <Link
                               href={`/teams/${s.team.id}`}
-                              className="flex items-center gap-2 hover:text-neutral-100"
+                              className="flex items-center gap-2 hover:text-foreground/80"
                             >
                               {s.team.logoUrl && (
                                 // eslint-disable-next-line @next/next/no-img-element

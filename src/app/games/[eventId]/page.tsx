@@ -3,8 +3,10 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useTheme } from "next-themes";
 import { Suspense, useId, useState } from "react";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
+import { getTeamAccent } from "@/lib/team-accent";
 
 // The API returns one of two shapes depending on whether the game has been
 // ingested as `final` (SPEC.md Sec 4): a DB-backed shape with real internal
@@ -195,80 +197,6 @@ function formatSigned(value: number | null): string {
   return value > 0 ? `+${value}` : String(value);
 }
 
-function toHexColor(color: string | null): string | null {
-  if (!color) return null;
-  return color.startsWith("#") ? color : `#${color}`;
-}
-
-// The app's chart background is a fixed near-black (see bg-neutral-950 in
-// layout.tsx) regardless of the OS/browser color scheme, so "dark mode" here
-// just means team colors that are themselves near-black (e.g. Spurs, Nets)
-// render invisible lines. NEEDS_FIX_CONTRAST only flags colors that are
-// genuinely hard to see (true black/near-black) — ordinary dark team colors
-// like Lakers purple or Wizards navy keep their real color. LIGHTEN_TARGET
-// is the more modest bar used once we're already lightening a bad color, so
-// it doesn't overshoot all the way to white.
-const CHART_BACKGROUND = "#0a0a0a";
-const NEEDS_FIX_CONTRAST = 1.3;
-const LIGHTEN_TARGET = 2.0;
-
-function hexToRgb(hex: string): [number, number, number] | null {
-  const match = hex.replace("#", "").match(/^([0-9a-f]{6})$/i);
-  if (!match) return null;
-  const n = parseInt(match[1], 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
-function relativeLuminance([r, g, b]: [number, number, number]): number {
-  const channel = (v: number) => {
-    const c = v / 255;
-    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-  };
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-}
-
-function contrastRatio(hexA: string, hexB: string): number {
-  const rgbA = hexToRgb(hexA);
-  const rgbB = hexToRgb(hexB);
-  if (!rgbA || !rgbB) return 1;
-  const lA = relativeLuminance(rgbA) + 0.05;
-  const lB = relativeLuminance(rgbB) + 0.05;
-  return lA > lB ? lA / lB : lB / lA;
-}
-
-function lighten(hex: string, amount: number): string {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-  const blended = rgb.map((c) => Math.round(c + (255 - c) * amount));
-  return `#${blended.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
-}
-
-/** Keeps a team's own color whenever it's already visible against the chart
- * background. Only reaches for the alternate color, then progressive
- * lightening of the primary color, when the primary is too close to the
- * background to see — so two teams never collapse onto the same fallback
- * (e.g. both landing on white) just because white has the highest contrast. */
-function pickChartColor(color: string | null, alternateColor: string | null): string {
-  if (color && hexToRgb(color) && contrastRatio(color, CHART_BACKGROUND) >= NEEDS_FIX_CONTRAST) {
-    return color;
-  }
-  if (alternateColor && hexToRgb(alternateColor) && contrastRatio(alternateColor, CHART_BACKGROUND) >= NEEDS_FIX_CONTRAST) {
-    return alternateColor;
-  }
-
-  const base = color && hexToRgb(color) ? color : alternateColor;
-  if (!base || !hexToRgb(base)) return "#737373";
-
-  let result = base;
-  let ratio = contrastRatio(base, CHART_BACKGROUND);
-  let amount = 0;
-  while (ratio < LIGHTEN_TARGET && amount < 1) {
-    amount += 0.15;
-    result = lighten(base, amount);
-    ratio = contrastRatio(result, CHART_BACKGROUND);
-  }
-  return result;
-}
 
 // Periods beyond the 4th are overtime — ESPN's linescores array has no
 // period labels of its own, just one entry per period played.
@@ -326,7 +254,7 @@ async function fetchGame(eventId: string): Promise<ApiResponse> {
 
 export default function GameDetailPage() {
   return (
-    <Suspense fallback={<p className="text-neutral-400">Loading…</p>}>
+    <Suspense fallback={<p className="text-foreground/60">Loading…</p>}>
       <GameDetailContent />
     </Suspense>
   );
@@ -340,13 +268,18 @@ function GameDetailContent() {
   });
   const [showAllPlays, setShowAllPlays] = useState(false);
   const [activeTab, setActiveTab] = useTabQueryParam<TabKey>("boxscore");
+  const { resolvedTheme } = useTheme();
+  const theme = resolvedTheme === "dark" ? "dark" : "light";
 
-  if (isLoading) return <p className="text-neutral-400">Loading…</p>;
-  if (error || !data) return <p className="text-red-400">Game not found.</p>;
+  if (isLoading) return <p className="text-foreground/60">Loading…</p>;
+  if (error || !data) return <p className="text-red-600 dark:text-red-400">Game not found.</p>;
 
   const { game, source } = data;
 
-  // Normalize both shapes into one view model.
+  // Each side's accent comes from that team's own ESPN color, contrast-checked
+  // against the active theme's background independently — so the home and
+  // away accents never collapse onto the same fallback together, and one
+  // side having bad color data doesn't affect the other's real color.
   const home =
     source === "db"
       ? {
@@ -355,11 +288,7 @@ function GameDetailContent() {
           displayName: (game as DbGame).homeTeam.displayName,
           score: (game as DbGame).homeScore,
           logoUrl: (game as DbGame).homeTeam.logoUrl,
-          color: toHexColor((game as DbGame).homeTeam.color),
-          chartColor: pickChartColor(
-            toHexColor((game as DbGame).homeTeam.color),
-            toHexColor((game as DbGame).homeTeam.alternateColor),
-          ),
+          accent: getTeamAccent((game as DbGame).homeTeam.color, theme).accent,
         }
       : {
           linkId: null,
@@ -367,11 +296,7 @@ function GameDetailContent() {
           displayName: (game as LiveGame).home.displayName,
           score: (game as LiveGame).home.score,
           logoUrl: (game as LiveGame).home.logoUrl,
-          color: toHexColor((game as LiveGame).home.color),
-          chartColor: pickChartColor(
-            toHexColor((game as LiveGame).home.color),
-            toHexColor((game as LiveGame).home.alternateColor),
-          ),
+          accent: getTeamAccent((game as LiveGame).home.color, theme).accent,
         };
   const away =
     source === "db"
@@ -381,11 +306,7 @@ function GameDetailContent() {
           displayName: (game as DbGame).awayTeam.displayName,
           score: (game as DbGame).awayScore,
           logoUrl: (game as DbGame).awayTeam.logoUrl,
-          color: toHexColor((game as DbGame).awayTeam.color),
-          chartColor: pickChartColor(
-            toHexColor((game as DbGame).awayTeam.color),
-            toHexColor((game as DbGame).awayTeam.alternateColor),
-          ),
+          accent: getTeamAccent((game as DbGame).awayTeam.color, theme).accent,
         }
       : {
           linkId: null,
@@ -393,11 +314,7 @@ function GameDetailContent() {
           displayName: (game as LiveGame).away.displayName,
           score: (game as LiveGame).away.score,
           logoUrl: (game as LiveGame).away.logoUrl,
-          color: toHexColor((game as LiveGame).away.color),
-          chartColor: pickChartColor(
-            toHexColor((game as LiveGame).away.color),
-            toHexColor((game as LiveGame).away.alternateColor),
-          ),
+          accent: getTeamAccent((game as LiveGame).away.color, theme).accent,
         };
 
   const headerExtras = (game as DbGame | LiveGame).headerExtras;
@@ -504,26 +421,26 @@ function GameDetailContent() {
           </div>
         </div>
       )}
-      {activeTab === "recap" && <p className="text-neutral-500 text-sm">Coming soon.</p>}
-      {activeTab === "teamstats" && <p className="text-neutral-500 text-sm">Coming soon.</p>}
+      {activeTab === "recap" && <p className="text-foreground/50 text-sm">Coming soon.</p>}
+      {activeTab === "teamstats" && <p className="text-foreground/50 text-sm">Coming soon.</p>}
 
       {activeTab === "boxscore" && (
         <>
           {odds && (
             <section>
-              <h2 className="text-lg font-medium text-neutral-300 mb-3">
-                Odds <span className="text-neutral-500 text-sm font-normal">({odds.provider})</span>
+              <h2 className="text-lg font-medium text-foreground/80 mb-3">
+                Odds <span className="text-foreground/50 text-sm font-normal">({odds.provider})</span>
               </h2>
               <table className="w-full text-sm max-w-md border-collapse">
                 <thead>
-                  <tr className="text-left text-neutral-500">
-                    <th className="py-2 pr-2 border-b border-neutral-700">Team</th>
-                    <th className="py-2 pr-2 text-right border-b border-neutral-700">Spread</th>
-                    <th className="py-2 text-right border-b border-neutral-700">Moneyline</th>
+                  <tr className="text-left text-foreground/50">
+                    <th className="py-2 pr-2 border-b border-border">Team</th>
+                    <th className="py-2 pr-2 text-right border-b border-border">Spread</th>
+                    <th className="py-2 text-right border-b border-border">Moneyline</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className={`border-b border-neutral-900 ${!odds.homeIsFavorite ? "font-semibold" : ""}`}>
+                  <tr className={`border-b border-border/60 ${!odds.homeIsFavorite ? "font-semibold" : ""}`}>
                     <td className="py-2 pr-2">{away.abbreviation}</td>
                     <td className="py-2 pr-2 text-right">{formatSigned(odds.awaySpread)}</td>
                     <td className="py-2 text-right">{formatSigned(odds.awayMoneyline)}</td>
@@ -535,38 +452,38 @@ function GameDetailContent() {
                   </tr>
                 </tbody>
               </table>
-              {odds.overUnder !== null && <p className="text-neutral-500 text-sm mt-2">O/U {odds.overUnder}</p>}
+              {odds.overUnder !== null && <p className="text-foreground/50 text-sm mt-2">O/U {odds.overUnder}</p>}
             </section>
           )}
 
           <section>
-            <h2 className="text-lg font-medium text-neutral-300 mb-3">Box score</h2>
+            <h2 className="text-lg font-medium text-foreground/80 mb-3">Box score</h2>
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="text-left text-neutral-500">
-                  <th className="py-2 pr-2 border-b border-neutral-700">Team</th>
-                  <th className="py-2 pr-2 text-right border-b border-neutral-700">PTS</th>
-                  <th className="py-2 pr-2 text-right border-b border-neutral-700">REB</th>
-                  <th className="py-2 pr-2 text-right border-b border-neutral-700">AST</th>
-                  <th className="py-2 pr-2 text-right border-b border-neutral-700">STL</th>
-                  <th className="py-2 pr-2 text-right border-b border-neutral-700">BLK</th>
-                  <th className="py-2 pr-2 text-right border-b border-neutral-700">TO</th>
-                  <th className="py-2 pr-2 text-right border-b border-neutral-700">FG</th>
-                  <th className="py-2 pr-2 text-right border-b border-neutral-700">3PT</th>
-                  <th className="py-2 text-right border-b border-neutral-700">FT</th>
+                <tr className="text-left text-foreground/50">
+                  <th className="py-2 pr-2 border-b border-border">Team</th>
+                  <th className="py-2 pr-2 text-right border-b border-border">PTS</th>
+                  <th className="py-2 pr-2 text-right border-b border-border">REB</th>
+                  <th className="py-2 pr-2 text-right border-b border-border">AST</th>
+                  <th className="py-2 pr-2 text-right border-b border-border">STL</th>
+                  <th className="py-2 pr-2 text-right border-b border-border">BLK</th>
+                  <th className="py-2 pr-2 text-right border-b border-border">TO</th>
+                  <th className="py-2 pr-2 text-right border-b border-border">FG</th>
+                  <th className="py-2 pr-2 text-right border-b border-border">3PT</th>
+                  <th className="py-2 text-right border-b border-border">FT</th>
                 </tr>
               </thead>
               <tbody>
                 {teamRows.every((s) => s.points === null) ? (
                   <tr>
-                    <td colSpan={10} className="py-4 text-center text-neutral-500">
+                    <td colSpan={10} className="py-4 text-center text-foreground/50">
                       No box score yet
                       {source === "live" ? ` — ${(game as LiveGame).statusDetail}` : ""}.
                     </td>
                   </tr>
                 ) : (
                   teamRows.map((s) => (
-                    <tr key={s.key} className="border-b border-neutral-900">
+                    <tr key={s.key} className="border-b border-border/60">
                       <td className="py-2 pr-2">{s.abbreviation}</td>
                       <td className="py-2 pr-2 text-right">{s.points}</td>
                       <td className="py-2 pr-2 text-right">{s.rebounds}</td>
@@ -595,25 +512,25 @@ function GameDetailContent() {
             if (rows.length === 0) return null;
             return (
               <section key={team.abbreviation}>
-                <h2 className="text-lg font-medium text-neutral-300 mb-3">{team.displayName}</h2>
+                <h2 className="text-lg font-medium text-foreground/80 mb-3">{team.displayName}</h2>
                 <table className="w-full text-sm border-collapse">
                   <thead>
-                    <tr className="text-left text-neutral-500">
-                      <th className="py-2 pr-2 border-b border-neutral-700">Player</th>
-                      <th className="py-2 pr-2 text-right border-b border-neutral-700">MIN</th>
-                      <th className="py-2 pr-2 text-right border-b border-neutral-700">PTS</th>
-                      <th className="py-2 pr-2 text-right border-b border-neutral-700">REB</th>
-                      <th className="py-2 pr-2 text-right border-b border-neutral-700">AST</th>
-                      <th className="py-2 pr-2 text-right border-b border-neutral-700">STL</th>
-                      <th className="py-2 text-right border-b border-neutral-700">BLK</th>
+                    <tr className="text-left text-foreground/50">
+                      <th className="py-2 pr-2 border-b border-border">Player</th>
+                      <th className="py-2 pr-2 text-right border-b border-border">MIN</th>
+                      <th className="py-2 pr-2 text-right border-b border-border">PTS</th>
+                      <th className="py-2 pr-2 text-right border-b border-border">REB</th>
+                      <th className="py-2 pr-2 text-right border-b border-border">AST</th>
+                      <th className="py-2 pr-2 text-right border-b border-border">STL</th>
+                      <th className="py-2 text-right border-b border-border">BLK</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((p) => (
-                      <tr key={p.key} className="border-b border-neutral-900">
+                      <tr key={p.key} className="border-b border-border/60">
                         <td className="py-2 pr-2">
                           {p.linkId ? (
-                            <Link href={`/players/${p.linkId}`} className="hover:text-neutral-100">
+                            <Link href={`/players/${p.linkId}`} className="hover:text-foreground">
                               {p.name}
                             </Link>
                           ) : (
@@ -639,10 +556,10 @@ function GameDetailContent() {
       {activeTab === "playbyplay" && plays.length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-medium text-neutral-300">Play-by-play</h2>
+            <h2 className="text-lg font-medium text-foreground/80">Play-by-play</h2>
             <button
               onClick={() => setShowAllPlays((v) => !v)}
-              className="text-sm text-neutral-400 hover:text-neutral-100"
+              className="text-sm text-foreground/60 hover:text-foreground"
             >
               {showAllPlays ? "Show less" : `Show all ${plays.length} plays`}
             </button>
@@ -652,14 +569,14 @@ function GameDetailContent() {
               <div
                 key={play.key}
                 className={`flex items-center justify-between rounded-md px-3 py-1.5 text-sm ${
-                  play.scoringPlay ? "bg-neutral-900" : ""
+                  play.scoringPlay ? "bg-surface-muted" : ""
                 }`}
               >
-                <span className="text-neutral-500 w-20 shrink-0">
+                <span className="text-foreground/50 w-20 shrink-0">
                   Q{play.period} {play.clock}
                 </span>
                 <span className="flex-1">{play.description}</span>
-                <span className="text-neutral-500 w-16 text-right shrink-0">
+                <span className="text-foreground/50 w-16 text-right shrink-0">
                   {play.awayScore}-{play.homeScore}
                 </span>
               </div>
@@ -677,8 +594,7 @@ interface ScoreboardTeam {
   displayName: string;
   score: number | null;
   logoUrl: string | null;
-  color: string | null;
-  chartColor: string;
+  accent: string;
 }
 
 function topBy(rows: PlayerLeaderRow[], key: "points" | "rebounds" | "assists"): PlayerLeaderRow | null {
@@ -726,29 +642,29 @@ function LeaderCell({
   if (!leader) return <div className="flex-1" />;
   return (
     <div className="flex flex-1 flex-col items-center gap-1 text-center">
-      <div className="flex items-center gap-2">
+      <div className={`flex items-center gap-3 ${flip ? "flex-row-reverse" : ""}`}>
         {leader.headshotUrl ? (
           <img
             src={headshotSrc(leader.headshotUrl)}
             alt={leader.name}
-            className={`h-16 w-16 rounded-full bg-neutral-800 object-cover ${flip ? "order-2" : ""}`}
+            className="h-16 w-16 shrink-0 rounded-full bg-surface-muted object-cover"
           />
         ) : (
-          <div className={`h-16 w-16 rounded-full bg-neutral-800 ${flip ? "order-2" : ""}`} />
+          <div className="h-16 w-16 shrink-0 rounded-full bg-surface-muted" />
         )}
-        <div className="text-xl font-bold text-neutral-100">{value}</div>
+        <div className="w-10 shrink-0 text-center text-xl font-bold tabular-nums text-foreground">{value}</div>
       </div>
-      <div className="text-sm text-neutral-200">
+      <div className="text-sm font-semibold text-foreground">
         {leader.linkId ? (
-          <Link href={`/players/${leader.linkId}`} className="hover:text-neutral-100">
+          <Link href={`/players/${leader.linkId}`} className="hover:text-accent">
             {toShortName(leader.name)}
           </Link>
         ) : (
           toShortName(leader.name)
         )}
-        {leader.jersey && <span className="text-neutral-500"> #{leader.jersey}</span>}
+        {leader.jersey && <span className="text-foreground/50 font-normal"> #{leader.jersey}</span>}
       </div>
-      <div className="text-xs text-neutral-500">{secondary}</div>
+      <div className="text-xs text-foreground/60">{secondary}</div>
     </div>
   );
 }
@@ -774,21 +690,21 @@ function GameLeaders({
     // Pull flush to the page's hero gutter instead of sitting inside
     // <main>'s centered max-w-6xl column, which leaves a wide empty gap on
     // large screens between the viewport edge and this card.
-    <div className="w-full rounded-lg border border-neutral-800">
+    <div className="w-full rounded-lg border border-border">
       <div className="px-4 pt-4">
-        <h2 className="text-sm font-semibold text-neutral-200">Game Leaders</h2>
+        <h2 className="text-sm font-bold uppercase tracking-wide text-foreground">Game Leaders</h2>
       </div>
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-6 w-6 object-contain" />}
-          <span className="text-sm font-medium text-neutral-300">{away.abbreviation}</span>
+          <span className="text-sm font-bold text-foreground">{away.abbreviation}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-neutral-300">{home.abbreviation}</span>
+          <span className="text-sm font-bold text-foreground">{home.abbreviation}</span>
           {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-6 w-6 object-contain" />}
         </div>
       </div>
-      <div className="divide-y divide-neutral-900">
+      <div className="divide-y divide-border/60">
         {categories.map((category) => {
           const awayLeader = topBy(awayPlayerRows, category.key);
           const homeLeader = topBy(homePlayerRows, category.key);
@@ -799,7 +715,9 @@ function GameLeaders({
                 value={awayLeader?.[category.key] ?? null}
                 secondary={awayLeader ? leaderSecondary(category.key, awayLeader) : ""}
               />
-              <div className="w-20 shrink-0 text-center text-xs font-medium text-neutral-400">{category.label}</div>
+              <div className="w-20 shrink-0 text-center text-xs font-bold uppercase tracking-wide text-foreground/70">
+                {category.label}
+              </div>
               <LeaderCell
                 leader={homeLeader}
                 value={homeLeader?.[category.key] ?? null}
@@ -810,8 +728,8 @@ function GameLeaders({
           );
         })}
       </div>
-      <div className="border-t border-neutral-900 px-4 py-3 text-center">
-        <Link href="?tab=boxscore" className="text-sm text-neutral-400 hover:text-neutral-100">
+      <div className="border-t border-border/60 px-4 py-3 text-center">
+        <Link href="?tab=boxscore" className="text-sm text-foreground/60 hover:text-foreground">
           Full Box Score
         </Link>
       </div>
@@ -900,41 +818,41 @@ function TeamStatsCard({
   ];
 
   return (
-    <div className="w-full rounded-lg border border-neutral-800">
+    <div className="w-full rounded-lg border border-border">
       <div className="px-4 pt-4">
-        <h2 className="text-sm font-semibold text-neutral-200">Team Stats</h2>
+        <h2 className="text-sm font-semibold text-foreground/80">Team Stats</h2>
       </div>
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-6 w-6 object-contain" />}
-          <span className="text-sm font-medium text-neutral-300">{away.abbreviation}</span>
+          <span className="text-sm font-medium text-foreground/80">{away.abbreviation}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-neutral-300">{home.abbreviation}</span>
+          <span className="text-sm font-medium text-foreground/80">{home.abbreviation}</span>
           {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-6 w-6 object-contain" />}
         </div>
       </div>
-      <div className="divide-y divide-neutral-900 px-4">
+      <div className="divide-y divide-border/60 px-4">
         {rows.map((row) => (
           <div key={row.label} className="py-3">
-            <div className="flex items-center justify-between text-sm font-medium text-neutral-200">
+            <div className="flex items-center justify-between text-sm font-medium text-foreground/80">
               <span>{row.awayDisplay}</span>
-              <span className="text-xs text-neutral-500">{row.label}</span>
+              <span className="text-xs text-foreground/50">{row.label}</span>
               <span>{row.homeDisplay}</span>
             </div>
             <div className="mt-2">
               {row.kind === "pct" ? (
                 <div className="flex items-center gap-1">
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-800">
-                    <div
-                      className="ml-auto h-full rounded-full"
-                      style={{ width: `${Math.min(100, row.awayValue ?? 0)}%`, backgroundColor: away.color ?? "#737373" }}
-                    />
-                  </div>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-800">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-muted">
                     <div
                       className="h-full rounded-full"
-                      style={{ width: `${Math.min(100, row.homeValue ?? 0)}%`, backgroundColor: home.color ?? "#737373" }}
+                      style={{ width: `${Math.min(100, row.awayValue ?? 0)}%`, backgroundColor: away.accent }}
+                    />
+                  </div>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-muted">
+                    <div
+                      className="ml-auto h-full rounded-full"
+                      style={{ width: `${Math.min(100, row.homeValue ?? 0)}%`, backgroundColor: home.accent }}
                     />
                   </div>
                 </div>
@@ -942,19 +860,19 @@ function TeamStatsCard({
                 // A single shared bar split proportionally — unlike the pct
                 // rows above, away/home counts have no independent 0-100
                 // scale of their own, only relative to each other.
-                <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-neutral-800">
+                <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-muted">
                   <div
                     className="h-full"
                     style={{
                       width: `${((row.awayValue ?? 0) / Math.max((row.awayValue ?? 0) + (row.homeValue ?? 0), 1)) * 100}%`,
-                      backgroundColor: away.color ?? "#737373",
+                      backgroundColor: away.accent,
                     }}
                   />
                   <div
                     className="h-full"
                     style={{
                       width: `${((row.homeValue ?? 0) / Math.max((row.awayValue ?? 0) + (row.homeValue ?? 0), 1)) * 100}%`,
-                      backgroundColor: home.color ?? "#737373",
+                      backgroundColor: home.accent,
                     }}
                   />
                 </div>
@@ -963,8 +881,8 @@ function TeamStatsCard({
           </div>
         ))}
       </div>
-      <div className="border-t border-neutral-900 px-4 py-3 text-center">
-        <Link href="?tab=teamstats" className="text-sm text-neutral-400 hover:text-neutral-100">
+      <div className="border-t border-border/60 px-4 py-3 text-center">
+        <Link href="?tab=teamstats" className="text-sm text-foreground/60 hover:text-foreground">
           Full Team Stats
         </Link>
       </div>
@@ -974,18 +892,18 @@ function TeamStatsCard({
 
 function GameInformationCard({ date, gameInfo }: { date: string; gameInfo: GameInfo }) {
   return (
-    <div className="w-full rounded-lg border border-neutral-800">
+    <div className="w-full rounded-lg border border-border">
       <div className="px-4 pt-4">
-        <h2 className="text-sm font-semibold text-neutral-200">Game Information</h2>
+        <h2 className="text-sm font-semibold text-foreground/80">Game Information</h2>
       </div>
       <div className="space-y-4 px-4 py-3 text-sm">
-        <div className="text-neutral-200">{formatGameDateTime(date)}</div>
+        <div className="text-foreground/80">{formatGameDateTime(date)}</div>
 
         {gameInfo.venue && (
           <div>
-            <div className="text-neutral-200">{gameInfo.venue.name}</div>
+            <div className="text-foreground/80">{gameInfo.venue.name}</div>
             {(gameInfo.venue.city || gameInfo.venue.state) && (
-              <div className="text-neutral-500">
+              <div className="text-foreground/50">
                 {[gameInfo.venue.city, gameInfo.venue.state].filter(Boolean).join(", ")}
               </div>
             )}
@@ -997,15 +915,15 @@ function GameInformationCard({ date, gameInfo }: { date: string; gameInfo: GameI
         )}
 
         {gameInfo.attendance !== null && (
-          <div className="text-neutral-200">Attendance: {gameInfo.attendance.toLocaleString()}</div>
+          <div className="text-foreground/80">Attendance: {gameInfo.attendance.toLocaleString()}</div>
         )}
 
         {gameInfo.broadcasts.length > 0 && (
           <div>
-            <div className="text-xs text-neutral-500 mb-1">Where to Watch</div>
+            <div className="text-xs text-foreground/50 mb-1">Where to Watch</div>
             <div className="flex flex-wrap gap-2">
               {gameInfo.broadcasts.map((b) => (
-                <span key={b} className="rounded border border-neutral-700 px-2 py-0.5 text-xs text-neutral-300">
+                <span key={b} className="rounded border border-border px-2 py-0.5 text-xs text-foreground/80">
                   {b}
                 </span>
               ))}
@@ -1015,11 +933,11 @@ function GameInformationCard({ date, gameInfo }: { date: string; gameInfo: GameI
 
         {gameInfo.officials.length > 0 && (
           <div>
-            <div className="text-xs text-neutral-500 mb-1">Officiating Crew</div>
+            <div className="text-xs text-foreground/50 mb-1">Officiating Crew</div>
             <div className="space-y-1">
               {gameInfo.officials.map((o) => (
-                <div key={o.name} className="flex justify-between text-neutral-200">
-                  <span className="text-neutral-500">{o.position}</span>
+                <div key={o.name} className="flex justify-between text-foreground/80">
+                  <span className="text-foreground/50">{o.position}</span>
                   <span>{o.name}</span>
                 </div>
               ))}
@@ -1045,7 +963,7 @@ interface NormalizedOdds {
 // game winner's moneyline) in green — distinct from the favorite/dog bolding
 // above, which reflects the pregame line rather than the result.
 function winningCell(won: boolean): string {
-  return won ? "text-emerald-400 font-semibold" : "";
+  return won ? "text-emerald-600 dark:text-emerald-400 font-semibold" : "";
 }
 
 function OddsPanel({ away, home, odds }: { away: ScoreboardTeam; home: ScoreboardTeam; odds: NormalizedOdds | null }) {
@@ -1074,30 +992,30 @@ function OddsPanel({ away, home, odds }: { away: ScoreboardTeam; home: Scoreboar
   const homeWon = hasFinalScore && homeScore! > awayScore!;
 
   return (
-    <div className="w-full rounded-lg border border-neutral-800">
+    <div className="w-full rounded-lg border border-border">
       <div className="flex items-center justify-between px-4 pt-4">
-        <h2 className="text-sm font-semibold text-neutral-200">Game Odds</h2>
-        {odds && <span className="text-xs text-neutral-500">Odds by {odds.provider}</span>}
+        <h2 className="text-sm font-semibold text-foreground/80">Game Odds</h2>
+        {odds && <span className="text-xs text-foreground/50">Odds by {odds.provider}</span>}
       </div>
       {odds ? (
         <div className="px-4 py-3">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="text-left text-neutral-500">
-                <th className="border-b border-neutral-700 pb-2 font-normal" />
-                <th className="border-b border-neutral-700 pb-2 text-right font-normal">Spread</th>
-                <th className="border-b border-neutral-700 pb-2 text-right font-normal">Total</th>
-                <th className="border-b border-neutral-700 pb-2 text-right font-normal">ML</th>
+              <tr className="text-left text-foreground/50">
+                <th className="border-b border-border pb-2 font-normal" />
+                <th className="border-b border-border pb-2 text-right font-normal">Spread</th>
+                <th className="border-b border-border pb-2 text-right font-normal">Total</th>
+                <th className="border-b border-border pb-2 text-right font-normal">ML</th>
               </tr>
             </thead>
             <tbody>
-              <tr className={`border-b border-neutral-900 ${!odds.homeIsFavorite ? "font-semibold text-neutral-100" : "text-neutral-300"}`}>
+              <tr className={`border-b border-border/60 ${!odds.homeIsFavorite ? "font-semibold text-foreground" : "text-foreground/80"}`}>
                 <td className="py-2">{away.abbreviation}</td>
                 <td className={`py-2 text-right ${winningCell(awayCovered)}`}>{formatSigned(odds.awaySpread)}</td>
                 <td className={`py-2 text-right ${winningCell(overHit)}`}>{odds.overUnder !== null ? `o${odds.overUnder}` : "-"}</td>
                 <td className={`py-2 text-right ${winningCell(awayWon)}`}>{formatSigned(odds.awayMoneyline)}</td>
               </tr>
-              <tr className={odds.homeIsFavorite ? "font-semibold text-neutral-100" : "text-neutral-300"}>
+              <tr className={odds.homeIsFavorite ? "font-semibold text-foreground" : "text-foreground/80"}>
                 <td className="py-2">{home.abbreviation}</td>
                 <td className={`py-2 text-right ${winningCell(homeCovered)}`}>{formatSigned(odds.homeSpread)}</td>
                 <td className={`py-2 text-right ${winningCell(underHit)}`}>{odds.overUnder !== null ? `u${odds.overUnder}` : "-"}</td>
@@ -1107,7 +1025,7 @@ function OddsPanel({ away, home, odds }: { away: ScoreboardTeam; home: Scoreboar
           </table>
         </div>
       ) : (
-        <p className="px-4 py-3 text-sm text-neutral-500">No odds available for this game.</p>
+        <p className="px-4 py-3 text-sm text-foreground/50">No odds available for this game.</p>
       )}
     </div>
   );
@@ -1196,8 +1114,8 @@ function TeamProbabilityRow({ team }: { team: ScoreboardTeam }) {
   return (
     <div className="flex items-center gap-2">
       {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-6 w-6 object-contain" />}
-      <span className="text-sm font-medium text-neutral-300">{team.abbreviation}</span>
-      <span className="h-0.5 w-4 rounded" style={{ backgroundColor: team.color ?? "#737373" }} />
+      <span className="text-sm font-medium text-foreground/80">{team.abbreviation}</span>
+      <span className="h-0.5 w-4 rounded" style={{ backgroundColor: team.accent }} />
     </div>
   );
 }
@@ -1259,7 +1177,7 @@ function ProbabilityChart({
             y1={baseline}
             x2={CHART_WIDTH}
             y2={baseline}
-            stroke="#404040"
+            stroke="var(--border)"
             strokeDasharray="2,3"
             vectorEffect="non-scaling-stroke"
           />
@@ -1285,7 +1203,7 @@ function ProbabilityChart({
         {/* Permanent marker on the final result — visible with or without
             hover, so the winner's end-of-game value is never missed. */}
         <div
-          className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-neutral-950"
+          className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-background"
           style={{
             left: `${(last.x / CHART_WIDTH) * 100}%`,
             top: `${(last.y / CHART_HEIGHT) * 100}%`,
@@ -1295,17 +1213,17 @@ function ProbabilityChart({
         {hovered && (
           <>
             <div
-              className="absolute top-0 bottom-0 w-px bg-neutral-600"
+              className="absolute top-0 bottom-0 w-px bg-border"
               style={{ left: `${(hovered.x / CHART_WIDTH) * 100}%` }}
             />
             <div
-              className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-neutral-950 bg-neutral-100"
+              className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-foreground"
               style={{ left: `${(hovered.x / CHART_WIDTH) * 100}%`, top: `${(hovered.y / CHART_HEIGHT) * 100}%` }}
             />
           </>
         )}
       </div>
-      <div className="relative mt-1 h-4 text-[10px] text-neutral-500">
+      <div className="relative mt-1 h-4 text-[10px] text-foreground/50">
         {ticks.map((t) => (
           <span key={t.label + t.x} className="absolute -translate-x-1/2" style={{ left: `${t.x * 100}%` }}>
             {t.label}
@@ -1378,11 +1296,11 @@ function GameFlowChart({
         {hoveredHome && hoveredAway && (
           <>
             <div
-              className="absolute top-0 bottom-0 w-px bg-neutral-600"
+              className="absolute top-0 bottom-0 w-px bg-border"
               style={{ left: `${(hoveredHome.x / CHART_WIDTH) * 100}%` }}
             />
             <div
-              className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-neutral-950"
+              className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background"
               style={{
                 left: `${(hoveredAway.x / CHART_WIDTH) * 100}%`,
                 top: `${(hoveredAway.y / CHART_HEIGHT) * 100}%`,
@@ -1390,7 +1308,7 @@ function GameFlowChart({
               }}
             />
             <div
-              className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-neutral-950"
+              className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background"
               style={{
                 left: `${(hoveredHome.x / CHART_WIDTH) * 100}%`,
                 top: `${(hoveredHome.y / CHART_HEIGHT) * 100}%`,
@@ -1400,7 +1318,7 @@ function GameFlowChart({
           </>
         )}
       </div>
-      <div className="relative mt-1 h-4 text-[10px] text-neutral-500">
+      <div className="relative mt-1 h-4 text-[10px] text-foreground/50">
         {ticks.map((t) => (
           <span key={t.label + t.x} className="absolute -translate-x-1/2" style={{ left: `${t.x * 100}%` }}>
             {t.label}
@@ -1440,8 +1358,8 @@ function ProbabilityGameFlowCard({
             : last.homeWinPct
         : last.homeWinPct,
   }));
-  const awayColor = away.chartColor;
-  const homeColor = home.chartColor;
+  const awayColor = away.accent;
+  const homeColor = home.accent;
 
   // Each chart clamps the shared hover index against its own series length
   // independently — tab switching resets it, but this also keeps things
@@ -1472,9 +1390,9 @@ function ProbabilityGameFlowCard({
   ];
 
   return (
-    <div className="w-full rounded-lg border border-neutral-800">
+    <div className="w-full rounded-lg border border-border">
       <div className="px-4 pt-4">
-        <h2 className="text-xs font-semibold tracking-wide text-neutral-400">PROBABILITIES & GAME FLOW</h2>
+        <h2 className="text-xs font-semibold tracking-wide text-foreground/60">PROBABILITIES & GAME FLOW</h2>
       </div>
       <div className="flex gap-1 px-4 pt-3">
         {TABS.map((t) => (
@@ -1482,7 +1400,7 @@ function ProbabilityGameFlowCard({
             key={t.key}
             onClick={() => switchTab(t.key)}
             className={`flex-1 rounded-full py-1.5 text-xs font-medium transition-colors ${
-              tab === t.key ? "bg-neutral-800 text-neutral-100" : "text-neutral-500 hover:text-neutral-300"
+              tab === t.key ? "bg-accent text-accent-foreground" : "text-foreground/50 hover:text-foreground/80"
             }`}
           >
             {t.label}
@@ -1492,12 +1410,12 @@ function ProbabilityGameFlowCard({
 
       {tab === "winprob" ? (
         probSeries.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-neutral-500">Win probability not available for this game.</p>
+          <p className="px-4 py-6 text-center text-sm text-foreground/50">Win probability not available for this game.</p>
         ) : (
           <>
             <div className="flex items-center justify-between px-4 pt-4">
               <TeamProbabilityRow team={away} />
-              <span className="text-lg font-semibold text-neutral-100">{(100 - (homeWinPct ?? 50)).toFixed(1)}%</span>
+              <span className="text-lg font-semibold text-foreground">{(100 - (homeWinPct ?? 50)).toFixed(1)}%</span>
             </div>
             <ProbabilityChart
               series={probSeries}
@@ -1508,7 +1426,7 @@ function ProbabilityGameFlowCard({
             />
             <div className="flex items-center justify-between px-4 pb-3">
               <TeamProbabilityRow team={home} />
-              <span className="text-lg font-semibold text-neutral-100">{(homeWinPct ?? 50).toFixed(1)}%</span>
+              <span className="text-lg font-semibold text-foreground">{(homeWinPct ?? 50).toFixed(1)}%</span>
             </div>
           </>
         )
@@ -1518,18 +1436,18 @@ function ProbabilityGameFlowCard({
             <div className="flex items-center gap-2">
               {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-6 w-6 object-contain" />}
               <div>
-                <div className="font-semibold text-neutral-100">{away.score}</div>
-                <div className="text-xs text-neutral-500">{away.abbreviation}</div>
+                <div className="font-semibold text-foreground">{away.score}</div>
+                <div className="text-xs text-foreground/50">{away.abbreviation}</div>
               </div>
             </div>
             <div className="text-center">
-              <div className="text-sm font-semibold text-neutral-100">{leadChanges}</div>
-              <div className="text-xs text-neutral-500">Lead Changes</div>
+              <div className="text-sm font-semibold text-foreground">{leadChanges}</div>
+              <div className="text-xs text-foreground/50">Lead Changes</div>
             </div>
             <div className="flex items-center gap-2">
               <div className="text-right">
-                <div className="font-semibold text-neutral-100">{home.score}</div>
-                <div className="text-xs text-neutral-500">{home.abbreviation}</div>
+                <div className="font-semibold text-foreground">{home.score}</div>
+                <div className="text-xs text-foreground/50">{home.abbreviation}</div>
               </div>
               {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-6 w-6 object-contain" />}
             </div>
@@ -1544,27 +1462,27 @@ function ProbabilityGameFlowCard({
         </>
       )}
 
-      <div className="border-t border-neutral-900 px-4 py-3 text-sm">
+      <div className="border-t border-border/60 px-4 py-3 text-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <span className="text-neutral-200">{displayedPlay.description ?? "—"}</span>
-            <div className="mt-0.5 text-xs text-neutral-500">
+            <span className="text-foreground/80">{displayedPlay.description ?? "—"}</span>
+            <div className="mt-0.5 text-xs text-foreground/50">
               Q{displayedPlay.period} {displayedPlay.clock}
             </div>
           </div>
           <div className="flex shrink-0 gap-3 text-right">
             <div>
-              <div className="tabular-nums text-neutral-200">{displayedPlay.awayScore}</div>
-              <div className="text-xs text-neutral-500">{away.abbreviation}</div>
+              <div className="tabular-nums text-foreground/80">{displayedPlay.awayScore}</div>
+              <div className="text-xs text-foreground/50">{away.abbreviation}</div>
             </div>
             <div>
-              <div className="tabular-nums text-neutral-200">{displayedPlay.homeScore}</div>
-              <div className="text-xs text-neutral-500">{home.abbreviation}</div>
+              <div className="tabular-nums text-foreground/80">{displayedPlay.homeScore}</div>
+              <div className="text-xs text-foreground/50">{home.abbreviation}</div>
             </div>
           </div>
         </div>
       </div>
-      <div className="border-t border-neutral-900 px-4 py-2 text-center text-xs text-neutral-600">
+      <div className="border-t border-border/60 px-4 py-2 text-center text-xs text-foreground/40">
         According to ESPN Analytics
       </div>
     </div>
@@ -1605,7 +1523,7 @@ function ShotChartFilterSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-full border border-neutral-700 bg-neutral-950 px-3 py-1 text-xs text-neutral-300 focus:outline-none"
+      className="rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground/80 focus:outline-none"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>
@@ -1661,13 +1579,13 @@ function ShotChartCard({
       (playerFilter === "all" || s.playerName === playerFilter),
   );
 
-  const awayColor = away.chartColor;
-  const homeColor = home.chartColor;
+  const awayColor = away.accent;
+  const homeColor = home.accent;
 
   return (
-    <div className="w-full rounded-lg border border-neutral-800">
+    <div className="w-full rounded-lg border border-border">
       <div className="px-4 pt-4">
-        <h2 className="text-xs font-semibold tracking-wide text-neutral-400">SHOT CHART</h2>
+        <h2 className="text-xs font-semibold tracking-wide text-foreground/60">SHOT CHART</h2>
       </div>
       <div className="flex flex-wrap gap-2 px-4 pt-3">
         <ShotChartFilterSelect
@@ -1722,11 +1640,11 @@ function ShotChartCard({
             >
               {isHovered && (
                 <div
-                  className="pointer-events-none absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs shadow-lg"
+                  className="pointer-events-none absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md border border-border bg-surface px-2 py-1 text-xs shadow-lg"
                   style={{ marginTop: "-6px" }}
                 >
-                  <div className="font-medium text-neutral-100">{shot.playerName ?? "Unknown"}</div>
-                  <div className="text-neutral-400">
+                  <div className="font-medium text-foreground">{shot.playerName ?? "Unknown"}</div>
+                  <div className="text-foreground/60">
                     {shot.playType} · {shot.made ? "Made" : "Missed"}
                     {shot.period !== null && ` · ${ordinalPeriodLabel(shot.period - 1)}`}
                   </div>
@@ -1736,19 +1654,19 @@ function ShotChartCard({
           );
         })}
       </div>
-      <div className="flex flex-wrap items-center justify-center gap-4 px-4 py-3 text-xs text-neutral-400">
+      <div className="flex flex-wrap items-center justify-center gap-4 px-4 py-3 text-xs text-foreground/60">
         <LegendDot color={awayColor} label="Shot Made" made />
         <LegendDot color={awayColor} label="Shot Missed" made={false} />
         <div className="flex items-center gap-2">
           {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-5 w-5 object-contain" />}
-          <span className="text-neutral-700">|</span>
+          <span className="text-foreground/30">|</span>
           {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-5 w-5 object-contain" />}
         </div>
         <LegendDot color={homeColor} label="Shot Made" made />
         <LegendDot color={homeColor} label="Shot Missed" made={false} />
       </div>
-      <div className="border-t border-neutral-900 px-4 py-3 text-center">
-        <Link href="?tab=playbyplay" className="text-sm text-neutral-400 hover:text-neutral-100">
+      <div className="border-t border-border/60 px-4 py-3 text-center">
+        <Link href="?tab=playbyplay" className="text-sm text-foreground/60 hover:text-foreground">
           Full Play-By-Play
         </Link>
       </div>
@@ -1787,25 +1705,25 @@ function MatchupsCard({
   seasonSeries: SeasonSeries;
 }) {
   return (
-    <div className="w-full rounded-lg border border-neutral-800">
+    <div className="w-full rounded-lg border border-border">
       <div className="px-4 pt-4 pb-1">
-        <h2 className="text-xs font-semibold tracking-wide text-neutral-400">MATCHUPS</h2>
+        <h2 className="text-xs font-semibold tracking-wide text-foreground/60">MATCHUPS</h2>
       </div>
       <div className="flex items-center justify-around px-4 py-4">
         <div className="flex flex-col items-center gap-1">
           {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-9 w-9 object-contain" />}
-          <span className="text-xs text-neutral-400">{away.abbreviation}</span>
+          <span className="text-xs text-foreground/60">{away.abbreviation}</span>
         </div>
         <div className="text-center">
-          <div className="text-xs text-neutral-400">{seasonSeries.summary}</div>
-          {seasonSeries.seriesScore && <div className="text-base font-bold text-neutral-100">{seasonSeries.seriesScore}</div>}
+          <div className="text-xs text-foreground/60">{seasonSeries.summary}</div>
+          {seasonSeries.seriesScore && <div className="text-base font-bold text-foreground">{seasonSeries.seriesScore}</div>}
         </div>
         <div className="flex flex-col items-center gap-1">
           {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-9 w-9 object-contain" />}
-          <span className="text-xs text-neutral-400">{home.abbreviation}</span>
+          <span className="text-xs text-foreground/60">{home.abbreviation}</span>
         </div>
       </div>
-      <div className="divide-y divide-neutral-900 border-t border-neutral-900">
+      <div className="divide-y divide-border/60 border-t border-border/60">
         {(() => {
           const rows = seasonSeries.events.map((event, i) => ({ event, i }));
           // Every finished meeting, plus just the single next one still to
@@ -1818,24 +1736,24 @@ function MatchupsCard({
           return (
             <div key={event.espnId} className="flex items-center gap-2 px-4 py-3">
               <div className="w-10 text-lg text-right">
-                <span className={awaySide.winner ? "font-semibold text-neutral-100" : "text-neutral-500"}>
+                <span className={awaySide.winner ? "font-semibold text-foreground" : "text-foreground/50"}>
                   {event.completed ? awaySide.score : awayRecord}
                 </span>
               </div>
               <div className="flex-1 text-center">
-                <div className="text-xs text-neutral-500">
+                <div className="text-xs text-foreground/50">
                   Game {i + 1} @ {event.home.abbreviation}
                 </div>
-                <div className="text-sm font-semibold text-neutral-100">
+                <div className="text-sm font-semibold text-foreground">
                   {event.completed ? event.statusDetail : formatMatchupDateTime(event.date)}
                 </div>
                 {event.completed ? (
-                  <div className="text-xs text-neutral-500">{formatMatchupDate(event.date)}</div>
+                  <div className="text-xs text-foreground/50">{formatMatchupDate(event.date)}</div>
                 ) : (
                   event.broadcasts.length > 0 && (
                     <div className="mt-1 flex justify-center gap-2">
                       {event.broadcasts.map((b) => (
-                        <span key={b} className="rounded border border-neutral-700 px-2 py-0.5 text-xs text-neutral-400">
+                        <span key={b} className="rounded border border-border px-2 py-0.5 text-xs text-foreground/60">
                           {b}
                         </span>
                       ))}
@@ -1844,8 +1762,8 @@ function MatchupsCard({
                 )}
               </div>
               <div className="flex w-10 items-center gap-1 text-lg">
-                {homeSide.winner && <span className="text-neutral-500">{"›"}</span>}
-                <span className={homeSide.winner ? "font-semibold text-neutral-100" : "text-neutral-500"}>
+                {homeSide.winner && <span className="text-foreground/50">{"›"}</span>}
+                <span className={homeSide.winner ? "font-semibold text-foreground" : "text-foreground/50"}>
                   {event.completed ? homeSide.score : homeRecord}
                 </span>
               </div>
@@ -1860,7 +1778,7 @@ function MatchupsCard({
 function TeamName({ team }: { team: ScoreboardTeam }) {
   if (team.linkId) {
     return (
-      <Link href={`/teams/${team.linkId}`} className="hover:text-neutral-300">
+      <Link href={`/teams/${team.linkId}`} className="hover:text-foreground/80">
         {team.displayName}
       </Link>
     );
@@ -1893,41 +1811,41 @@ function ScoreboardHeader({
     // Full-bleed: this page's <main> caps content at max-w-6xl with side
     // gutters, but the scoreboard header should span the whole viewport
     // width like ESPN's real game header, not just the content column.
-    <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen overflow-hidden border-y border-neutral-800 bg-neutral-950">
+    <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen overflow-hidden border-y border-border bg-background">
       <div
         className="h-1 w-full"
-        style={{ background: `linear-gradient(90deg, ${away.color ?? "#525252"}, ${home.color ?? "#525252"})` }}
+        style={{ background: `linear-gradient(90deg, ${away.accent}, ${home.accent})` }}
       />
       <div className="relative">
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
-            background: `linear-gradient(90deg, ${away.color ?? "#000"}26 0%, transparent 40%, transparent 60%, ${home.color ?? "#000"}26 100%)`,
+            background: `linear-gradient(90deg, ${away.accent}26 0%, transparent 40%, transparent 60%, ${home.accent}26 100%)`,
           }}
         />
         <div className="relative mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-6">
           <div className="flex flex-1 items-center gap-4">
           {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-14 w-14 shrink-0 object-contain" />}
           <div>
-            <div className="font-semibold text-neutral-100 leading-tight">
+            <div className="font-semibold text-foreground leading-tight">
               <TeamName team={away} />
             </div>
             {linescores && (
-              <div className="text-xs text-neutral-500 mt-0.5">
+              <div className="text-xs text-foreground/50 mt-0.5">
                 {linescores.away.record}
                 {linescores.away.splitRecord ? `, ${linescores.away.splitRecord} Away` : ""}
               </div>
             )}
           </div>
-          <div className="ml-2 text-4xl font-bold tabular-nums text-neutral-100">{away.score ?? "-"}</div>
+          <div className="ml-2 text-4xl font-bold tabular-nums text-foreground">{away.score ?? "-"}</div>
         </div>
 
         <div className="flex shrink-0 flex-col items-center gap-1 px-2">
-          {statusDetail && <div className="text-sm font-medium text-neutral-300">{statusDetail}</div>}
+          {statusDetail && <div className="text-sm font-medium text-foreground/80">{statusDetail}</div>}
           {linescores && periods > 0 && (
-            <table className="text-xs text-neutral-400">
+            <table className="text-xs text-foreground/60">
               <thead>
-                <tr className="text-neutral-500">
+                <tr className="text-foreground/50">
                   <th className="px-1.5 font-normal" />
                   {Array.from({ length: periods }, (_, i) => (
                     <th key={i} className="px-1.5 font-normal">
@@ -1939,22 +1857,22 @@ function ScoreboardHeader({
               </thead>
               <tbody>
                 <tr>
-                  <td className="px-1.5 font-semibold text-neutral-300">{away.abbreviation}</td>
+                  <td className="px-1.5 font-semibold text-foreground/80">{away.abbreviation}</td>
                   {Array.from({ length: periods }, (_, i) => (
                     <td key={i} className="px-1.5 text-center">
                       {linescores.away.linescores[i] ?? ""}
                     </td>
                   ))}
-                  <td className="px-1.5 text-center font-semibold text-neutral-100">{away.score ?? "-"}</td>
+                  <td className="px-1.5 text-center font-semibold text-foreground">{away.score ?? "-"}</td>
                 </tr>
                 <tr>
-                  <td className="px-1.5 font-semibold text-neutral-300">{home.abbreviation}</td>
+                  <td className="px-1.5 font-semibold text-foreground/80">{home.abbreviation}</td>
                   {Array.from({ length: periods }, (_, i) => (
                     <td key={i} className="px-1.5 text-center">
                       {linescores.home.linescores[i] ?? ""}
                     </td>
                   ))}
-                  <td className="px-1.5 text-center font-semibold text-neutral-100">{home.score ?? "-"}</td>
+                  <td className="px-1.5 text-center font-semibold text-foreground">{home.score ?? "-"}</td>
                 </tr>
               </tbody>
             </table>
@@ -1962,13 +1880,13 @@ function ScoreboardHeader({
         </div>
 
         <div className="flex flex-1 items-center justify-end gap-4">
-          <div className="mr-2 text-4xl font-bold tabular-nums text-neutral-100">{home.score ?? "-"}</div>
+          <div className="mr-2 text-4xl font-bold tabular-nums text-foreground">{home.score ?? "-"}</div>
           <div>
-            <div className="font-semibold text-neutral-100 leading-tight">
+            <div className="font-semibold text-foreground leading-tight">
               <TeamName team={home} />
             </div>
             {linescores && (
-              <div className="text-xs text-neutral-500 mt-0.5">
+              <div className="text-xs text-foreground/50 mt-0.5">
                 {linescores.home.record}
                 {linescores.home.splitRecord ? `, ${linescores.home.splitRecord} Home` : ""}
               </div>
@@ -1978,7 +1896,7 @@ function ScoreboardHeader({
         </div>
         </div>
       </div>
-      <TabPager tabs={tabs} activeTab={activeTab} onChange={onTabChange} accentColor={home.color ?? "#525252"} />
+      <TabPager tabs={tabs} activeTab={activeTab} onChange={onTabChange} accentColor={home.accent} />
     </div>
   );
 }

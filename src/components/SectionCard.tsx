@@ -14,12 +14,12 @@ export function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-md border border-neutral-800 bg-neutral-900 overflow-hidden">
+    <section className="rounded-md border border-border bg-surface overflow-hidden">
       <div
-        className="flex items-center justify-between gap-3 px-4 py-3 border-b border-neutral-800"
+        className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border"
         style={{ borderBottomColor: accentColor }}
       >
-        <h2 className="text-base font-semibold text-neutral-100">{title}</h2>
+        <h2 className="text-base font-semibold text-foreground">{title}</h2>
         {action}
       </div>
       <div className="p-4">{children}</div>
