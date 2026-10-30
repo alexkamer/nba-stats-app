@@ -22,7 +22,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
             venue: true,
             season: true,
             teamGameStats: { include: { team: true } },
-            playerGameStats: { include: { player: true, team: true } },
+            playerGameStats: { include: { player: { include: { position: true } }, team: true } },
             plays: { orderBy: { sequenceNumber: "asc" } },
             odds: true,
           },
@@ -32,7 +32,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
       // Team espnIds are stable across relocation/rename (e.g. Seattle
       // SuperSonics -> OKC Thunder) — show the era-accurate name/logo for
       // this game's season year rather than always the current branding.
-      const [identities, { headerExtras, winProbability, shots }] = await Promise.all([
+      const [identities, { headerExtras, winProbability, shots, recap, teamStatsBreakdown }] = await Promise.all([
         resolveTeamIdentities([game.homeTeamId, game.awayTeamId], game.season.year),
         getGameSummaryExtras(eventId),
       ]);
@@ -52,6 +52,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
         headerExtras,
         winProbability,
         shots,
+        recap,
+        teamStatsBreakdown,
       };
       return NextResponse.json({ game: gameWithIdentity, source: "db" });
     }

@@ -44,12 +44,12 @@ export function TabPager<T extends string>({
   accentColor: string;
 }) {
   return (
-    <div className="mx-auto max-w-6xl flex border-t border-border px-6 text-sm">
+    <div className="mx-auto max-w-6xl flex overflow-x-auto border-t border-border px-6 text-sm">
       {tabs.map((tab) => (
         <button
           key={tab.value}
           onClick={() => onChange(tab.value)}
-          className={`flex-1 px-3 py-2 text-center whitespace-nowrap ${
+          className={`flex-1 min-w-fit px-3 py-2 text-center whitespace-nowrap ${
             activeTab === tab.value
               ? "text-foreground font-semibold border-b-2"
               : "text-foreground/82 hover:text-foreground/92 border-b-2 border-transparent"

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Suspense, useId, useState } from "react";
+import { Suspense, useId, useState, type ReactNode } from "react";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
 import { getTeamAccent } from "@/lib/team-accent";
 
@@ -49,6 +49,26 @@ interface HeaderExtras {
   seasonSeries: SeasonSeries | null;
 }
 
+// Never persisted (SPEC.md Sec 6 has no column for it) — pulled live from
+// ESPN for both DB- and live-sourced games, same as HeaderExtras. The body
+// is already stripped to plain paragraphs server-side; this page never
+// renders raw HTML.
+interface RecapArticle {
+  headline: string;
+  source: string | null;
+  publishedAt: string | null;
+  paragraphs: string[];
+}
+
+// Never persisted — the full set of ESPN-labeled team stat categories,
+// beyond the handful of fields SPEC.md Sec 6 persists per team.
+interface TeamStatCategory {
+  name: string;
+  label: string;
+  awayDisplay: string;
+  homeDisplay: string;
+}
+
 interface GameInfo {
   venue: { name: string; city: string | null; state: string | null; imageUrl: string | null } | null;
   attendance: number | null;
@@ -81,13 +101,21 @@ interface DbGame {
   playerGameStats: (PlayerStatFields & {
     id: number;
     teamId: number;
-    player: { id: number; displayName: string; headshotUrl: string | null; jersey: string | null };
+    player: {
+      id: number;
+      displayName: string;
+      headshotUrl: string | null;
+      jersey: string | null;
+      position: { abbreviation: string } | null;
+    };
   })[];
   plays: PlayFields[];
   odds: DbOdds | null;
   headerExtras: HeaderExtras | null;
   winProbability: WinProbabilityPoint[] | null;
   shots: Shot[] | null;
+  recap: RecapArticle | null;
+  teamStatsBreakdown: TeamStatCategory[] | null;
 }
 
 interface LiveGame {
@@ -101,21 +129,27 @@ interface LiveGame {
     playerDisplayName: string;
     headshotUrl: string | null;
     jersey: string | null;
+    position: string | null;
   })[];
   plays: PlayFields[];
   odds: LiveOdds | null;
   headerExtras: HeaderExtras;
   winProbability: WinProbabilityPoint[];
   shots: Shot[];
+  recap: RecapArticle | null;
+  teamStatsBreakdown: TeamStatCategory[] | null;
 }
 
 interface TeamStatFields {
   points: number | null;
   rebounds: number | null;
+  offensiveRebounds: number | null;
+  defensiveRebounds: number | null;
   assists: number | null;
   steals: number | null;
   blocks: number | null;
   turnovers: number | null;
+  fouls: number | null;
   fgMade: number | null;
   fgAtt: number | null;
   threeMade: number | null;
@@ -125,6 +159,7 @@ interface TeamStatFields {
 }
 
 interface PlayerStatFields {
+  starter: boolean | null;
   minutes: number | null;
   points: number | null;
   rebounds: number | null;
@@ -134,10 +169,14 @@ interface PlayerStatFields {
   steals: number | null;
   blocks: number | null;
   turnovers: number | null;
+  fouls: number | null;
   fgMade: number | null;
   fgAtt: number | null;
+  threeMade: number | null;
+  threeAtt: number | null;
   ftMade: number | null;
   ftAtt: number | null;
+  plusMinus: number | null;
 }
 
 interface PlayerLeaderRow extends PlayerStatFields {
@@ -157,6 +196,8 @@ interface PlayFields {
   homeScore: number | null;
   awayScore: number | null;
   scoringPlay: boolean;
+  teamId?: number | null;
+  teamEspnId?: string | null;
 }
 
 // Never persisted (SPEC.md Sec 6 has no column for it) — pulled live from
@@ -266,7 +307,6 @@ function GameDetailContent() {
     queryKey: ["game", eventId],
     queryFn: () => fetchGame(eventId),
   });
-  const [showAllPlays, setShowAllPlays] = useState(false);
   const [activeTab, setActiveTab] = useTabQueryParam<TabKey>("boxscore");
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === "dark" ? "dark" : "light";
@@ -328,27 +368,36 @@ function GameDetailContent() {
           return { key: s.teamEspnId, abbreviation, ...s };
         });
 
-  const playerRowsByTeam = (teamAbbreviation: string, teamLinkId: number | null) => {
-    if (source === "db") {
-      return (game as DbGame).playerGameStats
-        .filter((p) => p.teamId === teamLinkId)
-        .map((p) => ({
-          key: p.id,
-          linkId: p.player.id,
-          name: p.player.displayName,
-          headshotUrl: p.player.headshotUrl,
-          jersey: p.player.jersey,
-          ...p,
-        }))
-        .sort((a, b) => (b.points ?? 0) - (a.points ?? 0));
-    }
-    const liveHome = (game as LiveGame).home;
-    const liveAway = (game as LiveGame).away;
-    const targetEspnId = teamAbbreviation === liveHome.abbreviation ? liveHome.espnId : liveAway.espnId;
-    return (game as LiveGame).playerGameStats
-      .filter((p) => p.teamEspnId === targetEspnId)
-      .map((p, i) => ({ key: i, linkId: null, name: p.playerDisplayName, ...p }))
-      .sort((a, b) => (b.points ?? 0) - (a.points ?? 0));
+  // `sortByPoints` serves Game Leaders (wants the top scorer/rebounder/
+  // assister regardless of lineup slot); box score tables instead keep
+  // ESPN's own starters-then-bench ordering, so they skip the points sort.
+  const playerRowsByTeam = (
+    teamAbbreviation: string,
+    teamLinkId: number | null,
+    { sortByPoints = true }: { sortByPoints?: boolean } = {},
+  ) => {
+    const rows =
+      source === "db"
+        ? (game as DbGame).playerGameStats
+            .filter((p) => p.teamId === teamLinkId)
+            .map((p) => ({
+              key: p.id,
+              linkId: p.player.id,
+              name: p.player.displayName,
+              headshotUrl: p.player.headshotUrl,
+              jersey: p.player.jersey,
+              positionAbbr: p.player.position?.abbreviation ?? null,
+              ...p,
+            }))
+        : (() => {
+            const liveHome = (game as LiveGame).home;
+            const liveAway = (game as LiveGame).away;
+            const targetEspnId = teamAbbreviation === liveHome.abbreviation ? liveHome.espnId : liveAway.espnId;
+            return (game as LiveGame).playerGameStats
+              .filter((p) => p.teamEspnId === targetEspnId)
+              .map((p, i) => ({ key: i, linkId: null, name: p.playerDisplayName, positionAbbr: p.position, ...p }));
+          })();
+    return sortByPoints ? [...rows].sort((a, b) => (b.points ?? 0) - (a.points ?? 0)) : rows;
   };
 
   // Normalize odds too — DB shape knows the favorite by internal team id,
@@ -367,10 +416,21 @@ function GameDetailContent() {
       }
     : null;
 
-  const plays = sortPlaysChronologically(game.plays).map((p, i) => ({ ...p, key: p.id ?? i }));
-  const visiblePlays = showAllPlays ? plays : plays.slice(-20);
+  const plays = sortPlaysChronologically(game.plays).map((p, i) => {
+    let side: "home" | "away" | null = null;
+    if (source === "db") {
+      if (p.teamId === (game as DbGame).homeTeam.id) side = "home";
+      else if (p.teamId === (game as DbGame).awayTeam.id) side = "away";
+    } else {
+      if (p.teamEspnId === (game as LiveGame).home.espnId) side = "home";
+      else if (p.teamEspnId === (game as LiveGame).away.espnId) side = "away";
+    }
+    return { ...p, key: p.id ?? i, side };
+  });
   const winProbability = (game as DbGame | LiveGame).winProbability ?? [];
   const shots = (game as DbGame | LiveGame).shots ?? [];
+  const recap = (game as DbGame | LiveGame).recap;
+  const teamStatsBreakdown = (game as DbGame | LiveGame).teamStatsBreakdown;
   const awayEspnId = source === "db" ? (game as DbGame).awayTeam.espnId : (game as LiveGame).away.espnId;
   const homeEspnId = source === "db" ? (game as DbGame).homeTeam.espnId : (game as LiveGame).home.espnId;
 
@@ -421,8 +481,8 @@ function GameDetailContent() {
           </div>
         </div>
       )}
-      {activeTab === "recap" && <p className="text-foreground/72 text-sm">Coming soon.</p>}
-      {activeTab === "teamstats" && <p className="text-foreground/72 text-sm">Coming soon.</p>}
+      {activeTab === "recap" && <RecapTab away={away} home={home} recap={recap} />}
+      {activeTab === "teamstats" && <TeamStatsTab away={away} home={home} teamStatsBreakdown={teamStatsBreakdown} />}
 
       {activeTab === "boxscore" && (
         <>
@@ -456,134 +516,22 @@ function GameDetailContent() {
             </section>
           )}
 
-          <section>
-            <h2 className="text-lg font-medium text-foreground/92 mb-3">Box score</h2>
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="text-left text-foreground/72">
-                  <th className="py-2 pr-2 border-b border-border">Team</th>
-                  <th className="py-2 pr-2 text-right border-b border-border">PTS</th>
-                  <th className="py-2 pr-2 text-right border-b border-border">REB</th>
-                  <th className="py-2 pr-2 text-right border-b border-border">AST</th>
-                  <th className="py-2 pr-2 text-right border-b border-border">STL</th>
-                  <th className="py-2 pr-2 text-right border-b border-border">BLK</th>
-                  <th className="py-2 pr-2 text-right border-b border-border">TO</th>
-                  <th className="py-2 pr-2 text-right border-b border-border">FG</th>
-                  <th className="py-2 pr-2 text-right border-b border-border">3PT</th>
-                  <th className="py-2 text-right border-b border-border">FT</th>
-                </tr>
-              </thead>
-              <tbody>
-                {teamRows.every((s) => s.points === null) ? (
-                  <tr>
-                    <td colSpan={10} className="py-4 text-center text-foreground/72">
-                      No box score yet
-                      {source === "live" ? ` — ${(game as LiveGame).statusDetail}` : ""}.
-                    </td>
-                  </tr>
-                ) : (
-                  teamRows.map((s) => (
-                    <tr key={s.key} className="border-b border-border/60">
-                      <td className="py-2 pr-2">{s.abbreviation}</td>
-                      <td className="py-2 pr-2 text-right">{s.points}</td>
-                      <td className="py-2 pr-2 text-right">{s.rebounds}</td>
-                      <td className="py-2 pr-2 text-right">{s.assists}</td>
-                      <td className="py-2 pr-2 text-right">{s.steals}</td>
-                      <td className="py-2 pr-2 text-right">{s.blocks}</td>
-                      <td className="py-2 pr-2 text-right">{s.turnovers}</td>
-                      <td className="py-2 pr-2 text-right">
-                        {s.fgMade}-{s.fgAtt}
-                      </td>
-                      <td className="py-2 pr-2 text-right">
-                        {s.threeMade}-{s.threeAtt}
-                      </td>
-                      <td className="py-2 text-right">
-                        {s.ftMade}-{s.ftAtt}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </section>
-
-          {[away, home].map((team) => {
-            const rows = playerRowsByTeam(team.abbreviation, team.linkId);
-            if (rows.length === 0) return null;
-            return (
-              <section key={team.abbreviation}>
-                <h2 className="text-lg font-medium text-foreground/92 mb-3">{team.displayName}</h2>
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="text-left text-foreground/72">
-                      <th className="py-2 pr-2 border-b border-border">Player</th>
-                      <th className="py-2 pr-2 text-right border-b border-border">MIN</th>
-                      <th className="py-2 pr-2 text-right border-b border-border">PTS</th>
-                      <th className="py-2 pr-2 text-right border-b border-border">REB</th>
-                      <th className="py-2 pr-2 text-right border-b border-border">AST</th>
-                      <th className="py-2 pr-2 text-right border-b border-border">STL</th>
-                      <th className="py-2 text-right border-b border-border">BLK</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((p) => (
-                      <tr key={p.key} className="border-b border-border/60">
-                        <td className="py-2 pr-2">
-                          {p.linkId ? (
-                            <Link href={`/players/${p.linkId}`} className="hover:text-foreground">
-                              {p.name}
-                            </Link>
-                          ) : (
-                            p.name
-                          )}
-                        </td>
-                        <td className="py-2 pr-2 text-right">{p.minutes}</td>
-                        <td className="py-2 pr-2 text-right">{p.points}</td>
-                        <td className="py-2 pr-2 text-right">{p.rebounds}</td>
-                        <td className="py-2 pr-2 text-right">{p.assists}</td>
-                        <td className="py-2 pr-2 text-right">{p.steals}</td>
-                        <td className="py-2 text-right">{p.blocks}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </section>
-            );
-          })}
+          {teamRows.every((s) => s.points === null) ? (
+            <p className="text-foreground/72 text-sm">
+              No box score yet{source === "live" ? ` — ${(game as LiveGame).statusDetail}` : ""}.
+            </p>
+          ) : (
+            [away, home].map((team) => {
+              const rows = playerRowsByTeam(team.abbreviation, team.linkId, { sortByPoints: false });
+              const teamStats = teamRows.find((r) => r.abbreviation === team.abbreviation) ?? null;
+              if (rows.length === 0) return null;
+              return <BoxScoreTeamTable key={team.abbreviation} team={team} rows={rows} teamStats={teamStats} />;
+            })
+          )}
         </>
       )}
 
-      {activeTab === "playbyplay" && plays.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-medium text-foreground/92">Play-by-play</h2>
-            <button
-              onClick={() => setShowAllPlays((v) => !v)}
-              className="text-sm text-foreground/82 hover:text-foreground"
-            >
-              {showAllPlays ? "Show less" : `Show all ${plays.length} plays`}
-            </button>
-          </div>
-          <div className="space-y-1">
-            {visiblePlays.map((play) => (
-              <div
-                key={play.key}
-                className={`flex items-center justify-between rounded-md px-3 py-1.5 text-sm ${
-                  play.scoringPlay ? "bg-surface-muted" : ""
-                }`}
-              >
-                <span className="text-foreground/72 w-20 shrink-0">
-                  Q{play.period} {play.clock}
-                </span>
-                <span className="flex-1">{play.description}</span>
-                <span className="text-foreground/72 w-16 text-right shrink-0">
-                  {play.awayScore}-{play.homeScore}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      {activeTab === "playbyplay" && <PlayByPlayTab away={away} home={home} plays={plays} />}
     </div>
   );
 }
@@ -595,6 +543,358 @@ interface ScoreboardTeam {
   score: number | null;
   logoUrl: string | null;
   accent: string;
+}
+
+// No image here — article.images from ESPN's summary payload are generic
+// cross-promotional thumbnails, frequently unrelated to the actual game
+// (design.md). A team-colored score banner stands in for the hero image
+// instead of leaving the tab bare text.
+function RecapTab({ away, home, recap }: { away: ScoreboardTeam; home: ScoreboardTeam; recap: RecapArticle | null }) {
+  if (!recap) return <p className="text-foreground/72 text-sm">No recap available for this game.</p>;
+
+  const byline = [recap.source, recap.publishedAt ? formatGameDateTime(recap.publishedAt) : null]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+
+  return (
+    <section className="mx-auto max-w-2xl space-y-6">
+      <div className="overflow-hidden rounded-lg border border-border">
+        <div className="h-1.5 w-full" style={{ background: `linear-gradient(90deg, ${away.accent}, ${home.accent})` }} />
+        <div
+          className="flex items-center justify-center gap-8 px-6 py-5"
+          style={{
+            background: `linear-gradient(90deg, ${away.accent}1a 0%, transparent 45%, transparent 55%, ${home.accent}1a 100%)`,
+          }}
+        >
+          <div className="flex flex-col items-center gap-1">
+            {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-12 w-12 object-contain" />}
+            <span className="text-sm font-semibold text-foreground">{away.abbreviation}</span>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold tabular-nums text-foreground">
+              {away.score} – {home.score}
+            </div>
+            <div className="text-xs text-foreground/72">Final</div>
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-12 w-12 object-contain" />}
+            <span className="text-sm font-semibold text-foreground">{home.abbreviation}</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-2xl font-bold leading-tight text-foreground">{recap.headline}</h2>
+        {byline && <p className="mt-2 text-sm text-foreground/72">{byline}</p>}
+      </div>
+
+      <div className="space-y-4 text-[15px] leading-relaxed text-foreground/92">
+        {recap.paragraphs.map((paragraph, i) => (
+          <p
+            key={i}
+            className={
+              i === 0
+                ? "first-letter:float-left first-letter:mr-1 first-letter:text-4xl first-letter:font-bold first-letter:leading-none first-letter:text-foreground"
+                : undefined
+            }
+          >
+            {paragraph}
+          </p>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function TeamStatsTab({
+  away,
+  home,
+  teamStatsBreakdown,
+}: {
+  away: ScoreboardTeam;
+  home: ScoreboardTeam;
+  teamStatsBreakdown: TeamStatCategory[] | null;
+}) {
+  if (!teamStatsBreakdown) {
+    return <p className="text-foreground/72 text-sm">Team stats are not yet available for this game.</p>;
+  }
+
+  return (
+    <section className="mx-auto max-w-2xl">
+      <h2 className="text-lg font-medium text-foreground/92 mb-3 text-center">Team Stats</h2>
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="text-foreground/72">
+            <th className="py-2.5 pr-2 w-28 text-right border-b border-border">
+              <span className="inline-flex items-center justify-end gap-2">
+                {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-5 w-5 object-contain" />}
+                {away.abbreviation}
+              </span>
+            </th>
+            <th className="py-2.5 px-3 border-b border-border" />
+            <th className="py-2.5 pl-2 w-28 text-left border-b border-border">
+              <span className="inline-flex items-center gap-2">
+                {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-5 w-5 object-contain" />}
+                {home.abbreviation}
+              </span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {teamStatsBreakdown.map((row) => (
+            <tr key={row.name} className="border-b border-border/60">
+              <td className="py-2.5 pr-2 text-right font-medium text-foreground/92">{row.awayDisplay}</td>
+              <td className="py-2.5 px-3 text-center text-xs text-foreground/72">{row.label}</td>
+              <td className="py-2.5 pl-2 text-left font-medium text-foreground/92">{row.homeDisplay}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+interface BoxScoreRow extends PlayerStatFields {
+  key: string | number;
+  linkId: number | null;
+  name: string;
+  positionAbbr: string | null;
+}
+
+const BOX_SCORE_COLUMNS: { key: string; label: string }[] = [
+  { key: "min", label: "MIN" },
+  { key: "fg", label: "FG" },
+  { key: "3pt", label: "3PT" },
+  { key: "ft", label: "FT" },
+  { key: "oreb", label: "OREB" },
+  { key: "dreb", label: "DREB" },
+  { key: "reb", label: "REB" },
+  { key: "ast", label: "AST" },
+  { key: "stl", label: "STL" },
+  { key: "blk", label: "BLK" },
+  { key: "to", label: "TO" },
+  { key: "pf", label: "PF" },
+  { key: "plusminus", label: "+/-" },
+  { key: "pts", label: "PTS" },
+];
+
+function BoxScorePlayerRow({ row }: { row: BoxScoreRow }) {
+  // The ingest mapper (and its live-proxy counterpart) leave every stat
+  // null and minutes at 0 specifically to mean "didn't play" — distinct
+  // from an actual 0-minute/0-stat line, which can't happen.
+  const didNotPlay = row.minutes === 0 && row.points === null;
+  return (
+    <tr className="border-b border-border/60">
+      <td className="py-2 pr-2">
+        {row.linkId ? (
+          <Link href={`/players/${row.linkId}`} className="font-medium text-foreground/92 hover:text-foreground">
+            {row.name}
+          </Link>
+        ) : (
+          <span className="font-medium text-foreground/92">{row.name}</span>
+        )}
+        {row.positionAbbr && <span className="ml-1 text-foreground/62">{row.positionAbbr}</span>}
+      </td>
+      {didNotPlay ? (
+        <td colSpan={BOX_SCORE_COLUMNS.length} className="py-2 text-foreground/62">
+          DNP
+        </td>
+      ) : (
+        <>
+          <td className="py-2 pr-2 text-right">{row.minutes}</td>
+          <td className="py-2 pr-2 text-right">
+            {row.fgMade}-{row.fgAtt}
+          </td>
+          <td className="py-2 pr-2 text-right">
+            {row.threeMade}-{row.threeAtt}
+          </td>
+          <td className="py-2 pr-2 text-right">
+            {row.ftMade}-{row.ftAtt}
+          </td>
+          <td className="py-2 pr-2 text-right">{row.offensiveRebounds}</td>
+          <td className="py-2 pr-2 text-right">{row.defensiveRebounds}</td>
+          <td className="py-2 pr-2 text-right">{row.rebounds}</td>
+          <td className="py-2 pr-2 text-right">{row.assists}</td>
+          <td className="py-2 pr-2 text-right">{row.steals}</td>
+          <td className="py-2 pr-2 text-right">{row.blocks}</td>
+          <td className="py-2 pr-2 text-right">{row.turnovers}</td>
+          <td className="py-2 pr-2 text-right">{row.fouls}</td>
+          <td className="py-2 pr-2 text-right">{formatSigned(row.plusMinus)}</td>
+          <td className="py-2 text-right font-semibold text-foreground">{row.points}</td>
+        </>
+      )}
+    </tr>
+  );
+}
+
+function BoxScoreTeamTable({
+  team,
+  rows,
+  teamStats,
+}: {
+  team: ScoreboardTeam;
+  rows: BoxScoreRow[];
+  teamStats: (TeamStatFields & { key: string | number }) | null;
+}) {
+  const starters = rows.filter((r) => r.starter);
+  const bench = rows.filter((r) => !r.starter);
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center gap-2">
+        {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-7 w-7 object-contain" />}
+        <h2 className="text-lg font-medium text-foreground/92">{team.displayName}</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] border-collapse whitespace-nowrap text-sm">
+          <thead>
+            <tr className="text-left text-foreground/72">
+              <th className="py-2 pr-2 border-b border-border font-normal">Starters</th>
+              {BOX_SCORE_COLUMNS.map((c) => (
+                <th key={c.key} className="py-2 pr-2 text-right border-b border-border font-normal">
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {starters.map((row) => (
+              <BoxScorePlayerRow key={row.key} row={row} />
+            ))}
+            {bench.length > 0 && (
+              <tr>
+                <td
+                  colSpan={BOX_SCORE_COLUMNS.length + 1}
+                  className="pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-foreground/62"
+                >
+                  Bench
+                </td>
+              </tr>
+            )}
+            {bench.map((row) => (
+              <BoxScorePlayerRow key={row.key} row={row} />
+            ))}
+            {teamStats && (
+              <tr className="border-t-2 border-border font-semibold text-foreground">
+                <td className="py-2 pr-2">Totals</td>
+                <td className="py-2 pr-2 text-right" />
+                <td className="py-2 pr-2 text-right">
+                  {teamStats.fgMade}-{teamStats.fgAtt}
+                </td>
+                <td className="py-2 pr-2 text-right">
+                  {teamStats.threeMade}-{teamStats.threeAtt}
+                </td>
+                <td className="py-2 pr-2 text-right">
+                  {teamStats.ftMade}-{teamStats.ftAtt}
+                </td>
+                <td className="py-2 pr-2 text-right">{teamStats.offensiveRebounds}</td>
+                <td className="py-2 pr-2 text-right">{teamStats.defensiveRebounds}</td>
+                <td className="py-2 pr-2 text-right">{teamStats.rebounds}</td>
+                <td className="py-2 pr-2 text-right">{teamStats.assists}</td>
+                <td className="py-2 pr-2 text-right">{teamStats.steals}</td>
+                <td className="py-2 pr-2 text-right">{teamStats.blocks}</td>
+                <td className="py-2 pr-2 text-right">{teamStats.turnovers}</td>
+                <td className="py-2 pr-2 text-right">{teamStats.fouls}</td>
+                <td className="py-2 pr-2 text-right" />
+                <td className="py-2 text-right">{teamStats.points}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {teamStats && (
+        <div className="mt-2 flex gap-4 text-xs text-foreground/62">
+          <span>FG% {pct(teamStats.fgMade, teamStats.fgAtt) ?? "-"}</span>
+          <span>3PT% {pct(teamStats.threeMade, teamStats.threeAtt) ?? "-"}</span>
+          <span>FT% {pct(teamStats.ftMade, teamStats.ftAtt) ?? "-"}</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PeriodPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+        active ? "bg-accent text-accent-foreground" : "border border-border text-foreground/72 hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function PlayByPlayTab({
+  away,
+  home,
+  plays,
+}: {
+  away: ScoreboardTeam;
+  home: ScoreboardTeam;
+  plays: (PlayFields & { key: number; side: "home" | "away" | null })[];
+}) {
+  const [periodFilter, setPeriodFilter] = useState<number | "all">("all");
+
+  if (plays.length === 0) {
+    return <p className="text-foreground/72 text-sm">Play-by-play is not available for this game.</p>;
+  }
+
+  const periodsPresent = Array.from(new Set(plays.map((p) => p.period).filter((p): p is number => p !== null))).sort(
+    (a, b) => a - b,
+  );
+  const groups = periodsPresent
+    .filter((period) => periodFilter === "all" || period === periodFilter)
+    .map((period) => ({ period, items: plays.filter((p) => p.period === period) }));
+
+  return (
+    <section>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <h2 className="mr-2 text-lg font-medium text-foreground/92">Play-by-Play</h2>
+        <div className="flex flex-wrap gap-1.5">
+          <PeriodPill active={periodFilter === "all"} onClick={() => setPeriodFilter("all")}>
+            All
+          </PeriodPill>
+          {periodsPresent.map((period) => (
+            <PeriodPill key={period} active={periodFilter === period} onClick={() => setPeriodFilter(period)}>
+              {ordinalPeriodLabel(period - 1)}
+            </PeriodPill>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-6">
+        {groups.map(({ period, items }) => (
+          <div key={period}>
+            <div className="mb-2 text-sm font-semibold uppercase tracking-wide text-foreground/62">
+              {ordinalPeriodLabel(period - 1)} Quarter
+            </div>
+            <div className="space-y-1">
+              {items.map((play) => (
+                <div
+                  key={play.key}
+                  className={`flex items-center gap-3 rounded-md py-1.5 pl-3 pr-3 text-sm ${
+                    play.scoringPlay ? "bg-surface-muted" : ""
+                  }`}
+                  style={{
+                    borderLeft: `3px solid ${
+                      play.side === "home" ? home.accent : play.side === "away" ? away.accent : "transparent"
+                    }`,
+                  }}
+                >
+                  <span className="w-14 shrink-0 tabular-nums text-foreground/72">{play.clock}</span>
+                  <span className="flex-1">{play.description}</span>
+                  <span className="w-16 shrink-0 text-right tabular-nums text-foreground/72">
+                    {play.awayScore}-{play.homeScore}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function topBy(rows: PlayerLeaderRow[], key: "points" | "rebounds" | "assists"): PlayerLeaderRow | null {
@@ -641,18 +941,18 @@ function LeaderCell({
 }) {
   if (!leader) return <div className="flex-1" />;
   return (
-    <div className="flex flex-1 flex-col items-center gap-1 text-center">
-      <div className={`flex items-center gap-3 ${flip ? "flex-row-reverse" : ""}`}>
+    <div className="flex flex-1 flex-col items-center gap-1 text-center min-w-0">
+      <div className={`flex items-center gap-2 ${flip ? "flex-row-reverse" : ""}`}>
         {leader.headshotUrl ? (
           <img
             src={headshotSrc(leader.headshotUrl)}
             alt={leader.name}
-            className="h-16 w-16 shrink-0 rounded-full bg-surface-muted object-cover"
+            className="h-12 w-12 shrink-0 rounded-full bg-surface-muted object-cover"
           />
         ) : (
-          <div className="h-16 w-16 shrink-0 rounded-full bg-surface-muted" />
+          <div className="h-12 w-12 shrink-0 rounded-full bg-surface-muted" />
         )}
-        <div className="w-10 shrink-0 text-center text-xl font-bold tabular-nums text-foreground">{value}</div>
+        <div className="shrink-0 text-center text-lg font-bold tabular-nums text-foreground">{value}</div>
       </div>
       <div className="text-sm font-semibold text-foreground">
         {leader.linkId ? (
@@ -1823,27 +2123,31 @@ function ScoreboardHeader({
             background: `linear-gradient(90deg, ${away.accent}26 0%, transparent 40%, transparent 60%, ${home.accent}26 100%)`,
           }}
         />
-        <div className="relative mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-6">
-          <div className="flex flex-1 items-center gap-4">
-          {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-14 w-14 shrink-0 object-contain" />}
-          <div>
-            <div className="font-semibold text-foreground leading-tight">
+        <div className="relative mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-4 sm:gap-4 sm:px-6 sm:py-6">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
+          {away.logoUrl && (
+            <img src={away.logoUrl} alt={away.displayName} className="h-9 w-9 shrink-0 object-contain sm:h-14 sm:w-14" />
+          )}
+          <div className="min-w-0">
+            <div className="truncate font-semibold text-foreground leading-tight">
               <TeamName team={away} />
             </div>
             {linescores && (
-              <div className="text-xs text-foreground/72 mt-0.5">
+              <div className="truncate text-xs text-foreground/72 mt-0.5">
                 {linescores.away.record}
                 {linescores.away.splitRecord ? `, ${linescores.away.splitRecord} Away` : ""}
               </div>
             )}
           </div>
-          <div className="ml-2 text-4xl font-bold tabular-nums text-foreground">{away.score ?? "-"}</div>
+          <div className="ml-1 shrink-0 text-xl font-bold tabular-nums text-foreground sm:ml-2 sm:text-4xl">
+            {away.score ?? "-"}
+          </div>
         </div>
 
-        <div className="flex shrink-0 flex-col items-center gap-1 px-2">
-          {statusDetail && <div className="text-sm font-medium text-foreground/92">{statusDetail}</div>}
+        <div className="flex shrink-0 flex-col items-center gap-1 px-1 sm:px-2">
+          {statusDetail && <div className="whitespace-nowrap text-xs font-medium text-foreground/92 sm:text-sm">{statusDetail}</div>}
           {linescores && periods > 0 && (
-            <table className="text-xs text-foreground/82">
+            <table className="hidden text-xs text-foreground/82 sm:table">
               <thead>
                 <tr className="text-foreground/72">
                   <th className="px-1.5 font-normal" />
@@ -1879,20 +2183,24 @@ function ScoreboardHeader({
           )}
         </div>
 
-        <div className="flex flex-1 items-center justify-end gap-4">
-          <div className="mr-2 text-4xl font-bold tabular-nums text-foreground">{home.score ?? "-"}</div>
-          <div>
-            <div className="font-semibold text-foreground leading-tight">
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-4">
+          <div className="mr-1 shrink-0 text-xl font-bold tabular-nums text-foreground sm:mr-2 sm:text-4xl">
+            {home.score ?? "-"}
+          </div>
+          <div className="min-w-0 text-right">
+            <div className="truncate font-semibold text-foreground leading-tight">
               <TeamName team={home} />
             </div>
             {linescores && (
-              <div className="text-xs text-foreground/72 mt-0.5">
+              <div className="truncate text-xs text-foreground/72 mt-0.5">
                 {linescores.home.record}
                 {linescores.home.splitRecord ? `, ${linescores.home.splitRecord} Home` : ""}
               </div>
             )}
           </div>
-          {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-14 w-14 shrink-0 object-contain" />}
+          {home.logoUrl && (
+            <img src={home.logoUrl} alt={home.displayName} className="h-9 w-9 shrink-0 object-contain sm:h-14 sm:w-14" />
+          )}
         </div>
         </div>
       </div>

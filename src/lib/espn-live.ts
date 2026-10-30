@@ -127,6 +127,110 @@ function extractShots(plays: EspnPlay[]): ShotChartShot[] {
     }));
 }
 
+// The post-game recap article — never persisted (SPEC.md Sec 6 has no
+// column for it), pulled live from the same summary payload as everything
+// else here. ESPN's `story` field is third-party HTML; it is stripped to
+// plain paragraphs rather than ever rendered as markup (see design.md).
+export interface RecapArticle {
+  headline: string;
+  source: string | null;
+  publishedAt: string | null;
+  paragraphs: string[];
+}
+
+interface EspnArticle {
+  type?: string;
+  headline?: string;
+  source?: string;
+  originallyPosted?: string;
+  story?: string;
+}
+
+// Strips HTML tags (keeping their inner text) and splits on blank lines
+// into trimmed, non-empty paragraphs. Internal wrapping whitespace is
+// collapsed too, since the source text is wrapped at an arbitrary column
+// width rather than meaningfully line-broken.
+export function stripHtmlToParagraphs(html: string): string[] {
+  return html
+    .split(/\n\s*\n/)
+    .map((paragraph) =>
+      paragraph
+        .replace(/<[^>]+>/g, "")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .filter((paragraph) => paragraph.length > 0);
+}
+
+// Only ESPN's actual post-game recap counts — a future/in-progress game may
+// carry a pregame "Preview" article instead, which would misrepresent the
+// game if shown under the Recap tab.
+export function extractRecap(summary: { article?: EspnArticle }): RecapArticle | null {
+  const article = summary.article;
+  if (!article || article.type !== "Recap" || !article.headline || !article.story) return null;
+  return {
+    headline: article.headline,
+    source: article.source ?? null,
+    publishedAt: article.originallyPosted ?? null,
+    paragraphs: stripHtmlToParagraphs(article.story),
+  };
+}
+
+// Every named stat category ESPN reports per team — far more than the dozen
+// fields SPEC.md Sec 6 persists. Never persisted; pulled live alongside the
+// rest of this file's extras. ESPN's own `label`/`displayValue` are used
+// as-is rather than re-derived, unlike ingest/mappers/boxscore.ts's narrower
+// EspnTeamStat (name + displayValue only, no label).
+export interface TeamStatCategory {
+  name: string;
+  label: string;
+  awayDisplay: string;
+  homeDisplay: string;
+}
+
+interface EspnTeamStatWithLabel {
+  name: string;
+  label: string;
+  displayValue: string;
+}
+
+interface EspnBoxscoreTeamWithLabels {
+  team: { id: string };
+  statistics: EspnTeamStatWithLabel[];
+}
+
+// Zips by `name` (the stable machine key) rather than array index/position —
+// ESPN does not guarantee category order or count is identical across games
+// (design.md). Returns null rather than an empty array when stats aren't
+// available yet (e.g. a scheduled game), so callers can't mistake "no data"
+// for "zero of every stat".
+export function extractTeamStatsBreakdown(
+  teams: EspnBoxscoreTeamWithLabels[] | undefined,
+  awayEspnTeamId: string,
+  homeEspnTeamId: string,
+): TeamStatCategory[] | null {
+  if (!teams || teams.length === 0) return null;
+  const awayTeam = teams.find((t) => t.team.id === awayEspnTeamId);
+  const homeTeam = teams.find((t) => t.team.id === homeEspnTeamId);
+  if (!awayTeam || !homeTeam) return null;
+
+  const homeStatsByName = new Map(homeTeam.statistics.map((stat) => [stat.name, stat]));
+  const rows = awayTeam.statistics
+    .map((awayStat) => {
+      const homeStat = homeStatsByName.get(awayStat.name);
+      if (!homeStat) return null;
+      return {
+        name: awayStat.name,
+        label: awayStat.label,
+        awayDisplay: awayStat.displayValue,
+        homeDisplay: homeStat.displayValue,
+      };
+    })
+    .filter((row): row is TeamStatCategory => row !== null);
+
+  return rows.length > 0 ? rows : null;
+}
+
 export interface LiveOdds {
   provider: string;
   spread: number | null;
@@ -290,28 +394,45 @@ export interface GameSummaryExtras {
   headerExtras: HeaderExtras | null;
   winProbability: WinProbabilityPoint[] | null;
   shots: ShotChartShot[] | null;
+  recap: RecapArticle | null;
+  teamStatsBreakdown: TeamStatCategory[] | null;
 }
 
-// headerExtras/winProbability/shots all come from the same ESPN `summary`
-// payload — one fetch instead of three separate (and identical) requests
-// for a game whose box score is already DB-backed.
+// headerExtras/winProbability/shots/recap/teamStatsBreakdown all come from
+// the same ESPN `summary` payload — one fetch instead of five separate (and
+// identical) requests for a game whose box score is already DB-backed.
 export async function getGameSummaryExtras(eventId: string): Promise<GameSummaryExtras> {
   try {
     const summary = await fetchEspnJson<{
-      header: { competitions: [{ status: { type: { detail?: string; shortDetail?: string; name: string } }; competitors: EspnHeaderCompetitor[] }] };
+      header: {
+        competitions: [
+          {
+            status: { type: { detail?: string; shortDetail?: string; name: string } };
+            competitors: (EspnHeaderCompetitor & { team: { id: string } })[];
+          },
+        ];
+      };
       gameInfo?: EspnGameInfo;
       broadcasts?: EspnBroadcast[];
       seasonseries?: EspnSeasonSeries[];
       winprobability?: EspnWinProbabilityEntry[];
       plays?: EspnPlay[];
+      article?: EspnArticle;
+      boxscore?: { teams?: EspnBoxscoreTeamWithLabels[] };
     }>(espnEndpoints.summary(eventId));
+    const competition = summary.header.competitions[0];
+    const home = competition.competitors.find((c) => c.homeAway === "home");
+    const away = competition.competitors.find((c) => c.homeAway === "away");
     return {
-      headerExtras: extractHeaderExtras(summary.header.competitions[0], summary),
+      headerExtras: extractHeaderExtras(competition, summary),
       winProbability: extractWinProbability(summary),
       shots: extractShots(summary.plays ?? []),
+      recap: extractRecap(summary),
+      teamStatsBreakdown:
+        home && away ? extractTeamStatsBreakdown(summary.boxscore?.teams, away.team.id, home.team.id) : null,
     };
   } catch {
-    return { headerExtras: null, winProbability: null, shots: null };
+    return { headerExtras: null, winProbability: null, shots: null, recap: null, teamStatsBreakdown: null };
   }
 }
 
@@ -372,13 +493,16 @@ export interface LiveGameDetail {
     playerDisplayName: string;
     headshotUrl: string | null;
     jersey: string | null;
+    position: string | null;
     teamEspnId: string;
   })[];
-  plays: ReturnType<typeof mapPlay>[];
+  plays: (ReturnType<typeof mapPlay> & { teamEspnId: string | null })[];
   odds: LiveOdds | null;
   headerExtras: HeaderExtras;
   winProbability: WinProbabilityPoint[];
   shots: ShotChartShot[];
+  recap: RecapArticle | null;
+  teamStatsBreakdown: TeamStatCategory[] | null;
 }
 
 /** Fetches a game live from ESPN and reshapes it into roughly the same
@@ -403,6 +527,7 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
     gameInfo?: EspnGameInfo;
     broadcasts?: EspnBroadcast[];
     seasonseries?: EspnSeasonSeries[];
+    article?: EspnArticle;
   };
   try {
     summary = await fetchEspnJson(espnEndpoints.summary(eventId));
@@ -432,11 +557,18 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
         playerDisplayName: entry.athlete.displayName,
         headshotUrl: entry.athlete.headshot?.href ?? null,
         jersey: entry.athlete.jersey ?? null,
+        position: entry.athlete.position?.abbreviation ?? null,
         teamEspnId: group.team.id,
       }));
   });
 
-  const plays = (summary.plays ?? []).map((play) => mapPlay(play, 0, null));
+  // teamId is always null here (no internal FK for an unpersisted game) —
+  // teamEspnId carries the real identity through instead, same pattern as
+  // teamGameStats/playerGameStats above.
+  const plays = (summary.plays ?? []).map((play) => ({
+    ...mapPlay(play, 0, null),
+    teamEspnId: play.team?.id ?? null,
+  }));
 
   const primaryOdds = pickPrimaryProvider(summary.pickcenter);
   const odds: LiveOdds | null = primaryOdds
@@ -481,5 +613,11 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
     headerExtras: extractHeaderExtras(competition, summary),
     winProbability: extractWinProbability(summary),
     shots: extractShots(summary.plays ?? []),
+    recap: extractRecap(summary),
+    teamStatsBreakdown: extractTeamStatsBreakdown(
+      summary.boxscore.teams as unknown as EspnBoxscoreTeamWithLabels[] | undefined,
+      away.team.id,
+      home.team.id,
+    ),
   };
 }
