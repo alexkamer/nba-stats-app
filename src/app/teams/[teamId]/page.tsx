@@ -25,6 +25,9 @@ interface TeamDetail {
   };
   season: SeasonInfo | null;
   availableSeasons: SeasonInfo[];
+  // Absent (DB mode) is treated as supported; explicit false (espn-only
+  // mode, which has no per-game box scores to filter) disables the picker.
+  splitsSupported?: boolean;
   standing: {
     wins: number | null;
     losses: number | null;
@@ -362,12 +365,17 @@ function TeamDetailContent() {
     teamLeaders,
     depthChart,
     injuries,
+    splitsSupported = true,
   } = data;
   const accentColor = team.color ? `#${team.color}` : "#525252";
+  // Falls back to "all" when the data source can't apply a split (espn-only
+  // mode) — the select itself is disabled too, but this also covers a
+  // lingering non-"all" selection left over from before the mode switched.
+  const effectiveSplit = splitsSupported ? statsSplit : "all";
 
   const rosterByPoints = roster.slice().sort((a, b) => (b.seasonStat?.pointsPerGame ?? -1) - (a.seasonStat?.pointsPerGame ?? -1));
   const visibleLeaders = teamLeaders.filter((l) => l.group === leadersGroup);
-  const splitLabel = resolveSplitLabel(statsSplit, leagueTeams ?? []);
+  const splitLabel = resolveSplitLabel(effectiveSplit, leagueTeams ?? []);
   // `schedule` comes back date-ascending from the API; show the most
   // recently played game first, with anything still upcoming (which has no
   // "most recent" ordering yet) following in chronological order.
@@ -583,9 +591,11 @@ function TeamDetailContent() {
               ))}
             </select>
             <select
-              value={statsSplit}
+              value={effectiveSplit}
               onChange={(e) => setStatsSplit(e.target.value)}
-              className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-600"
+              disabled={!splitsSupported}
+              title={splitsSupported ? undefined : "Stat splits aren't available in live-data (no database) mode"}
+              className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <optgroup label="Season">
                 <option value="all">All Splits</option>

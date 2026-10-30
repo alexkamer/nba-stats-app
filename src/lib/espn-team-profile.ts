@@ -295,6 +295,10 @@ export async function getTeamProfileLive(teamParam: string) {
     teamLeaders,
     depthChart,
     injuries,
+    // Stat splits need per-game box scores, which espn-only mode has no
+    // way to compute live — the route ignores the `split` query param
+    // entirely, so the frontend must not let the user pick one.
+    splitsSupported: false,
   };
 }
 
