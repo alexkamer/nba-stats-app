@@ -790,8 +790,13 @@ function hitColorClass(margin: number | null): string {
 function GameLeaderCell({ leader }: { leader: GameLeader | null }) {
   if (!leader) return <span className="text-foreground/50">—</span>;
   return (
-    <Link href={`/players/${leader.playerId}`} className="hover:text-foreground">
-      <span className="text-foreground/60">{shortName(leader.displayName)}</span> <span className="font-medium">{leader.value}</span>
+    <Link
+      href={`/players/${leader.playerId}`}
+      title={leader.displayName}
+      className="flex w-full items-center gap-1 overflow-hidden hover:text-foreground"
+    >
+      <span className="min-w-0 truncate text-foreground/60">{shortName(leader.displayName)}</span>
+      <span className="shrink-0 font-medium">{leader.value}</span>
     </Link>
   );
 }
@@ -1124,9 +1129,9 @@ function ScheduleTab({
                   <th className="py-2 pr-3 text-right w-16">W-L</th>
                   <th className="py-2 pl-3 pr-3 text-right w-20 border-l border-border">Line</th>
                   <th className="py-2 pr-6 text-right w-24">O/U</th>
-                  <th className="py-2 pl-3 pr-3 w-32 border-l border-border">Hi Points</th>
-                  <th className="py-2 pr-3 w-32">Hi Rebounds</th>
-                  <th className="py-2 pr-3 w-32">Hi Assists</th>
+                  <th className="py-2 pl-3 pr-3 w-40 border-l border-border">Hi Points</th>
+                  <th className="py-2 pr-3 w-40">Hi Rebounds</th>
+                  <th className="py-2 pr-3 w-40">Hi Assists</th>
                 </tr>
               </thead>
               <tbody>
