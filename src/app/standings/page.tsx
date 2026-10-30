@@ -241,7 +241,7 @@ export default function StandingsPage() {
           className={`px-3 py-2 ${
             pageMode === mode.value
               ? "bg-accent text-accent-foreground font-semibold"
-              : "bg-surface text-foreground/60 hover:text-foreground/80"
+              : "bg-surface text-foreground/82 hover:text-foreground/92"
           }`}
         >
           {mode.label}
@@ -251,7 +251,7 @@ export default function StandingsPage() {
   );
 
   if (pageMode === "nba-cup") {
-    if (cupIsLoading) return <p className="text-foreground/60">Loading NBA Cup standings…</p>;
+    if (cupIsLoading) return <p className="text-foreground/82">Loading NBA Cup standings…</p>;
     if (cupError || !cupData) return <p className="text-red-600 dark:text-red-400">Failed to load NBA Cup standings.</p>;
 
     return (
@@ -260,7 +260,7 @@ export default function StandingsPage() {
           <h1 className="text-2xl font-semibold">
             NBA Standings
             {cupData.season && (
-              <span className="text-foreground/50 text-base ml-2">{seasonLabel(cupData.season.year)}</span>
+              <span className="text-foreground/72 text-base ml-2">{seasonLabel(cupData.season.year)}</span>
             )}
           </h1>
           {pageModeToggle}
@@ -281,11 +281,11 @@ export default function StandingsPage() {
         <div className="space-y-8">
           {cupData.groups.map((group) => (
             <section key={group.groupName}>
-              <h2 className="text-lg font-medium text-foreground/80 mb-3">{group.groupName}</h2>
+              <h2 className="text-lg font-medium text-foreground/92 mb-3">{group.groupName}</h2>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm whitespace-nowrap">
                   <thead>
-                    <tr className="text-left text-foreground/50 border-b border-border">
+                    <tr className="text-left text-foreground/72 border-b border-border">
                       <th className="py-2 pr-3"></th>
                       <th className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>W</th>
                       <th className="py-2 pr-3 text-right">L</th>
@@ -308,7 +308,7 @@ export default function StandingsPage() {
                           <td className="py-2 pr-3">
                             <Link
                               href={`/teams/${s.team.id}`}
-                              className="flex items-center gap-2 hover:text-foreground/80"
+                              className="flex items-center gap-2 hover:text-foreground/92"
                             >
                               {s.team.logoUrl && (
                                 // eslint-disable-next-line @next/next/no-img-element
@@ -344,7 +344,7 @@ export default function StandingsPage() {
     );
   }
 
-  if (isLoading) return <p className="text-foreground/60">Loading standings…</p>;
+  if (isLoading) return <p className="text-foreground/82">Loading standings…</p>;
   if (error || !data) return <p className="text-red-600 dark:text-red-400">Failed to load standings.</p>;
 
   const groups =
@@ -363,7 +363,7 @@ export default function StandingsPage() {
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">
           NBA Standings
-          {data.season && <span className="text-foreground/50 text-base ml-2">{seasonLabel(data.season.year)}</span>}
+          {data.season && <span className="text-foreground/72 text-base ml-2">{seasonLabel(data.season.year)}</span>}
         </h1>
         {pageModeToggle}
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -375,7 +375,7 @@ export default function StandingsPage() {
                 className={`px-3 py-2 capitalize ${
                   viewMode === mode
                     ? "bg-accent text-accent-foreground font-semibold"
-                    : "bg-surface text-foreground/60 hover:text-foreground/80"
+                    : "bg-surface text-foreground/82 hover:text-foreground/92"
                 }`}
               >
                 {mode}
@@ -402,11 +402,11 @@ export default function StandingsPage() {
       <div className="space-y-8">
         {groups.map((group) => (
           <section key={group.groupName}>
-            <h2 className="text-lg font-medium text-foreground/80 mb-3">{group.groupName}</h2>
+            <h2 className="text-lg font-medium text-foreground/92 mb-3">{group.groupName}</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm whitespace-nowrap">
                 <thead>
-                  <tr className="text-left text-foreground/50 border-b border-border">
+                  <tr className="text-left text-foreground/72 border-b border-border">
                     <th className="py-2 pr-3"></th>
                     <th className="py-2 pr-3"></th>
                     <th className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>W</th>
@@ -439,11 +439,11 @@ export default function StandingsPage() {
                       const hideRank = showPlayInLines && rank >= 11;
                       return (
                         <tr key={s.id} className={borderClass}>
-                          <td className="py-2 pr-3 text-foreground/50">{hideRank ? "" : rank}</td>
+                          <td className="py-2 pr-3 text-foreground/72">{hideRank ? "" : rank}</td>
                           <td className="py-2 pr-3">
                             <Link
                               href={`/teams/${s.team.id}`}
-                              className="flex items-center gap-2 hover:text-foreground/80"
+                              className="flex items-center gap-2 hover:text-foreground/92"
                             >
                               {s.team.logoUrl && (
                                 // eslint-disable-next-line @next/next/no-img-element

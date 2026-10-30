@@ -52,7 +52,7 @@ export function TabPager<T extends string>({
           className={`flex-1 px-3 py-2 text-center whitespace-nowrap ${
             activeTab === tab.value
               ? "text-foreground font-semibold border-b-2"
-              : "text-foreground/60 hover:text-foreground/80 border-b-2 border-transparent"
+              : "text-foreground/82 hover:text-foreground/92 border-b-2 border-transparent"
           }`}
           style={activeTab === tab.value ? { borderColor: accentColor } : undefined}
         >

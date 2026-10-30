@@ -254,7 +254,7 @@ async function fetchGame(eventId: string): Promise<ApiResponse> {
 
 export default function GameDetailPage() {
   return (
-    <Suspense fallback={<p className="text-foreground/60">Loading…</p>}>
+    <Suspense fallback={<p className="text-foreground/82">Loading…</p>}>
       <GameDetailContent />
     </Suspense>
   );
@@ -271,7 +271,7 @@ function GameDetailContent() {
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === "dark" ? "dark" : "light";
 
-  if (isLoading) return <p className="text-foreground/60">Loading…</p>;
+  if (isLoading) return <p className="text-foreground/82">Loading…</p>;
   if (error || !data) return <p className="text-red-600 dark:text-red-400">Game not found.</p>;
 
   const { game, source } = data;
@@ -421,19 +421,19 @@ function GameDetailContent() {
           </div>
         </div>
       )}
-      {activeTab === "recap" && <p className="text-foreground/50 text-sm">Coming soon.</p>}
-      {activeTab === "teamstats" && <p className="text-foreground/50 text-sm">Coming soon.</p>}
+      {activeTab === "recap" && <p className="text-foreground/72 text-sm">Coming soon.</p>}
+      {activeTab === "teamstats" && <p className="text-foreground/72 text-sm">Coming soon.</p>}
 
       {activeTab === "boxscore" && (
         <>
           {odds && (
             <section>
-              <h2 className="text-lg font-medium text-foreground/80 mb-3">
-                Odds <span className="text-foreground/50 text-sm font-normal">({odds.provider})</span>
+              <h2 className="text-lg font-medium text-foreground/92 mb-3">
+                Odds <span className="text-foreground/72 text-sm font-normal">({odds.provider})</span>
               </h2>
               <table className="w-full text-sm max-w-md border-collapse">
                 <thead>
-                  <tr className="text-left text-foreground/50">
+                  <tr className="text-left text-foreground/72">
                     <th className="py-2 pr-2 border-b border-border">Team</th>
                     <th className="py-2 pr-2 text-right border-b border-border">Spread</th>
                     <th className="py-2 text-right border-b border-border">Moneyline</th>
@@ -452,15 +452,15 @@ function GameDetailContent() {
                   </tr>
                 </tbody>
               </table>
-              {odds.overUnder !== null && <p className="text-foreground/50 text-sm mt-2">O/U {odds.overUnder}</p>}
+              {odds.overUnder !== null && <p className="text-foreground/72 text-sm mt-2">O/U {odds.overUnder}</p>}
             </section>
           )}
 
           <section>
-            <h2 className="text-lg font-medium text-foreground/80 mb-3">Box score</h2>
+            <h2 className="text-lg font-medium text-foreground/92 mb-3">Box score</h2>
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="text-left text-foreground/50">
+                <tr className="text-left text-foreground/72">
                   <th className="py-2 pr-2 border-b border-border">Team</th>
                   <th className="py-2 pr-2 text-right border-b border-border">PTS</th>
                   <th className="py-2 pr-2 text-right border-b border-border">REB</th>
@@ -476,7 +476,7 @@ function GameDetailContent() {
               <tbody>
                 {teamRows.every((s) => s.points === null) ? (
                   <tr>
-                    <td colSpan={10} className="py-4 text-center text-foreground/50">
+                    <td colSpan={10} className="py-4 text-center text-foreground/72">
                       No box score yet
                       {source === "live" ? ` — ${(game as LiveGame).statusDetail}` : ""}.
                     </td>
@@ -512,10 +512,10 @@ function GameDetailContent() {
             if (rows.length === 0) return null;
             return (
               <section key={team.abbreviation}>
-                <h2 className="text-lg font-medium text-foreground/80 mb-3">{team.displayName}</h2>
+                <h2 className="text-lg font-medium text-foreground/92 mb-3">{team.displayName}</h2>
                 <table className="w-full text-sm border-collapse">
                   <thead>
-                    <tr className="text-left text-foreground/50">
+                    <tr className="text-left text-foreground/72">
                       <th className="py-2 pr-2 border-b border-border">Player</th>
                       <th className="py-2 pr-2 text-right border-b border-border">MIN</th>
                       <th className="py-2 pr-2 text-right border-b border-border">PTS</th>
@@ -556,10 +556,10 @@ function GameDetailContent() {
       {activeTab === "playbyplay" && plays.length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-medium text-foreground/80">Play-by-play</h2>
+            <h2 className="text-lg font-medium text-foreground/92">Play-by-play</h2>
             <button
               onClick={() => setShowAllPlays((v) => !v)}
-              className="text-sm text-foreground/60 hover:text-foreground"
+              className="text-sm text-foreground/82 hover:text-foreground"
             >
               {showAllPlays ? "Show less" : `Show all ${plays.length} plays`}
             </button>
@@ -572,11 +572,11 @@ function GameDetailContent() {
                   play.scoringPlay ? "bg-surface-muted" : ""
                 }`}
               >
-                <span className="text-foreground/50 w-20 shrink-0">
+                <span className="text-foreground/72 w-20 shrink-0">
                   Q{play.period} {play.clock}
                 </span>
                 <span className="flex-1">{play.description}</span>
-                <span className="text-foreground/50 w-16 text-right shrink-0">
+                <span className="text-foreground/72 w-16 text-right shrink-0">
                   {play.awayScore}-{play.homeScore}
                 </span>
               </div>
@@ -662,9 +662,9 @@ function LeaderCell({
         ) : (
           toShortName(leader.name)
         )}
-        {leader.jersey && <span className="text-foreground/50 font-normal"> #{leader.jersey}</span>}
+        {leader.jersey && <span className="text-foreground/72 font-normal"> #{leader.jersey}</span>}
       </div>
-      <div className="text-xs text-foreground/60">{secondary}</div>
+      <div className="text-xs text-foreground/82">{secondary}</div>
     </div>
   );
 }
@@ -715,7 +715,7 @@ function GameLeaders({
                 value={awayLeader?.[category.key] ?? null}
                 secondary={awayLeader ? leaderSecondary(category.key, awayLeader) : ""}
               />
-              <div className="w-20 shrink-0 text-center text-xs font-bold uppercase tracking-wide text-foreground/70">
+              <div className="w-20 shrink-0 text-center text-xs font-bold uppercase tracking-wide text-foreground/87">
                 {category.label}
               </div>
               <LeaderCell
@@ -729,7 +729,7 @@ function GameLeaders({
         })}
       </div>
       <div className="border-t border-border/60 px-4 py-3 text-center">
-        <Link href="?tab=boxscore" className="text-sm text-foreground/60 hover:text-foreground">
+        <Link href="?tab=boxscore" className="text-sm text-foreground/82 hover:text-foreground">
           Full Box Score
         </Link>
       </div>
@@ -820,24 +820,24 @@ function TeamStatsCard({
   return (
     <div className="w-full rounded-lg border border-border">
       <div className="px-4 pt-4">
-        <h2 className="text-sm font-semibold text-foreground/80">Team Stats</h2>
+        <h2 className="text-sm font-semibold text-foreground/92">Team Stats</h2>
       </div>
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-6 w-6 object-contain" />}
-          <span className="text-sm font-medium text-foreground/80">{away.abbreviation}</span>
+          <span className="text-sm font-medium text-foreground/92">{away.abbreviation}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-foreground/80">{home.abbreviation}</span>
+          <span className="text-sm font-medium text-foreground/92">{home.abbreviation}</span>
           {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-6 w-6 object-contain" />}
         </div>
       </div>
       <div className="divide-y divide-border/60 px-4">
         {rows.map((row) => (
           <div key={row.label} className="py-3">
-            <div className="flex items-center justify-between text-sm font-medium text-foreground/80">
+            <div className="flex items-center justify-between text-sm font-medium text-foreground/92">
               <span>{row.awayDisplay}</span>
-              <span className="text-xs text-foreground/50">{row.label}</span>
+              <span className="text-xs text-foreground/72">{row.label}</span>
               <span>{row.homeDisplay}</span>
             </div>
             <div className="mt-2">
@@ -882,7 +882,7 @@ function TeamStatsCard({
         ))}
       </div>
       <div className="border-t border-border/60 px-4 py-3 text-center">
-        <Link href="?tab=teamstats" className="text-sm text-foreground/60 hover:text-foreground">
+        <Link href="?tab=teamstats" className="text-sm text-foreground/82 hover:text-foreground">
           Full Team Stats
         </Link>
       </div>
@@ -894,16 +894,16 @@ function GameInformationCard({ date, gameInfo }: { date: string; gameInfo: GameI
   return (
     <div className="w-full rounded-lg border border-border">
       <div className="px-4 pt-4">
-        <h2 className="text-sm font-semibold text-foreground/80">Game Information</h2>
+        <h2 className="text-sm font-semibold text-foreground/92">Game Information</h2>
       </div>
       <div className="space-y-4 px-4 py-3 text-sm">
-        <div className="text-foreground/80">{formatGameDateTime(date)}</div>
+        <div className="text-foreground/92">{formatGameDateTime(date)}</div>
 
         {gameInfo.venue && (
           <div>
-            <div className="text-foreground/80">{gameInfo.venue.name}</div>
+            <div className="text-foreground/92">{gameInfo.venue.name}</div>
             {(gameInfo.venue.city || gameInfo.venue.state) && (
-              <div className="text-foreground/50">
+              <div className="text-foreground/72">
                 {[gameInfo.venue.city, gameInfo.venue.state].filter(Boolean).join(", ")}
               </div>
             )}
@@ -915,15 +915,15 @@ function GameInformationCard({ date, gameInfo }: { date: string; gameInfo: GameI
         )}
 
         {gameInfo.attendance !== null && (
-          <div className="text-foreground/80">Attendance: {gameInfo.attendance.toLocaleString()}</div>
+          <div className="text-foreground/92">Attendance: {gameInfo.attendance.toLocaleString()}</div>
         )}
 
         {gameInfo.broadcasts.length > 0 && (
           <div>
-            <div className="text-xs text-foreground/50 mb-1">Where to Watch</div>
+            <div className="text-xs text-foreground/72 mb-1">Where to Watch</div>
             <div className="flex flex-wrap gap-2">
               {gameInfo.broadcasts.map((b) => (
-                <span key={b} className="rounded border border-border px-2 py-0.5 text-xs text-foreground/80">
+                <span key={b} className="rounded border border-border px-2 py-0.5 text-xs text-foreground/92">
                   {b}
                 </span>
               ))}
@@ -933,11 +933,11 @@ function GameInformationCard({ date, gameInfo }: { date: string; gameInfo: GameI
 
         {gameInfo.officials.length > 0 && (
           <div>
-            <div className="text-xs text-foreground/50 mb-1">Officiating Crew</div>
+            <div className="text-xs text-foreground/72 mb-1">Officiating Crew</div>
             <div className="space-y-1">
               {gameInfo.officials.map((o) => (
-                <div key={o.name} className="flex justify-between text-foreground/80">
-                  <span className="text-foreground/50">{o.position}</span>
+                <div key={o.name} className="flex justify-between text-foreground/92">
+                  <span className="text-foreground/72">{o.position}</span>
                   <span>{o.name}</span>
                 </div>
               ))}
@@ -994,14 +994,14 @@ function OddsPanel({ away, home, odds }: { away: ScoreboardTeam; home: Scoreboar
   return (
     <div className="w-full rounded-lg border border-border">
       <div className="flex items-center justify-between px-4 pt-4">
-        <h2 className="text-sm font-semibold text-foreground/80">Game Odds</h2>
-        {odds && <span className="text-xs text-foreground/50">Odds by {odds.provider}</span>}
+        <h2 className="text-sm font-semibold text-foreground/92">Game Odds</h2>
+        {odds && <span className="text-xs text-foreground/72">Odds by {odds.provider}</span>}
       </div>
       {odds ? (
         <div className="px-4 py-3">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="text-left text-foreground/50">
+              <tr className="text-left text-foreground/72">
                 <th className="border-b border-border pb-2 font-normal" />
                 <th className="border-b border-border pb-2 text-right font-normal">Spread</th>
                 <th className="border-b border-border pb-2 text-right font-normal">Total</th>
@@ -1009,13 +1009,13 @@ function OddsPanel({ away, home, odds }: { away: ScoreboardTeam; home: Scoreboar
               </tr>
             </thead>
             <tbody>
-              <tr className={`border-b border-border/60 ${!odds.homeIsFavorite ? "font-semibold text-foreground" : "text-foreground/80"}`}>
+              <tr className={`border-b border-border/60 ${!odds.homeIsFavorite ? "font-semibold text-foreground" : "text-foreground/92"}`}>
                 <td className="py-2">{away.abbreviation}</td>
                 <td className={`py-2 text-right ${winningCell(awayCovered)}`}>{formatSigned(odds.awaySpread)}</td>
                 <td className={`py-2 text-right ${winningCell(overHit)}`}>{odds.overUnder !== null ? `o${odds.overUnder}` : "-"}</td>
                 <td className={`py-2 text-right ${winningCell(awayWon)}`}>{formatSigned(odds.awayMoneyline)}</td>
               </tr>
-              <tr className={odds.homeIsFavorite ? "font-semibold text-foreground" : "text-foreground/80"}>
+              <tr className={odds.homeIsFavorite ? "font-semibold text-foreground" : "text-foreground/92"}>
                 <td className="py-2">{home.abbreviation}</td>
                 <td className={`py-2 text-right ${winningCell(homeCovered)}`}>{formatSigned(odds.homeSpread)}</td>
                 <td className={`py-2 text-right ${winningCell(underHit)}`}>{odds.overUnder !== null ? `u${odds.overUnder}` : "-"}</td>
@@ -1025,7 +1025,7 @@ function OddsPanel({ away, home, odds }: { away: ScoreboardTeam; home: Scoreboar
           </table>
         </div>
       ) : (
-        <p className="px-4 py-3 text-sm text-foreground/50">No odds available for this game.</p>
+        <p className="px-4 py-3 text-sm text-foreground/72">No odds available for this game.</p>
       )}
     </div>
   );
@@ -1114,7 +1114,7 @@ function TeamProbabilityRow({ team }: { team: ScoreboardTeam }) {
   return (
     <div className="flex items-center gap-2">
       {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-6 w-6 object-contain" />}
-      <span className="text-sm font-medium text-foreground/80">{team.abbreviation}</span>
+      <span className="text-sm font-medium text-foreground/92">{team.abbreviation}</span>
       <span className="h-0.5 w-4 rounded" style={{ backgroundColor: team.accent }} />
     </div>
   );
@@ -1223,7 +1223,7 @@ function ProbabilityChart({
           </>
         )}
       </div>
-      <div className="relative mt-1 h-4 text-[10px] text-foreground/50">
+      <div className="relative mt-1 h-4 text-[10px] text-foreground/72">
         {ticks.map((t) => (
           <span key={t.label + t.x} className="absolute -translate-x-1/2" style={{ left: `${t.x * 100}%` }}>
             {t.label}
@@ -1318,7 +1318,7 @@ function GameFlowChart({
           </>
         )}
       </div>
-      <div className="relative mt-1 h-4 text-[10px] text-foreground/50">
+      <div className="relative mt-1 h-4 text-[10px] text-foreground/72">
         {ticks.map((t) => (
           <span key={t.label + t.x} className="absolute -translate-x-1/2" style={{ left: `${t.x * 100}%` }}>
             {t.label}
@@ -1392,7 +1392,7 @@ function ProbabilityGameFlowCard({
   return (
     <div className="w-full rounded-lg border border-border">
       <div className="px-4 pt-4">
-        <h2 className="text-xs font-semibold tracking-wide text-foreground/60">PROBABILITIES & GAME FLOW</h2>
+        <h2 className="text-xs font-semibold tracking-wide text-foreground/82">PROBABILITIES & GAME FLOW</h2>
       </div>
       <div className="flex gap-1 px-4 pt-3">
         {TABS.map((t) => (
@@ -1400,7 +1400,7 @@ function ProbabilityGameFlowCard({
             key={t.key}
             onClick={() => switchTab(t.key)}
             className={`flex-1 rounded-full py-1.5 text-xs font-medium transition-colors ${
-              tab === t.key ? "bg-accent text-accent-foreground" : "text-foreground/50 hover:text-foreground/80"
+              tab === t.key ? "bg-accent text-accent-foreground" : "text-foreground/72 hover:text-foreground/92"
             }`}
           >
             {t.label}
@@ -1410,7 +1410,7 @@ function ProbabilityGameFlowCard({
 
       {tab === "winprob" ? (
         probSeries.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-foreground/50">Win probability not available for this game.</p>
+          <p className="px-4 py-6 text-center text-sm text-foreground/72">Win probability not available for this game.</p>
         ) : (
           <>
             <div className="flex items-center justify-between px-4 pt-4">
@@ -1437,17 +1437,17 @@ function ProbabilityGameFlowCard({
               {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-6 w-6 object-contain" />}
               <div>
                 <div className="font-semibold text-foreground">{away.score}</div>
-                <div className="text-xs text-foreground/50">{away.abbreviation}</div>
+                <div className="text-xs text-foreground/72">{away.abbreviation}</div>
               </div>
             </div>
             <div className="text-center">
               <div className="text-sm font-semibold text-foreground">{leadChanges}</div>
-              <div className="text-xs text-foreground/50">Lead Changes</div>
+              <div className="text-xs text-foreground/72">Lead Changes</div>
             </div>
             <div className="flex items-center gap-2">
               <div className="text-right">
                 <div className="font-semibold text-foreground">{home.score}</div>
-                <div className="text-xs text-foreground/50">{home.abbreviation}</div>
+                <div className="text-xs text-foreground/72">{home.abbreviation}</div>
               </div>
               {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-6 w-6 object-contain" />}
             </div>
@@ -1465,24 +1465,24 @@ function ProbabilityGameFlowCard({
       <div className="border-t border-border/60 px-4 py-3 text-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <span className="text-foreground/80">{displayedPlay.description ?? "—"}</span>
-            <div className="mt-0.5 text-xs text-foreground/50">
+            <span className="text-foreground/92">{displayedPlay.description ?? "—"}</span>
+            <div className="mt-0.5 text-xs text-foreground/72">
               Q{displayedPlay.period} {displayedPlay.clock}
             </div>
           </div>
           <div className="flex shrink-0 gap-3 text-right">
             <div>
-              <div className="tabular-nums text-foreground/80">{displayedPlay.awayScore}</div>
-              <div className="text-xs text-foreground/50">{away.abbreviation}</div>
+              <div className="tabular-nums text-foreground/92">{displayedPlay.awayScore}</div>
+              <div className="text-xs text-foreground/72">{away.abbreviation}</div>
             </div>
             <div>
-              <div className="tabular-nums text-foreground/80">{displayedPlay.homeScore}</div>
-              <div className="text-xs text-foreground/50">{home.abbreviation}</div>
+              <div className="tabular-nums text-foreground/92">{displayedPlay.homeScore}</div>
+              <div className="text-xs text-foreground/72">{home.abbreviation}</div>
             </div>
           </div>
         </div>
       </div>
-      <div className="border-t border-border/60 px-4 py-2 text-center text-xs text-foreground/40">
+      <div className="border-t border-border/60 px-4 py-2 text-center text-xs text-foreground/62">
         According to ESPN Analytics
       </div>
     </div>
@@ -1523,7 +1523,7 @@ function ShotChartFilterSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground/80 focus:outline-none"
+      className="rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground/92 focus:outline-none"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>
@@ -1585,7 +1585,7 @@ function ShotChartCard({
   return (
     <div className="w-full rounded-lg border border-border">
       <div className="px-4 pt-4">
-        <h2 className="text-xs font-semibold tracking-wide text-foreground/60">SHOT CHART</h2>
+        <h2 className="text-xs font-semibold tracking-wide text-foreground/82">SHOT CHART</h2>
       </div>
       <div className="flex flex-wrap gap-2 px-4 pt-3">
         <ShotChartFilterSelect
@@ -1644,7 +1644,7 @@ function ShotChartCard({
                   style={{ marginTop: "-6px" }}
                 >
                   <div className="font-medium text-foreground">{shot.playerName ?? "Unknown"}</div>
-                  <div className="text-foreground/60">
+                  <div className="text-foreground/82">
                     {shot.playType} · {shot.made ? "Made" : "Missed"}
                     {shot.period !== null && ` · ${ordinalPeriodLabel(shot.period - 1)}`}
                   </div>
@@ -1654,19 +1654,19 @@ function ShotChartCard({
           );
         })}
       </div>
-      <div className="flex flex-wrap items-center justify-center gap-4 px-4 py-3 text-xs text-foreground/60">
+      <div className="flex flex-wrap items-center justify-center gap-4 px-4 py-3 text-xs text-foreground/82">
         <LegendDot color={awayColor} label="Shot Made" made />
         <LegendDot color={awayColor} label="Shot Missed" made={false} />
         <div className="flex items-center gap-2">
           {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-5 w-5 object-contain" />}
-          <span className="text-foreground/30">|</span>
+          <span className="text-foreground/52">|</span>
           {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-5 w-5 object-contain" />}
         </div>
         <LegendDot color={homeColor} label="Shot Made" made />
         <LegendDot color={homeColor} label="Shot Missed" made={false} />
       </div>
       <div className="border-t border-border/60 px-4 py-3 text-center">
-        <Link href="?tab=playbyplay" className="text-sm text-foreground/60 hover:text-foreground">
+        <Link href="?tab=playbyplay" className="text-sm text-foreground/82 hover:text-foreground">
           Full Play-By-Play
         </Link>
       </div>
@@ -1707,20 +1707,20 @@ function MatchupsCard({
   return (
     <div className="w-full rounded-lg border border-border">
       <div className="px-4 pt-4 pb-1">
-        <h2 className="text-xs font-semibold tracking-wide text-foreground/60">MATCHUPS</h2>
+        <h2 className="text-xs font-semibold tracking-wide text-foreground/82">MATCHUPS</h2>
       </div>
       <div className="flex items-center justify-around px-4 py-4">
         <div className="flex flex-col items-center gap-1">
           {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-9 w-9 object-contain" />}
-          <span className="text-xs text-foreground/60">{away.abbreviation}</span>
+          <span className="text-xs text-foreground/82">{away.abbreviation}</span>
         </div>
         <div className="text-center">
-          <div className="text-xs text-foreground/60">{seasonSeries.summary}</div>
+          <div className="text-xs text-foreground/82">{seasonSeries.summary}</div>
           {seasonSeries.seriesScore && <div className="text-base font-bold text-foreground">{seasonSeries.seriesScore}</div>}
         </div>
         <div className="flex flex-col items-center gap-1">
           {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-9 w-9 object-contain" />}
-          <span className="text-xs text-foreground/60">{home.abbreviation}</span>
+          <span className="text-xs text-foreground/82">{home.abbreviation}</span>
         </div>
       </div>
       <div className="divide-y divide-border/60 border-t border-border/60">
@@ -1736,24 +1736,24 @@ function MatchupsCard({
           return (
             <div key={event.espnId} className="flex items-center gap-2 px-4 py-3">
               <div className="w-10 text-lg text-right">
-                <span className={awaySide.winner ? "font-semibold text-foreground" : "text-foreground/50"}>
+                <span className={awaySide.winner ? "font-semibold text-foreground" : "text-foreground/72"}>
                   {event.completed ? awaySide.score : awayRecord}
                 </span>
               </div>
               <div className="flex-1 text-center">
-                <div className="text-xs text-foreground/50">
+                <div className="text-xs text-foreground/72">
                   Game {i + 1} @ {event.home.abbreviation}
                 </div>
                 <div className="text-sm font-semibold text-foreground">
                   {event.completed ? event.statusDetail : formatMatchupDateTime(event.date)}
                 </div>
                 {event.completed ? (
-                  <div className="text-xs text-foreground/50">{formatMatchupDate(event.date)}</div>
+                  <div className="text-xs text-foreground/72">{formatMatchupDate(event.date)}</div>
                 ) : (
                   event.broadcasts.length > 0 && (
                     <div className="mt-1 flex justify-center gap-2">
                       {event.broadcasts.map((b) => (
-                        <span key={b} className="rounded border border-border px-2 py-0.5 text-xs text-foreground/60">
+                        <span key={b} className="rounded border border-border px-2 py-0.5 text-xs text-foreground/82">
                           {b}
                         </span>
                       ))}
@@ -1762,8 +1762,8 @@ function MatchupsCard({
                 )}
               </div>
               <div className="flex w-10 items-center gap-1 text-lg">
-                {homeSide.winner && <span className="text-foreground/50">{"›"}</span>}
-                <span className={homeSide.winner ? "font-semibold text-foreground" : "text-foreground/50"}>
+                {homeSide.winner && <span className="text-foreground/72">{"›"}</span>}
+                <span className={homeSide.winner ? "font-semibold text-foreground" : "text-foreground/72"}>
                   {event.completed ? homeSide.score : homeRecord}
                 </span>
               </div>
@@ -1778,7 +1778,7 @@ function MatchupsCard({
 function TeamName({ team }: { team: ScoreboardTeam }) {
   if (team.linkId) {
     return (
-      <Link href={`/teams/${team.linkId}`} className="hover:text-foreground/80">
+      <Link href={`/teams/${team.linkId}`} className="hover:text-foreground/92">
         {team.displayName}
       </Link>
     );
@@ -1831,7 +1831,7 @@ function ScoreboardHeader({
               <TeamName team={away} />
             </div>
             {linescores && (
-              <div className="text-xs text-foreground/50 mt-0.5">
+              <div className="text-xs text-foreground/72 mt-0.5">
                 {linescores.away.record}
                 {linescores.away.splitRecord ? `, ${linescores.away.splitRecord} Away` : ""}
               </div>
@@ -1841,11 +1841,11 @@ function ScoreboardHeader({
         </div>
 
         <div className="flex shrink-0 flex-col items-center gap-1 px-2">
-          {statusDetail && <div className="text-sm font-medium text-foreground/80">{statusDetail}</div>}
+          {statusDetail && <div className="text-sm font-medium text-foreground/92">{statusDetail}</div>}
           {linescores && periods > 0 && (
-            <table className="text-xs text-foreground/60">
+            <table className="text-xs text-foreground/82">
               <thead>
-                <tr className="text-foreground/50">
+                <tr className="text-foreground/72">
                   <th className="px-1.5 font-normal" />
                   {Array.from({ length: periods }, (_, i) => (
                     <th key={i} className="px-1.5 font-normal">
@@ -1857,7 +1857,7 @@ function ScoreboardHeader({
               </thead>
               <tbody>
                 <tr>
-                  <td className="px-1.5 font-semibold text-foreground/80">{away.abbreviation}</td>
+                  <td className="px-1.5 font-semibold text-foreground/92">{away.abbreviation}</td>
                   {Array.from({ length: periods }, (_, i) => (
                     <td key={i} className="px-1.5 text-center">
                       {linescores.away.linescores[i] ?? ""}
@@ -1866,7 +1866,7 @@ function ScoreboardHeader({
                   <td className="px-1.5 text-center font-semibold text-foreground">{away.score ?? "-"}</td>
                 </tr>
                 <tr>
-                  <td className="px-1.5 font-semibold text-foreground/80">{home.abbreviation}</td>
+                  <td className="px-1.5 font-semibold text-foreground/92">{home.abbreviation}</td>
                   {Array.from({ length: periods }, (_, i) => (
                     <td key={i} className="px-1.5 text-center">
                       {linescores.home.linescores[i] ?? ""}
@@ -1886,7 +1886,7 @@ function ScoreboardHeader({
               <TeamName team={home} />
             </div>
             {linescores && (
-              <div className="text-xs text-foreground/50 mt-0.5">
+              <div className="text-xs text-foreground/72 mt-0.5">
                 {linescores.home.record}
                 {linescores.home.splitRecord ? `, ${linescores.home.splitRecord} Home` : ""}
               </div>

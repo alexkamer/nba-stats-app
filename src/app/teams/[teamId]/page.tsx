@@ -330,7 +330,7 @@ const TEAM_TABS: { value: TeamTab; label: string }[] = [
 
 export default function TeamDetailPage() {
   return (
-    <Suspense fallback={<p className="text-foreground/60">Loading…</p>}>
+    <Suspense fallback={<p className="text-foreground/82">Loading…</p>}>
       <TeamDetailContent />
     </Suspense>
   );
@@ -352,7 +352,7 @@ function TeamDetailContent() {
   });
   const { resolvedTheme } = useTheme();
 
-  if (isLoading) return <p className="text-foreground/60">Loading…</p>;
+  if (isLoading) return <p className="text-foreground/82">Loading…</p>;
   if (error || !data) return <p className="text-red-600 dark:text-red-400">Failed to load team.</p>;
 
   const {
@@ -403,7 +403,7 @@ function TeamDetailContent() {
           )}
           <div>
             <h1 className="text-2xl font-semibold">{team.displayName}</h1>
-            <p className="text-foreground/60 text-sm">
+            <p className="text-foreground/82 text-sm">
               {standing
                 ? `${standing.wins}-${standing.losses} · ${ordinal(standing.divisionRank)} in ${team.division?.name} Division`
                 : `${team.division?.conference.name} · ${team.division?.name} Division`}
@@ -416,10 +416,10 @@ function TeamDetailContent() {
       {activeTab === "home" && (
         <div className="grid grid-cols-1 md:grid-cols-[220px_1fr_320px] gap-6">
           <aside className="self-start rounded-lg border border-border p-4 space-y-3">
-            <h2 className="text-lg font-medium text-foreground/80">
+            <h2 className="text-lg font-medium text-foreground/92">
               {season ? seasonLabel(season.year) : ""} Schedule
             </h2>
-            {orderedSchedule.length > 0 && <p className="text-xs font-semibold text-foreground/50">Regular Season</p>}
+            {orderedSchedule.length > 0 && <p className="text-xs font-semibold text-foreground/72">Regular Season</p>}
             <div className="divide-y divide-border">
               {orderedSchedule.map((game) => {
                 const isHome = game.homeTeamId === team.id;
@@ -436,7 +436,7 @@ function TeamDetailContent() {
                     className="flex items-center justify-between gap-2 w-full py-3 text-sm hover:text-foreground"
                   >
                     <span className="flex items-center gap-1.5 truncate min-w-0">
-                      <span className="text-foreground/50 shrink-0">{isHome ? "vs." : "@"}</span>
+                      <span className="text-foreground/72 shrink-0">{isHome ? "vs." : "@"}</span>
                       {opponent.logoUrl && (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={opponent.logoUrl} alt="" className="h-6 w-6 shrink-0" />
@@ -465,29 +465,29 @@ function TeamDetailContent() {
                   </Link>
                 );
               })}
-              {orderedSchedule.length === 0 && <p className="text-foreground/50 text-sm p-3">No games found.</p>}
+              {orderedSchedule.length === 0 && <p className="text-foreground/72 text-sm p-3">No games found.</p>}
             </div>
             <button
               onClick={() => setActiveTab("schedule")}
-              className="block w-full text-center text-sm text-foreground/60 hover:text-foreground"
+              className="block w-full text-center text-sm text-foreground/82 hover:text-foreground"
             >
               Full Schedule
             </button>
           </aside>
 
           <main className="space-y-4">
-            <h2 className="text-lg font-medium text-foreground/80">News</h2>
+            <h2 className="text-lg font-medium text-foreground/92">News</h2>
             {mostRecentGame && (
               <Link
                 href={`/games/${mostRecentGame.espnId}`}
                 className="block rounded-lg border border-border bg-surface p-4 hover:border-accent"
               >
-                <p className="text-xs text-foreground/50 mb-1">Latest game</p>
+                <p className="text-xs text-foreground/72 mb-1">Latest game</p>
                 <p className="font-medium">
                   {mostRecentGame.awayTeam.displayName} {mostRecentGame.awayScore} @ {mostRecentGame.homeTeam.displayName}{" "}
                   {mostRecentGame.homeScore}
                 </p>
-                <p className="text-foreground/50 text-sm">{new Date(mostRecentGame.date).toLocaleDateString()}</p>
+                <p className="text-foreground/72 text-sm">{new Date(mostRecentGame.date).toLocaleDateString()}</p>
               </Link>
             )}
             <div className="space-y-3">
@@ -502,29 +502,29 @@ function TeamDetailContent() {
                       href={article.url ?? "#"}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-medium hover:text-foreground/80"
+                      className="font-medium hover:text-foreground/92"
                     >
                       {article.headline}
                     </a>
                     {article.description && article.description !== article.headline && (
-                      <p className="text-foreground/60 text-sm">{article.description}</p>
+                      <p className="text-foreground/82 text-sm">{article.description}</p>
                     )}
                     {article.publishedAt && (
-                      <p className="text-foreground/50 text-xs">{new Date(article.publishedAt).toLocaleDateString()}</p>
+                      <p className="text-foreground/72 text-xs">{new Date(article.publishedAt).toLocaleDateString()}</p>
                     )}
                   </div>
                 </div>
               ))}
-              {news.length === 0 && <p className="text-foreground/50 text-sm">No recent news.</p>}
+              {news.length === 0 && <p className="text-foreground/72 text-sm">No recent news.</p>}
             </div>
           </main>
 
           <aside className="space-y-6">
             <div className="space-y-3">
-              <h2 className="text-lg font-medium text-foreground/80">{team.division?.name} Division</h2>
+              <h2 className="text-lg font-medium text-foreground/92">{team.division?.name} Division</h2>
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-left text-foreground/50 border-b border-border">
+                  <tr className="text-left text-foreground/72 border-b border-border">
                     <th className="py-1.5 pr-2">Team</th>
                     <th className="py-1.5 pr-2 text-right">W</th>
                     <th className="py-1.5 pr-2 text-right">L</th>
@@ -538,7 +538,7 @@ function TeamDetailContent() {
                     <tr
                       key={s.id}
                       className={`border-b border-border/60 ${
-                        s.team.id === team.id ? "text-foreground font-semibold" : "text-foreground/60"
+                        s.team.id === team.id ? "text-foreground font-semibold" : "text-foreground/82"
                       }`}
                     >
                       <td className="py-1.5 pr-2">
@@ -559,7 +559,7 @@ function TeamDetailContent() {
                   ))}
                 </tbody>
               </table>
-              <Link href="/standings" className="block w-full text-center text-sm text-foreground/60 hover:text-foreground">
+              <Link href="/standings" className="block w-full text-center text-sm text-foreground/82 hover:text-foreground">
                 Full Standings
               </Link>
             </div>
@@ -677,7 +677,7 @@ function TeamDetailContent() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm whitespace-nowrap">
               <thead>
-                <tr className="text-left text-foreground/50 border-b border-border">
+                <tr className="text-left text-foreground/72 border-b border-border">
                   <th className="py-2 pr-3">Player</th>
                   <th className="py-2 pr-3">Pos</th>
                   <th className="py-2 pr-3 text-right">Age</th>
@@ -704,14 +704,14 @@ function TeamDetailContent() {
                           />
                         )}
                         <span>{player.displayName}</span>
-                        <span className="text-foreground/50">#{player.jersey ?? "—"}</span>
+                        <span className="text-foreground/72">#{player.jersey ?? "—"}</span>
                       </Link>
                     </td>
-                    <td className="py-2 pr-3 text-foreground/60">{player.position?.abbreviation ?? "—"}</td>
-                    <td className="py-2 pr-3 text-right text-foreground/60">{player.age ?? "—"}</td>
-                    <td className="py-2 pr-3 text-right text-foreground/60">{formatHeight(player.heightIn)}</td>
-                    <td className="py-2 pr-3 text-right text-foreground/60">{player.weightLb ? `${player.weightLb} lbs` : "—"}</td>
-                    <td className="py-2 pr-3 text-foreground/60">{player.college ?? "—"}</td>
+                    <td className="py-2 pr-3 text-foreground/82">{player.position?.abbreviation ?? "—"}</td>
+                    <td className="py-2 pr-3 text-right text-foreground/82">{player.age ?? "—"}</td>
+                    <td className="py-2 pr-3 text-right text-foreground/82">{formatHeight(player.heightIn)}</td>
+                    <td className="py-2 pr-3 text-right text-foreground/82">{player.weightLb ? `${player.weightLb} lbs` : "—"}</td>
+                    <td className="py-2 pr-3 text-foreground/82">{player.college ?? "—"}</td>
                     <td className="py-2 pr-3 text-right">{player.seasonStat?.pointsPerGame?.toFixed(1) ?? "—"}</td>
                     <td className="py-2 pr-3 text-right">{player.seasonStat?.reboundsPerGame?.toFixed(1) ?? "—"}</td>
                     <td className="py-2 pr-3 text-right">{player.seasonStat?.assistsPerGame?.toFixed(1) ?? "—"}</td>
@@ -722,8 +722,8 @@ function TeamDetailContent() {
             </table>
           </div>
           {coach && (
-            <p className="mt-4 text-sm text-foreground/60">
-              <span className="text-foreground/50">Head Coach:</span> {coach.name}
+            <p className="mt-4 text-sm text-foreground/82">
+              <span className="text-foreground/72">Head Coach:</span> {coach.name}
               {coach.experienceYears != null && ` (${coach.experienceYears} yr${coach.experienceYears === 1 ? "" : "s"})`}
             </p>
           )}
@@ -783,19 +783,19 @@ function shortName(displayName: string): string {
 
 // Positive margin = hit (covered the spread / went over the total), 0 = push.
 function hitColorClass(margin: number | null): string {
-  if (margin == null || margin === 0) return "text-foreground/50";
+  if (margin == null || margin === 0) return "text-foreground/72";
   return margin > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
 }
 
 function GameLeaderCell({ leader }: { leader: GameLeader | null }) {
-  if (!leader) return <span className="text-foreground/50">—</span>;
+  if (!leader) return <span className="text-foreground/72">—</span>;
   return (
     <Link
       href={`/players/${leader.playerId}`}
       title={leader.displayName}
       className="flex w-full items-center gap-1 overflow-hidden hover:text-foreground"
     >
-      <span className="min-w-0 truncate text-foreground/60">{shortName(leader.displayName)}</span>
+      <span className="min-w-0 truncate text-foreground/82">{shortName(leader.displayName)}</span>
       <span className="shrink-0 font-medium">{leader.value}</span>
     </Link>
   );
@@ -811,7 +811,7 @@ function DepthChartTab({
   depthChart: TeamDetail["depthChart"];
 }) {
   if (depthChart.length === 0) {
-    return <p className="text-foreground/50">Depth chart unavailable.</p>;
+    return <p className="text-foreground/72">Depth chart unavailable.</p>;
   }
 
   return (
@@ -820,7 +820,7 @@ function DepthChartTab({
       <div className="overflow-x-auto">
         <table className="w-full text-sm whitespace-nowrap">
           <thead>
-            <tr className="text-left text-foreground/50 border-b border-border">
+            <tr className="text-left text-foreground/72 border-b border-border">
               <th className="py-2 pr-6 border-r border-border" />
               {DEPTH_CHART_COLUMN_LABELS.map((label, i) => (
                 <th key={label} className={`py-2 pr-6 font-medium ${i === 0 ? "pl-3" : ""}`}>
@@ -832,7 +832,7 @@ function DepthChartTab({
           <tbody>
             {depthChart.map((position) => (
               <tr key={position.abbreviation} className="border-b border-border/60">
-                <td className="py-2 pr-6 text-foreground/50 border-r border-border">{position.abbreviation}</td>
+                <td className="py-2 pr-6 text-foreground/72 border-r border-border">{position.abbreviation}</td>
                 {DEPTH_CHART_COLUMN_LABELS.map((label, i) => {
                   const player = position.players[i] ?? null;
                   return (
@@ -840,12 +840,12 @@ function DepthChartTab({
                       {player ? (
                         <Link
                           href={`/players/${player.id}`}
-                          className={`hover:text-foreground ${i === 0 ? "font-semibold text-foreground" : "text-foreground/60"}`}
+                          className={`hover:text-foreground ${i === 0 ? "font-semibold text-foreground" : "text-foreground/82"}`}
                         >
                           {player.displayName}
                         </Link>
                       ) : (
-                        <span className="text-foreground/50">-</span>
+                        <span className="text-foreground/72">-</span>
                       )}
                     </td>
                   );
@@ -858,26 +858,26 @@ function DepthChartTab({
 
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
         <p>
-          <span className="text-foreground/60 font-medium">PG:</span> <span className="text-foreground/50">Point Guard</span>
+          <span className="text-foreground/82 font-medium">PG:</span> <span className="text-foreground/72">Point Guard</span>
         </p>
         <p>
-          <span className="text-foreground/60 font-medium">SF:</span> <span className="text-foreground/50">Small Forward</span>
+          <span className="text-foreground/82 font-medium">SF:</span> <span className="text-foreground/72">Small Forward</span>
         </p>
         <p>
-          <span className="text-foreground/60 font-medium">C:</span> <span className="text-foreground/50">Center</span>
+          <span className="text-foreground/82 font-medium">C:</span> <span className="text-foreground/72">Center</span>
         </p>
         <p>
-          <span className="text-foreground/60 font-medium">SG:</span> <span className="text-foreground/50">Shooting Guard</span>
+          <span className="text-foreground/82 font-medium">SG:</span> <span className="text-foreground/72">Shooting Guard</span>
         </p>
         <p>
-          <span className="text-foreground/60 font-medium">PF:</span> <span className="text-foreground/50">Power Forward</span>
+          <span className="text-foreground/82 font-medium">PF:</span> <span className="text-foreground/72">Power Forward</span>
         </p>
         <span />
         <p>
-          <span className="text-red-600 dark:text-red-400 font-medium">DD:</span> <span className="text-foreground/50">Day-to-Day</span>
+          <span className="text-red-600 dark:text-red-400 font-medium">DD:</span> <span className="text-foreground/72">Day-to-Day</span>
         </p>
         <p>
-          <span className="text-red-600 dark:text-red-400 font-medium">O:</span> <span className="text-foreground/50">Out</span>
+          <span className="text-red-600 dark:text-red-400 font-medium">O:</span> <span className="text-foreground/72">Out</span>
         </p>
       </div>
     </section>
@@ -891,7 +891,7 @@ function injuryStatusColorClass(status: string): string {
   if (normalized.includes("out")) return "text-red-600 dark:text-red-400";
   if (normalized.includes("day")) return "text-amber-600 dark:text-amber-400";
   if (normalized.includes("questionable") || normalized.includes("doubtful")) return "text-amber-600 dark:text-amber-400";
-  return "text-foreground/60";
+  return "text-foreground/82";
 }
 
 function formatInjuryDate(dateStr: string): string {
@@ -911,7 +911,7 @@ function InjuriesTab({
     return (
       <section>
         <h2 className="text-2xl font-bold text-foreground mb-3">{team.displayName} Injuries</h2>
-        <p className="text-foreground/50">No reported injuries.</p>
+        <p className="text-foreground/72">No reported injuries.</p>
       </section>
     );
   }
@@ -922,7 +922,7 @@ function InjuriesTab({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-foreground/50 border-b border-border">
+            <tr className="text-left text-foreground/72 border-b border-border">
               <th className="py-2 pr-8">Player</th>
               <th className="py-2 pr-8">Pos</th>
               <th className="py-2 pr-8">Updated</th>
@@ -945,18 +945,18 @@ function InjuriesTab({
                         />
                       )}
                       <span>{injury.displayName}</span>
-                      <span className="text-foreground/50">#{injury.jersey ?? "—"}</span>
+                      <span className="text-foreground/72">#{injury.jersey ?? "—"}</span>
                     </Link>
                   ) : (
                     <span>{injury.displayName}</span>
                   )}
                 </td>
-                <td className="py-3 pr-8 text-foreground/60 whitespace-nowrap">{injury.position ?? "—"}</td>
-                <td className="py-3 pr-8 text-foreground/60 whitespace-nowrap">{formatInjuryDate(injury.date)}</td>
+                <td className="py-3 pr-8 text-foreground/82 whitespace-nowrap">{injury.position ?? "—"}</td>
+                <td className="py-3 pr-8 text-foreground/82 whitespace-nowrap">{formatInjuryDate(injury.date)}</td>
                 <td className={`py-3 pr-8 font-medium whitespace-nowrap ${injuryStatusColorClass(injury.status)}`}>
                   {injury.status}
                 </td>
-                <td className="py-3 text-foreground/60 min-w-[320px]">{injury.comment ?? "—"}</td>
+                <td className="py-3 text-foreground/82 min-w-[320px]">{injury.comment ?? "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -1014,7 +1014,7 @@ function TransactionsTab({
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-medium text-foreground/80">
+        <h2 className="text-lg font-medium text-foreground/92">
           {team.displayName} Transactions {year}
         </h2>
         <select
@@ -1030,8 +1030,8 @@ function TransactionsTab({
         </select>
       </div>
 
-      {isLoading && <p className="text-foreground/50 text-sm">Loading…</p>}
-      {!isLoading && transactions?.length === 0 && <p className="text-foreground/50 text-sm">No transactions found.</p>}
+      {isLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+      {!isLoading && transactions?.length === 0 && <p className="text-foreground/72 text-sm">No transactions found.</p>}
 
       {grouped.map(([label, rows]) => (
         <div key={label} className="space-y-1">
@@ -1039,7 +1039,7 @@ function TransactionsTab({
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm table-fixed">
               <thead>
-                <tr className="text-left text-foreground/50 border-b border-border">
+                <tr className="text-left text-foreground/72 border-b border-border">
                   <th className="py-2 pl-3 pr-3 w-40">Date</th>
                   <th className="py-2 pr-3">Transaction</th>
                 </tr>
@@ -1047,10 +1047,10 @@ function TransactionsTab({
               <tbody>
                 {rows.map((t, i) => (
                   <tr key={`${t.date}-${i}`} className="border-b border-border/60 last:border-0 align-top">
-                    <td className="py-2 pl-3 pr-3 text-foreground/60 whitespace-nowrap">
+                    <td className="py-2 pl-3 pr-3 text-foreground/82 whitespace-nowrap">
                       {new Date(t.date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
                     </td>
-                    <td className="py-2 pr-3 text-foreground/80">{t.description}</td>
+                    <td className="py-2 pr-3 text-foreground/92">{t.description}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1097,7 +1097,7 @@ function ScheduleTab({
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-medium text-foreground/80">{season && seasonLabel(season.year)} Schedule</h2>
+        <h2 className="text-lg font-medium text-foreground/92">{season && seasonLabel(season.year)} Schedule</h2>
         <select
           value={season?.id ?? ""}
           onChange={(e) => {
@@ -1114,15 +1114,15 @@ function ScheduleTab({
         </select>
       </div>
 
-      {rows.length === 0 && <p className="text-foreground/50 text-sm">No games found.</p>}
+      {rows.length === 0 && <p className="text-foreground/72 text-sm">No games found.</p>}
 
       {completedRows.length > 0 && (
         <div className="space-y-1">
-          <p className="text-xs font-semibold text-foreground/50">{season && seasonTypeLabel(season.type)}</p>
+          <p className="text-xs font-semibold text-foreground/72">{season && seasonTypeLabel(season.type)}</p>
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm whitespace-nowrap table-fixed">
               <thead>
-                <tr className="text-left text-foreground/50 border-b border-border">
+                <tr className="text-left text-foreground/72 border-b border-border">
                   <th className="py-2 pl-3 pr-8 w-32">Date</th>
                   <th className="py-2 pr-3">Opponent</th>
                   <th className="py-2 pr-3 w-28">Result</th>
@@ -1138,7 +1138,7 @@ function ScheduleTab({
                 {groupByMonth(completedRows).map(([label, groupRows]) => (
                   <Fragment key={label}>
                     <tr className="border-b border-border/60">
-                      <td colSpan={9} className="pt-3 pb-1 pl-3 text-xs font-semibold text-foreground/50">
+                      <td colSpan={9} className="pt-3 pb-1 pl-3 text-xs font-semibold text-foreground/72">
                         {label}
                       </td>
                     </tr>
@@ -1162,12 +1162,12 @@ function ScheduleTab({
                           : null;
                       return (
                         <tr key={game.id} className="border-b border-border/60 last:border-0">
-                          <td className="py-2 pl-3 pr-8 text-foreground/60">
+                          <td className="py-2 pl-3 pr-8 text-foreground/82">
                             {date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
                           </td>
                           <td className="py-2 pr-3">
                             <Link href={`/teams/${opponent.id}`} className="flex items-center gap-2 hover:text-foreground">
-                              <span className="text-foreground/50">{isHome ? "vs" : "@"}</span>
+                              <span className="text-foreground/72">{isHome ? "vs" : "@"}</span>
                               {opponent.logoUrl && (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={opponent.logoUrl} alt="" className="h-5 w-5" />
@@ -1180,12 +1180,12 @@ function ScheduleTab({
                               <span className={`font-semibold ${won ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
                                 {won ? "W" : "L"}
                               </span>{" "}
-                              <span className="text-foreground/60">
+                              <span className="text-foreground/82">
                                 {teamScore}-{oppScore}
                               </span>
                             </Link>
                           </td>
-                          <td className="py-2 pr-3 text-right text-foreground/50">{record ?? "—"}</td>
+                          <td className="py-2 pr-3 text-right text-foreground/72">{record ?? "—"}</td>
                           <td className={`py-2 pl-3 pr-3 text-right border-l border-border/60 ${hitColorClass(coverMargin)}`}>
                             {teamSpread != null ? `${teamSpread > 0 ? "+" : ""}${teamSpread}` : "—"}
                           </td>
@@ -1226,7 +1226,7 @@ function ScheduleTab({
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm whitespace-nowrap table-fixed">
             <thead>
-              <tr className="text-left text-foreground/50 border-b border-border">
+              <tr className="text-left text-foreground/72 border-b border-border">
                 <th className="py-2 pl-3 pr-3 w-28">Date</th>
                 <th className="py-2 pr-3">Opponent</th>
                 <th className="py-2 pr-6 text-right w-40">Time</th>
@@ -1237,7 +1237,7 @@ function ScheduleTab({
               {groupByMonth(upcomingRows).map(([label, groupRows]) => (
                 <Fragment key={label}>
                   <tr className="border-b border-border/60">
-                    <td colSpan={4} className="pt-3 pb-1 pl-3 text-xs font-semibold text-foreground/50">
+                    <td colSpan={4} className="pt-3 pb-1 pl-3 text-xs font-semibold text-foreground/72">
                       {label}
                     </td>
                   </tr>
@@ -1245,12 +1245,12 @@ function ScheduleTab({
                     const date = new Date(game.date);
                     return (
                       <tr key={game.id} className="border-b border-border/60 last:border-0">
-                        <td className="py-2 pl-3 pr-8 text-foreground/60">
+                        <td className="py-2 pl-3 pr-8 text-foreground/82">
                           {date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
                         </td>
                         <td className="py-2 pr-3">
                           <Link href={`/games/${game.espnId}`} className="flex items-center gap-2 hover:text-foreground">
-                            <span className="text-foreground/50">{isHome ? "vs" : "@"}</span>
+                            <span className="text-foreground/72">{isHome ? "vs" : "@"}</span>
                             {opponent.logoUrl && (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={opponent.logoUrl} alt="" className="h-5 w-5" />
@@ -1259,13 +1259,13 @@ function ScheduleTab({
                           </Link>
                         </td>
                         <td className="py-2 pr-6 text-right">
-                          <Link href={`/games/${game.espnId}`} className="text-foreground/50 hover:text-foreground">
+                          <Link href={`/games/${game.espnId}`} className="text-foreground/72 hover:text-foreground">
                             {game.status === "LIVE"
                               ? "Live"
                               : date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                           </Link>
                         </td>
-                        <td className="py-2 pr-3 text-center text-foreground/50">{game.broadcast ?? "—"}</td>
+                        <td className="py-2 pr-3 text-center text-foreground/72">{game.broadcast ?? "—"}</td>
                       </tr>
                     );
                   })}
@@ -1292,13 +1292,13 @@ function TeamLeadersRow({ teamLeaders }: { teamLeaders: TeamDetail["teamLeaders"
 
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-medium text-foreground/80">Team Leaders</h2>
+      <h2 className="text-lg font-medium text-foreground/92">Team Leaders</h2>
       <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-border rounded-lg border border-border overflow-hidden">
         {LEADER_ROW_CARDS.map(({ key, label }) => {
           const entry = byKey.get(key);
           return (
             <div key={key} className="p-4 space-y-2">
-              <p className="text-sm font-medium text-foreground/80">{label}</p>
+              <p className="text-sm font-medium text-foreground/92">{label}</p>
               {entry?.player ? (
                 <Link href={`/players/${entry.player.id}`} className="flex items-start gap-3 hover:text-foreground">
                   {entry.player.headshotUrl && (
@@ -1312,13 +1312,13 @@ function TeamLeadersRow({ teamLeaders }: { teamLeaders: TeamDetail["teamLeaders"
                   <span className="min-w-0 space-y-1">
                     <span className="block text-sm truncate">
                       {entry.player.displayName}{" "}
-                      <span className="text-foreground/50">{entry.player.position?.abbreviation}</span>
+                      <span className="text-foreground/72">{entry.player.position?.abbreviation}</span>
                     </span>
                     <span className="block text-2xl font-semibold">{entry.displayValue ?? "—"}</span>
                   </span>
                 </Link>
               ) : (
-                <p className="text-foreground/50 text-sm">—</p>
+                <p className="text-foreground/72 text-sm">—</p>
               )}
             </div>
           );
@@ -1345,7 +1345,7 @@ function TeamLeadersCard({
 }) {
   return (
     <div className="rounded-lg border border-border p-4 space-y-3">
-      <h2 className="text-lg font-medium text-foreground/80">{season ? seasonLabel(season.year) : ""} Team Leaders</h2>
+      <h2 className="text-lg font-medium text-foreground/92">{season ? seasonLabel(season.year) : ""} Team Leaders</h2>
       <div className="flex border-b border-border text-sm">
         {LEADERS_GROUPS.map((group) => (
           <button
@@ -1354,7 +1354,7 @@ function TeamLeadersCard({
             className={`flex-1 pb-2 text-center border-b-2 ${
               leadersGroup === group.value
                 ? "text-foreground font-semibold"
-                : "text-foreground/50 border-transparent hover:text-foreground/80"
+                : "text-foreground/72 border-transparent hover:text-foreground/92"
             }`}
             style={leadersGroup === group.value ? { borderColor: accentColor } : undefined}
           >
@@ -1365,7 +1365,7 @@ function TeamLeadersCard({
       <div className="divide-y divide-border">
         {visibleLeaders.map(({ statName, player, displayValue, secondary }) => (
           <div key={statName} className="w-full py-3 space-y-2">
-            <p className="text-sm text-foreground/80">{statName}</p>
+            <p className="text-sm text-foreground/92">{statName}</p>
             {player ? (
               <Link href={`/players/${player.id}`} className="flex items-center justify-between gap-3 hover:text-foreground">
                 <div className="flex items-center gap-3 min-w-0">
@@ -1380,29 +1380,29 @@ function TeamLeadersCard({
                   <div className="min-w-0">
                     <p className="text-sm truncate">
                       {player.displayName}{" "}
-                      <span className="text-foreground/50">
+                      <span className="text-foreground/72">
                         {player.position?.abbreviation} #{player.jersey ?? "—"}
                       </span>
                     </p>
                     <p className="text-2xl font-semibold">{displayValue}</p>
                   </div>
                 </div>
-                <div className="text-right text-xs text-foreground/50 shrink-0 space-y-0.5">
+                <div className="text-right text-xs text-foreground/72 shrink-0 space-y-0.5">
                   {secondary.map((s) => (
                     <p key={s.label}>
-                      {s.label} <span className="text-foreground/80 font-medium">{s.value ?? "—"}</span>
+                      {s.label} <span className="text-foreground/92 font-medium">{s.value ?? "—"}</span>
                     </p>
                   ))}
                 </div>
               </Link>
             ) : (
-              <p className="text-foreground/50 text-sm">—</p>
+              <p className="text-foreground/72 text-sm">—</p>
             )}
           </div>
         ))}
       </div>
       {onViewAll && (
-        <button onClick={onViewAll} className="block w-full text-center text-sm text-foreground/60 hover:text-foreground">
+        <button onClick={onViewAll} className="block w-full text-center text-sm text-foreground/82 hover:text-foreground">
           Full Team Statistics
         </button>
       )}
@@ -1479,12 +1479,12 @@ function SortableTh({
   const active = column.key === sortKey;
   return (
     <th
-      className={`py-2 pr-3 cursor-pointer select-none hover:text-foreground/80 ${align === "right" ? "text-right" : "text-left"}`}
+      className={`py-2 pr-3 cursor-pointer select-none hover:text-foreground/92 ${align === "right" ? "text-right" : "text-left"}`}
       onClick={() => onSort(column.key)}
     >
       <span className={`inline-flex items-center gap-1 ${align === "right" ? "flex-row-reverse" : ""}`}>
         {column.label}
-        <span className="text-[10px] text-foreground/40 w-2 inline-block">{active ? (sortDir === "asc" ? "▲" : "▼") : ""}</span>
+        <span className="text-[10px] text-foreground/62 w-2 inline-block">{active ? (sortDir === "asc" ? "▲" : "▼") : ""}</span>
       </span>
     </th>
   );
@@ -1517,11 +1517,11 @@ function PlayerStatsTable({ roster, splitLabel }: { roster: RosterRow[]; splitLa
 
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-medium text-foreground/80">Player Stats - {splitLabel}</h2>
+      <h2 className="text-lg font-medium text-foreground/92">Player Stats - {splitLabel}</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm whitespace-nowrap">
           <thead>
-            <tr className="text-left text-foreground/50 border-b border-border">
+            <tr className="text-left text-foreground/72 border-b border-border">
               {PLAYER_STAT_COLUMNS.map((col) => (
                 <SortableTh
                   key={col.key}
@@ -1539,7 +1539,7 @@ function PlayerStatsTable({ roster, splitLabel }: { roster: RosterRow[]; splitLa
               <tr key={p.id} className="border-b border-border/60">
                 <td className="py-2 pr-3">
                   <Link href={`/players/${p.id}`} className="hover:text-foreground">
-                    {p.displayName} <span className="text-foreground/50">{p.position?.abbreviation ?? "—"}</span>
+                    {p.displayName} <span className="text-foreground/72">{p.position?.abbreviation ?? "—"}</span>
                   </Link>
                 </td>
                 <td className="py-2 pr-3 text-right">{p.fullStat?.gamesPlayed ?? "—"}</td>
@@ -1558,7 +1558,7 @@ function PlayerStatsTable({ roster, splitLabel }: { roster: RosterRow[]; splitLa
               </tr>
             ))}
             {rows.length > 0 && (
-              <tr className="font-semibold text-foreground/80">
+              <tr className="font-semibold text-foreground/92">
                 <td className="py-2 pr-3">Total</td>
                 <td className="py-2 pr-3 text-right">{totalGP}</td>
                 <td className="py-2 pr-3 text-right"></td>
@@ -1577,7 +1577,7 @@ function PlayerStatsTable({ roster, splitLabel }: { roster: RosterRow[]; splitLa
             )}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={14} className="py-3 text-foreground/50">
+                <td colSpan={14} className="py-3 text-foreground/72">
                   No stats available.
                 </td>
               </tr>
@@ -1621,11 +1621,11 @@ function ShootingStatsTable({ roster, splitLabel }: { roster: RosterRow[]; split
 
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-medium text-foreground/80">Shooting Stats - {splitLabel}</h2>
+      <h2 className="text-lg font-medium text-foreground/92">Shooting Stats - {splitLabel}</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm whitespace-nowrap">
           <thead>
-            <tr className="text-left text-foreground/50 border-b border-border">
+            <tr className="text-left text-foreground/72 border-b border-border">
               {SHOOTING_STAT_COLUMNS.map((col) => (
                 <SortableTh
                   key={col.key}
@@ -1643,7 +1643,7 @@ function ShootingStatsTable({ roster, splitLabel }: { roster: RosterRow[]; split
               <tr key={p.id} className="border-b border-border/60">
                 <td className="py-2 pr-3">
                   <Link href={`/players/${p.id}`} className="hover:text-foreground">
-                    {p.displayName} <span className="text-foreground/50">{p.position?.abbreviation ?? "—"}</span>
+                    {p.displayName} <span className="text-foreground/72">{p.position?.abbreviation ?? "—"}</span>
                   </Link>
                 </td>
                 <td className="py-2 pr-3 text-right">{fmt1(p.fullStat?.fgMadePerGame)}</td>
@@ -1663,7 +1663,7 @@ function ShootingStatsTable({ roster, splitLabel }: { roster: RosterRow[]; split
               </tr>
             ))}
             {rows.length > 0 && (
-              <tr className="font-semibold text-foreground/80">
+              <tr className="font-semibold text-foreground/92">
                 <td className="py-2 pr-3">Total</td>
                 <td className="py-2 pr-3 text-right">{fmt1(totalFgm)}</td>
                 <td className="py-2 pr-3 text-right">{fmt1(totalFga)}</td>
@@ -1683,7 +1683,7 @@ function ShootingStatsTable({ roster, splitLabel }: { roster: RosterRow[]; split
             )}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={14} className="py-3 text-foreground/50">
+                <td colSpan={14} className="py-3 text-foreground/72">
                   No stats available.
                 </td>
               </tr>
@@ -1728,12 +1728,12 @@ const STATS_GLOSSARY: { term: string; definition: string }[] = [
 function StatsGlossary() {
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-medium text-foreground/80">Glossary</h2>
+      <h2 className="text-lg font-medium text-foreground/92">Glossary</h2>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-2 text-sm">
         {STATS_GLOSSARY.map(({ term, definition }) => (
           <p key={term}>
-            <span className="text-foreground/80 font-medium">{term}</span>{" "}
-            <span className="text-foreground/50">— {definition}</span>
+            <span className="text-foreground/92 font-medium">{term}</span>{" "}
+            <span className="text-foreground/72">— {definition}</span>
           </p>
         ))}
       </div>

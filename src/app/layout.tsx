@@ -34,16 +34,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Link href="/" className="font-semibold text-base">
                 NBA Stats
               </Link>
-              <Link href="/standings" className="text-foreground/60 hover:text-foreground">
+              <Link href="/standings" className="text-foreground/82 hover:text-foreground">
                 Standings
               </Link>
-              <Link href="/teams" className="text-foreground/60 hover:text-foreground">
+              <Link href="/teams" className="text-foreground/82 hover:text-foreground">
                 Teams
               </Link>
-              <Link href="/players" className="text-foreground/60 hover:text-foreground">
+              <Link href="/players" className="text-foreground/82 hover:text-foreground">
                 Players
               </Link>
-              <Link href="/news" className="text-foreground/60 hover:text-foreground">
+              <Link href="/news" className="text-foreground/82 hover:text-foreground">
                 News
               </Link>
               <span className="ml-auto">

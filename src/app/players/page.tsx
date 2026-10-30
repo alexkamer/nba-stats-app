@@ -45,7 +45,7 @@ export default function PlayersPage() {
         className="w-full max-w-sm rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
       />
 
-      {isLoading && <p className="text-foreground/60">Loading players…</p>}
+      {isLoading && <p className="text-foreground/82">Loading players…</p>}
       {error && <p className="text-red-600 dark:text-red-400">Failed to load players.</p>}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
@@ -56,14 +56,14 @@ export default function PlayersPage() {
             className="rounded-md border border-border bg-surface px-3 py-2 text-sm hover:border-accent"
           >
             <div>{player.displayName}</div>
-            <div className="text-foreground/50 text-xs">
+            <div className="text-foreground/72 text-xs">
               {player.currentTeam?.abbreviation ?? "FA"}
               {player.position && ` · ${player.position.abbreviation}`}
             </div>
           </Link>
         ))}
       </div>
-      {players && filtered.length === 0 && <p className="text-foreground/50">No players match &ldquo;{search}&rdquo;.</p>}
+      {players && filtered.length === 0 && <p className="text-foreground/72">No players match &ldquo;{search}&rdquo;.</p>}
     </div>
   );
 }

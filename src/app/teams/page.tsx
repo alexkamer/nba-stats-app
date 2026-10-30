@@ -21,7 +21,7 @@ async function fetchTeams(): Promise<Team[]> {
 export default function TeamsPage() {
   const { data: teams, isLoading, error } = useQuery({ queryKey: ["teams"], queryFn: fetchTeams });
 
-  if (isLoading) return <p className="text-foreground/60">Loading teams…</p>;
+  if (isLoading) return <p className="text-foreground/82">Loading teams…</p>;
   if (error) return <p className="text-red-600 dark:text-red-400">Failed to load teams.</p>;
   if (!teams) return null;
 
@@ -38,7 +38,7 @@ export default function TeamsPage() {
       <h1 className="text-2xl font-semibold">Teams</h1>
       {Array.from(byConference.entries()).map(([conference, confTeams]) => (
         <section key={conference}>
-          <h2 className="text-lg font-medium text-foreground/80 mb-3">{conference}</h2>
+          <h2 className="text-lg font-medium text-foreground/92 mb-3">{conference}</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
             {confTeams.map((team) => (
               <Link
@@ -51,7 +51,7 @@ export default function TeamsPage() {
                   <img src={team.logoUrl} alt={team.displayName} className="h-10 w-10" />
                 )}
                 <span className="text-sm text-center">{team.displayName}</span>
-                <span className="text-xs text-foreground/50">{team.division?.name}</span>
+                <span className="text-xs text-foreground/72">{team.division?.name}</span>
               </Link>
             ))}
           </div>
