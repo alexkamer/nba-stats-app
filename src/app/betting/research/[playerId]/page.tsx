@@ -86,6 +86,24 @@ const STAT_LABELS: Record<string, string> = {
   TRIPLE_DOUBLE: "Triple-Double",
 };
 
+// Abbreviated labels for the grid's column headers — same shorthand the
+// betting page uses (src/app/betting/page.tsx) — so ~10 stat columns fit
+// without each one wrapping or forcing excess column width.
+const STAT_LABELS_SHORT: Record<string, string> = {
+  POINTS: "PTS",
+  REBOUNDS: "REB",
+  ASSISTS: "AST",
+  THREE_POINTERS_MADE: "3PM",
+  STEALS: "STL",
+  BLOCKS: "BLK",
+  POINTS_ASSISTS: "PTS+AST",
+  POINTS_REBOUNDS: "PTS+REB",
+  REBOUNDS_ASSISTS: "REB+AST",
+  POINTS_REBOUNDS_ASSISTS: "PRA",
+  DOUBLE_DOUBLE: "DBL-DBL",
+  TRIPLE_DOUBLE: "TRP-DBL",
+};
+
 async function fetchResearch(playerId: string, stat: string | null, filter: ResearchFilter): Promise<ResearchResponse> {
   const qs = new URLSearchParams();
   if (stat) qs.set("stat", stat);
@@ -376,10 +394,11 @@ function HitRateGrid({
                 <button
                   type="button"
                   onClick={() => onSelectStat(stat)}
+                  title={STAT_LABELS[stat] ?? stat}
                   className="rounded px-1.5 py-0.5 font-medium transition-colors"
                   style={stat === selectedStat ? { color: accentColor } : undefined}
                 >
-                  {STAT_LABELS[stat] ?? stat}
+                  {STAT_LABELS_SHORT[stat] ?? stat}
                 </button>
               </th>
             ))}
@@ -565,6 +584,13 @@ function PlayerPropResearchContent() {
             <HitRateChip label="Season" summary={data.hitRates.season} accentColor={accentColor} />
           </div>
 
+          <details className="mb-5">
+            <summary className="cursor-pointer text-sm font-medium text-foreground/72 hover:text-foreground">
+              Trend chart — {STAT_LABELS[data.statType] ?? data.statType}
+            </summary>
+            <HistoryChart history={data.history} line={data.line} projection={data.projection?.projectedValue ?? null} accentColor={accentColor} />
+          </details>
+
           <HitRateGrid
             rows={data.grid}
             statTypes={gridStatTypes}
@@ -572,13 +598,6 @@ function PlayerPropResearchContent() {
             onSelectStat={setStat}
             accentColor={accentColor}
           />
-
-          <details className="mt-5">
-            <summary className="cursor-pointer text-sm font-medium text-foreground/72 hover:text-foreground">
-              Trend chart — {STAT_LABELS[data.statType] ?? data.statType}
-            </summary>
-            <HistoryChart history={data.history} line={data.line} projection={data.projection?.projectedValue ?? null} accentColor={accentColor} />
-          </details>
         </SectionCard>
       </div>
     </div>
