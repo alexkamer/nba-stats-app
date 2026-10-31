@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { computeEdgeRatio } from "@lib/projections/confidence";
 
 interface TeamSummary {
   id: number;
@@ -495,6 +496,7 @@ function GameCard({ game }: { game: UpcomingGame }) {
                   <th className="pb-2 text-right font-normal">Line</th>
                   <th className="pb-2 text-right font-normal">Odds</th>
                   <th className="pb-2 text-right font-normal">Our #</th>
+                  <th className="pb-2 text-right font-normal">Confidence</th>
                   <th className="pb-2 text-right font-normal">Result</th>
                 </tr>
               </thead>
@@ -515,6 +517,12 @@ function GameCard({ game }: { game: UpcomingGame }) {
                     </td>
                     <td className="py-1.5 text-right text-foreground/72">{formatOdds(prop.odds)}</td>
                     <td className="py-1.5 text-right text-foreground/72">{prop.projectedValue.toFixed(1)}</td>
+                    <td className="py-1.5 text-right text-foreground/72">
+                      {(() => {
+                        const ratio = computeEdgeRatio(prop.projectedValue, prop.line, prop.stdev);
+                        return ratio !== null ? `${ratio.toFixed(1)}σ` : "—";
+                      })()}
+                    </td>
                     <td className="py-1.5 text-right text-foreground/72">
                       {prop.gradedCorrect !== null ? (
                         <>
