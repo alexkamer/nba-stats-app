@@ -311,10 +311,14 @@ function GameCard({ game }: { game: UpcomingGame }) {
     .filter((p) => propsView === "all" || p.bettable)
     .filter((p) => statFilter === "all" || p.statType === statFilter)
     .filter((p) => playerFilter === "all" || String(p.playerId) === playerFilter)
-    .sort(
-      (a, b) =>
-        a.playerName.localeCompare(b.playerName) || PROP_STAT_TYPES.indexOf(a.statType) - PROP_STAT_TYPES.indexOf(b.statType),
-    );
+    .sort((a, b) => {
+      if (propsView === "recommended") {
+        const edgeA = computeEdgeRatio(a.projectedValue, a.line, a.stdev) ?? -Infinity;
+        const edgeB = computeEdgeRatio(b.projectedValue, b.line, b.stdev) ?? -Infinity;
+        if (edgeA !== edgeB) return edgeB - edgeA;
+      }
+      return a.playerName.localeCompare(b.playerName) || PROP_STAT_TYPES.indexOf(a.statType) - PROP_STAT_TYPES.indexOf(b.statType);
+    });
 
   return (
     <div id={`game-${game.espnId}`} className="rounded-lg border border-border">
