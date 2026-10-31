@@ -62,6 +62,8 @@ interface ResearchData {
   odds: { over: number | null; under: number | null };
   projection: { projectedValue: number; stdev: number | null; bettable: boolean } | null;
   filter: ResearchFilter;
+  seasons: { id: number; year: number }[];
+  selectedSeasonId: number | null;
   history: HistoryGame[];
   hitRates: { l5: HitRateSummary; l10: HitRateSummary; l20: HitRateSummary; season: HitRateSummary };
   grid: GridRow[];
@@ -104,14 +106,26 @@ const STAT_LABELS_SHORT: Record<string, string> = {
   TRIPLE_DOUBLE: "TRP-DBL",
 };
 
-async function fetchResearch(playerId: string, stat: string | null, filter: ResearchFilter): Promise<ResearchResponse> {
+async function fetchResearch(
+  playerId: string,
+  stat: string | null,
+  filter: ResearchFilter,
+  seasonId: number | null,
+): Promise<ResearchResponse> {
   const qs = new URLSearchParams();
   if (stat) qs.set("stat", stat);
   qs.set("filter", filter);
+  if (seasonId !== null) qs.set("seasonId", String(seasonId));
   const res = await fetch(`/api/betting/research/${playerId}?${qs.toString()}`);
   if (res.status === 404) return { notFound: true };
   if (!res.ok) throw new Error("Failed to load player prop research");
   return res.json();
+}
+
+// ESPN labels a season by the year it concludes in — "2026" means the
+// 2025-26 season — so render it back out as the familiar "2025-26".
+function seasonLabel(year: number): string {
+  return `${year - 1}-${String(year).slice(2)}`;
 }
 
 function formatLine(line: number): string {
@@ -473,10 +487,14 @@ function PlayerPropResearchContent() {
 
   const [stat, setStat] = useState<string | null>(initialStat);
   const [filter, setFilter] = useState<ResearchFilter>("all");
+  // null means "let the API pick its default (the current season)" — once
+  // the user actually picks a season from the dropdown, this is set and
+  // sent explicitly so the choice survives the stat/filter it's combined with.
+  const [seasonId, setSeasonId] = useState<number | null>(null);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["betting", "research", playerId, stat, filter],
-    queryFn: () => fetchResearch(playerId, stat, filter),
+    queryKey: ["betting", "research", playerId, stat, filter, seasonId],
+    queryFn: () => fetchResearch(playerId, stat, filter, seasonId),
   });
 
   if (isLoading) return <p className="text-foreground/82">Loading…</p>;
@@ -563,7 +581,7 @@ function PlayerPropResearchContent() {
         )}
 
         <SectionCard title="Game log" accentColor={accentColor}>
-          <div className="mb-5">
+          <div className="mb-5 flex flex-wrap items-center gap-2">
             <SegmentedToggle
               value={filter}
               onChange={setFilter}
@@ -576,6 +594,19 @@ function PlayerPropResearchContent() {
                 { value: "opponent", label: `vs ${data.opponent.abbreviation}` },
               ]}
             />
+            {data.seasons.length > 1 && (
+              <select
+                value={data.selectedSeasonId ?? ""}
+                onChange={(e) => setSeasonId(Number(e.target.value))}
+                className="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-foreground"
+              >
+                {data.seasons.map((season) => (
+                  <option key={season.id} value={season.id}>
+                    {seasonLabel(season.year)} season
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div className="flex flex-wrap gap-2 mb-5">
             <HitRateChip label="L5" summary={data.hitRates.l5} accentColor={accentColor} />

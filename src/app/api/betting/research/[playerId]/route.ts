@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { extractStatValue, type RawPlayerGameRow } from "@lib/projections/extract-prop-stat";
 import type { PropStatType } from "@lib/espn/prop-types";
+import { currentSeasonYear } from "@/lib/espn-season";
 import { NextResponse } from "next/server";
 
 // Serves the player-prop-research-page capability: the game-by-game history
@@ -65,6 +66,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
   const statParam = url.searchParams.get("stat");
   const filterParam = url.searchParams.get("filter");
   const filter: Filter = filterParam === "home" || filterParam === "away" || filterParam === "opponent" ? filterParam : "all";
+  const seasonIdParam = url.searchParams.get("seasonId");
+  const requestedSeasonId = seasonIdParam != null && Number.isInteger(Number(seasonIdParam)) ? Number(seasonIdParam) : null;
 
   try {
     const { startOfDay, endOfDay } = todayWindow();
@@ -130,12 +133,35 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
             awayTeamId: true,
             homeTeam: { select: TEAM_SELECT },
             awayTeam: { select: TEAM_SELECT },
+            seasonId: true,
+            seasonType: true,
+            season: { select: { year: true } },
           },
         },
       },
     });
 
-    const fullHistory = historyRows.map((row) => {
+    // Regular-season games only populate the season dropdown — preseason
+    // and postseason rows stay in historyRows (so they're never silently
+    // dropped) but aren't offered as a selectable "season".
+    const seasonsAvailable = Array.from(
+      new Map(
+        historyRows
+          .filter((row) => row.game.seasonType === "REGULAR")
+          .map((row) => [row.game.seasonId, { id: row.game.seasonId, year: row.game.season.year }]),
+      ).values(),
+    ).sort((a, b) => b.year - a.year);
+
+    const defaultSeason = seasonsAvailable.find((s) => s.year === currentSeasonYear()) ?? seasonsAvailable[0] ?? null;
+    const selectedSeasonId =
+      requestedSeasonId != null && seasonsAvailable.some((s) => s.id === requestedSeasonId)
+        ? requestedSeasonId
+        : defaultSeason?.id ?? null;
+
+    const seasonScopedRows =
+      selectedSeasonId == null ? historyRows : historyRows.filter((row) => row.game.seasonId === selectedSeasonId);
+
+    const fullHistory = seasonScopedRows.map((row) => {
       const raw: RawPlayerGameRow = row;
       const value = extractStatValue(statType, raw);
       const isHome = row.teamId === row.game.homeTeamId;
@@ -170,7 +196,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
     // but with one cell per live stat type instead of just the selected
     // one — lets the research page show a player's full prop board at
     // once instead of requiring a stat switch per column.
-    const grid = historyRows
+    const grid = seasonScopedRows
       .map((row) => {
         const raw: RawPlayerGameRow = row;
         const isHome = row.teamId === row.game.homeTeamId;
@@ -203,6 +229,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
         ? { projectedValue: projectionRow.projectedValue, stdev: projectionRow.stdev, bettable: projectionRow.bettable }
         : null,
       filter,
+      seasons: seasonsAvailable,
+      selectedSeasonId,
       history: filteredHistory,
       hitRates,
       grid,
