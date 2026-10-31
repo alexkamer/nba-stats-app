@@ -436,14 +436,14 @@ function HitRateGrid({
         <tbody>
           {games.map((row) => (
             <tr key={row.gameEspnId} className="border-t border-border/60">
-              <td className="py-1.5 pr-3 whitespace-nowrap text-black">
-                <span className="inline-flex items-center gap-1.5">
+              <td className="py-1.5 pr-3 whitespace-nowrap">
+                <span className="inline-flex items-center gap-1.5 text-foreground/72">
                   {formatGridDate(row.date)} {row.isHome ? "vs" : "@"}
                   {row.opponent.logoUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={row.opponent.logoUrl} alt="" className="h-4 w-4 object-contain" />
                   )}
-                  <span className="font-bold">{row.opponent.abbreviation}</span>
+                  <span className="font-semibold tracking-wide text-foreground">{row.opponent.abbreviation}</span>
                 </span>
               </td>
               <td className="py-1.5 pr-3 text-right text-foreground/82">{row.minutes ?? "—"}</td>
