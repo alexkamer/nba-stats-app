@@ -102,9 +102,11 @@ async function fetchAccuracy(): Promise<AccuracySummary> {
   return res.json();
 }
 
-// Every tracked prop market, labeled for display. The six "CORE" ones are
-// what a default scan of a game's props shows; the rest still surface in
-// the Recommended Picks table if they clear the confidence bar.
+// Every tracked prop market, labeled for display and in column order for
+// the player props table. DOUBLE_DOUBLE/TRIPLE_DOUBLE are omitted — they're
+// binary yes/no props that ingest/generate-projections.ts deliberately
+// never produces a line-based PlayerPropProjection for, so they never
+// appear in a game's playerProps to begin with.
 const STAT_LABELS: Record<string, string> = {
   POINTS: "PTS",
   REBOUNDS: "REB",
@@ -116,11 +118,9 @@ const STAT_LABELS: Record<string, string> = {
   POINTS_REBOUNDS: "PTS+REB",
   REBOUNDS_ASSISTS: "REB+AST",
   POINTS_REBOUNDS_ASSISTS: "PRA",
-  DOUBLE_DOUBLE: "DBL-DBL",
-  TRIPLE_DOUBLE: "TRP-DBL",
 };
 
-const CORE_STAT_TYPES = ["POINTS", "REBOUNDS", "ASSISTS", "THREE_POINTERS_MADE", "STEALS", "BLOCKS"];
+const PROP_STAT_TYPES = Object.keys(STAT_LABELS);
 
 function formatSigned(value: number | null, digits = 1): string {
   if (value === null) return "—";
@@ -297,14 +297,13 @@ function GameCard({ game }: { game: UpcomingGame }) {
       : null;
   const showSpreadPick = Boolean(game.projection?.spreadBettable && spreadValue !== null);
 
-  const corePropsByPlayer = new Map<number, { name: string; cells: Map<string, PlayerPropLean> }>();
+  const propsByPlayer = new Map<number, { name: string; cells: Map<string, PlayerPropLean> }>();
   for (const prop of game.playerProps) {
-    if (!CORE_STAT_TYPES.includes(prop.statType)) continue;
-    const entry = corePropsByPlayer.get(prop.playerId) ?? { name: prop.playerName, cells: new Map() };
+    const entry = propsByPlayer.get(prop.playerId) ?? { name: prop.playerName, cells: new Map() };
     entry.cells.set(prop.statType, prop);
-    corePropsByPlayer.set(prop.playerId, entry);
+    propsByPlayer.set(prop.playerId, entry);
   }
-  const allPlayers = [...corePropsByPlayer.values()];
+  const allPlayers = [...propsByPlayer.values()];
   const visiblePlayers =
     propsView === "all" ? allPlayers : allPlayers.filter((p) => [...p.cells.values()].some((c) => c.bettable));
 
@@ -456,7 +455,7 @@ function GameCard({ game }: { game: UpcomingGame }) {
               <thead>
                 <tr className="text-left text-foreground/72">
                   <th className="pb-2 font-normal">Player</th>
-                  {CORE_STAT_TYPES.map((statType) => (
+                  {PROP_STAT_TYPES.map((statType) => (
                     <th key={statType} className="pb-2 text-right font-normal">
                       {STAT_LABELS[statType]}
                     </th>
@@ -467,7 +466,7 @@ function GameCard({ game }: { game: UpcomingGame }) {
                 {visiblePlayers.map((player) => (
                   <tr key={player.name} className="border-t border-border/60">
                     <td className="py-1.5 text-foreground/82">{player.name}</td>
-                    {CORE_STAT_TYPES.map((statType) => {
+                    {PROP_STAT_TYPES.map((statType) => {
                       const prop = player.cells.get(statType);
                       return (
                         <td key={statType} className={`py-1.5 text-right ${prop?.bettable ? "bg-accent/10" : ""}`}>
