@@ -183,6 +183,21 @@ function spreadValueSide(ourMargin: number, marketMargin: number): "home" | "awa
   return ourMargin > marketMargin ? "home" : "away";
 }
 
+/** A single accuracy figure, in the same label/big-number/caption shape as
+ * the player page's own HeroStat tiles — keeps this page's stat language
+ * consistent with the rest of the app instead of a one-off text line. */
+function AccuracyTile({ label, bucket }: { label: string; bucket: AccuracyBucket }) {
+  return (
+    <div className="min-w-[9rem] rounded-md border border-border bg-surface px-3 py-2.5 text-center">
+      <p className="text-xs text-foreground/72">{label}</p>
+      <p className="text-xl font-bold text-foreground">{bucket.hitRate !== null ? `${(bucket.hitRate * 100).toFixed(0)}%` : "—"}</p>
+      <p className="text-xs text-foreground/60 tabular-nums">
+        {bucket.correct}/{bucket.graded}
+      </p>
+    </div>
+  );
+}
+
 function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
   const nothingGraded = accuracy.ourModel.overall.graded === 0 && accuracy.espnPredictor.graded === 0;
   if (nothingGraded) {
@@ -193,34 +208,11 @@ function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
     );
   }
   return (
-    <div className="flex flex-wrap items-baseline gap-x-8 gap-y-1 text-sm">
-      <span>
-        <span className="text-foreground/72">Our model, this season </span>
-        <span className="font-medium">
-          {accuracy.ourModel.overall.hitRate !== null ? `${(accuracy.ourModel.overall.hitRate * 100).toFixed(0)}%` : "—"}
-        </span>
-        <span className="text-foreground/72"> ({accuracy.ourModel.overall.correct}/{accuracy.ourModel.overall.graded})</span>
-      </span>
-      <span>
-        <span className="text-foreground/72">ESPN&apos;s predictor </span>
-        <span className="font-medium">
-          {accuracy.espnPredictor.hitRate !== null ? `${(accuracy.espnPredictor.hitRate * 100).toFixed(0)}%` : "—"}
-        </span>
-        <span className="text-foreground/72"> ({accuracy.espnPredictor.correct}/{accuracy.espnPredictor.graded})</span>
-      </span>
+    <div className="flex flex-wrap gap-2">
+      <AccuracyTile label="Our model, this season" bucket={accuracy.ourModel.overall} />
+      <AccuracyTile label="ESPN's predictor" bucket={accuracy.espnPredictor} />
       {accuracy.ourModel.bettableProps.graded > 0 && (
-        <span>
-          <span className="text-foreground/72">Our high-confidence props </span>
-          <span className="font-medium">
-            {accuracy.ourModel.bettableProps.hitRate !== null
-              ? `${(accuracy.ourModel.bettableProps.hitRate * 100).toFixed(0)}%`
-              : "—"}
-          </span>
-          <span className="text-foreground/72">
-            {" "}
-            ({accuracy.ourModel.bettableProps.correct}/{accuracy.ourModel.bettableProps.graded})
-          </span>
-        </span>
+        <AccuracyTile label="Our high-confidence props" bucket={accuracy.ourModel.bettableProps} />
       )}
     </div>
   );
@@ -305,16 +297,18 @@ function PickRow({
   graded: boolean | null;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-xs text-foreground/60 w-14 shrink-0">{label}</span>
+    <div className="flex items-start justify-between gap-3">
+      <span className="text-xs text-foreground/60 w-14 shrink-0 pt-0.5">{label}</span>
       {mainLabel === null ? (
         <span className="text-sm text-foreground/60">Not enough history yet</span>
       ) : (
-        <div className="flex flex-1 items-center justify-end gap-2.5">
+        <div className="flex flex-1 flex-wrap items-center justify-end gap-x-2.5 gap-y-1">
           <span className={`text-base ${bettable ? "font-semibold text-foreground" : "text-foreground/82"}`}>{mainLabel}</span>
-          <span className="text-xs text-foreground/60 tabular-nums">{formatOdds(odds)}</span>
-          {bettable && <BettableMark />}
-          {graded !== null && <ResultMark correct={graded} />}
+          <span className="flex items-center whitespace-nowrap">
+            <span className="text-xs text-foreground/60 tabular-nums">{formatOdds(odds)}</span>
+            {bettable && <BettableMark />}
+            {graded !== null && <ResultMark correct={graded} />}
+          </span>
           <ConfidenceMeter edgeRatio={edgeRatio} bettable={bettable} />
         </div>
       )}
@@ -469,18 +463,38 @@ function GameCard({ game }: { game: UpcomingGame }) {
       return a.playerName.localeCompare(b.playerName) || PROP_STAT_TYPES.indexOf(a.statType) - PROP_STAT_TYPES.indexOf(b.statType);
     });
 
+  const hasScores = game.status !== "SCHEDULED" && game.awayScore != null && game.homeScore != null;
+  const awayLeading = hasScores && game.awayScore! > game.homeScore!;
+  const homeLeading = hasScores && game.homeScore! > game.awayScore!;
+
   return (
-    <div id={`game-${game.espnId}`} className="rounded-lg border border-border">
+    <div
+      id={`game-${game.espnId}`}
+      className={`rounded-lg border ${game.status === "LIVE" ? "border-accent/50" : "border-border"}`}
+    >
       <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-border">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <TeamLabel team={game.awayTeam} />
-          <span className="text-foreground/72">@</span>
-          <TeamLabel team={game.homeTeam} />
+        <div className="flex items-center gap-2.5 text-sm">
+          <span className={awayLeading || !hasScores ? "text-foreground" : "text-foreground/60"}>
+            <TeamLabel team={game.awayTeam} />
+          </span>
+          {hasScores && <span className="font-bold tabular-nums text-foreground">{game.awayScore}</span>}
+          <span className="text-foreground/50 text-xs">@</span>
+          <span className={homeLeading || !hasScores ? "text-foreground" : "text-foreground/60"}>
+            <TeamLabel team={game.homeTeam} />
+          </span>
+          {hasScores && <span className="font-bold tabular-nums text-foreground">{game.homeScore}</span>}
         </div>
-        <span className="text-xs text-foreground/72">
-          {game.status === "FINAL" && game.awayScore != null && game.homeScore != null
-            ? `Final ${game.awayScore}-${game.homeScore}`
-            : new Date(game.date).toLocaleString(undefined, {
+        <span className="flex items-center gap-1.5 text-xs text-foreground/72">
+          {game.status === "LIVE" && (
+            <span className="inline-flex items-center gap-1 font-medium text-accent">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+              Live
+            </span>
+          )}
+          {game.status === "FINAL"
+            ? "Final"
+            : game.status === "SCHEDULED" &&
+              new Date(game.date).toLocaleString(undefined, {
                 weekday: "short",
                 month: "short",
                 day: "numeric",
