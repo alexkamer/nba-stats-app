@@ -24,6 +24,10 @@ export interface OddsUpsertInput {
   openOverUnder?: number | null;
   openHomeMoneyline?: number | null;
   openAwayMoneyline?: number | null;
+  homeSpreadOdds?: number | null;
+  awaySpreadOdds?: number | null;
+  overOdds?: number | null;
+  underOdds?: number | null;
 }
 
 /** Picks the highest-priority (lowest `priority` number) provider ESPN
@@ -66,15 +70,19 @@ export interface EspnCoreOddsEntry {
   provider: { id: string; name: string; priority: number };
   spread?: number;
   overUnder?: number;
+  overOdds?: number;
+  underOdds?: number;
   open?: { total?: { american?: string } };
   homeTeamOdds?: {
     favorite: boolean;
     moneyLine?: number;
+    spreadOdds?: number;
     open?: { pointSpread?: { american?: string }; moneyLine?: { american?: string } };
   };
   awayTeamOdds?: {
     favorite: boolean;
     moneyLine?: number;
+    spreadOdds?: number;
     open?: { pointSpread?: { american?: string }; moneyLine?: { american?: string } };
   };
 }
@@ -83,6 +91,14 @@ function parseAmerican(value: string | undefined): number | null {
   if (value === undefined) return null;
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** American odds vig fields (spreadOdds/overOdds/underOdds) come through
+ * as numbers, unlike the open/current line fields above which ESPN encodes
+ * as strings — round rather than truncate, since the fixture shows exact
+ * values like -112.0 but there's no guarantee that always holds. */
+function roundOrNull(value: number | undefined): number | null {
+  return value === undefined ? null : Math.round(value);
 }
 
 /** Maps the core API's single-provider odds resource, carrying both the
@@ -111,5 +127,9 @@ export function mapCoreOdds(
     openOverUnder: parseAmerican(entry.open?.total?.american),
     openHomeMoneyline: parseAmerican(entry.homeTeamOdds?.open?.moneyLine?.american),
     openAwayMoneyline: parseAmerican(entry.awayTeamOdds?.open?.moneyLine?.american),
+    homeSpreadOdds: roundOrNull(entry.homeTeamOdds?.spreadOdds),
+    awaySpreadOdds: roundOrNull(entry.awayTeamOdds?.spreadOdds),
+    overOdds: roundOrNull(entry.overOdds),
+    underOdds: roundOrNull(entry.underOdds),
   };
 }

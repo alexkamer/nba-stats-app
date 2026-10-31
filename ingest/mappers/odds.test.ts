@@ -28,7 +28,26 @@ test("mapCoreOdds maps current and open spread/overUnder/moneyline", () => {
     openOverUnder: 234.5,
     openHomeMoneyline: -105,
     openAwayMoneyline: -115,
+    homeSpreadOdds: -112,
+    awaySpreadOdds: -108,
+    overOdds: -112,
+    underOdds: -108,
   });
+});
+
+test("mapCoreOdds rounds the vig fields and returns null when absent", () => {
+  const entry: EspnCoreOddsEntry = {
+    provider: coreOddsFixture.provider,
+    spread: 1.5,
+    overUnder: 218.5,
+    homeTeamOdds: { favorite: false, moneyLine: -105, spreadOdds: -111.6 },
+    awayTeamOdds: { favorite: true, moneyLine: -115 },
+  };
+  const result = mapCoreOdds(entry, GAME_ID, HOME_TEAM_ID, AWAY_TEAM_ID);
+  assert.equal(result.homeSpreadOdds, -112);
+  assert.equal(result.awaySpreadOdds, null);
+  assert.equal(result.overOdds, null);
+  assert.equal(result.underOdds, null);
 });
 
 test("mapCoreOdds returns nulls for missing open-line fields instead of throwing", () => {

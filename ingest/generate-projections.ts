@@ -188,7 +188,14 @@ async function generatePlayerPropProjections() {
   const opponentFactorsByStat = await loadOpponentFactors();
 
   const propOddsRows = await prisma.playerPropOdds.findMany({
-    where: { game: { status: "SCHEDULED" } },
+    // DOUBLE_DOUBLE/TRIPLE_DOUBLE are yes/no propositions — ESPN gives them
+    // only an OVER side with odds and no numeric `line` (confirmed: always
+    // null). Every projection here is framed as "projected value vs. line",
+    // which never produces a lean for these two, so they'd never be shown
+    // on the betting page or graded — generating them is pure wasted work.
+    // Revisit only alongside a probability-vs-odds comparison built for
+    // this market shape specifically.
+    where: { game: { status: "SCHEDULED" }, statType: { notIn: ["DOUBLE_DOUBLE", "TRIPLE_DOUBLE"] } },
     select: {
       id: true,
       gameId: true,

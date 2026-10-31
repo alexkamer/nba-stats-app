@@ -226,6 +226,14 @@ model Odds {
   openOverUnder     Float? @map("open_over_under")
   openHomeMoneyline Int?   @map("open_home_moneyline")
   openAwayMoneyline Int?   @map("open_away_moneyline")
+  // Per-side vig for the spread/total lines above — American odds, same
+  // convention as home/awayMoneyline (e.g. -110). Only ever populated via
+  // the core API's single-provider resource (mapCoreOdds); the retrospective
+  // pickcenter-based path (mapOdds) doesn't carry these fields.
+  homeSpreadOdds    Int?   @map("home_spread_odds")
+  awaySpreadOdds    Int?   @map("away_spread_odds")
+  overOdds          Int?   @map("over_odds")
+  underOdds         Int?   @map("under_odds")
 
   @@map("odds")
 }

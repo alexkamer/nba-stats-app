@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { computeEdgeRatio } from "@lib/projections/confidence";
 
@@ -18,19 +19,30 @@ interface PlayerPropLean {
   projectedValue: number;
   line: number;
   lean: "OVER" | "UNDER" | "PUSH";
+  // American odds for the side we're actually leaning (e.g. -121) — null
+  // when that side's odds weren't captured.
+  odds: number | null;
   // Whether our projection clears the line by enough relative to the
   // player's own recent variance to be worth calling out (see
   // lib/projections/confidence.ts) — this is what the page surfaces by
   // default, not every tracked prop.
   bettable: boolean;
   stdev: number | null;
+  // Filled in once the game goes FINAL (see prediction-accuracy-tracking)
+  // — null until then, never recomputed afterward, so this is always the
+  // actual grading of the pick as it was made, not hindsight.
+  gradedCorrect: boolean | null;
+  gradedActualValue: number | null;
 }
 
 interface UpcomingGame {
   espnId: string;
   date: string;
+  status: "SCHEDULED" | "LIVE" | "FINAL";
   homeTeam: TeamSummary;
   awayTeam: TeamSummary;
+  homeScore: number | null;
+  awayScore: number | null;
   projection: {
     projectedHomeScore: number;
     projectedAwayScore: number;
@@ -39,6 +51,9 @@ interface UpcomingGame {
     totalBettable: boolean;
     marginStdev: number | null;
     totalStdev: number | null;
+    gradedCorrect: boolean | null;
+    gradedSpreadCorrect: boolean | null;
+    gradedTotalCorrect: boolean | null;
   } | null;
   market: {
     provider: string;
@@ -46,6 +61,10 @@ interface UpcomingGame {
     overUnder: number | null;
     homeMoneyline: number | null;
     awayMoneyline: number | null;
+    homeSpreadOdds: number | null;
+    awaySpreadOdds: number | null;
+    overOdds: number | null;
+    underOdds: number | null;
   } | null;
   predictor: { homeWinPct: number; awayWinPct: number } | null;
   playerProps: PlayerPropLean[];
@@ -62,11 +81,20 @@ interface AccuracySummary {
   espnPredictor: AccuracyBucket;
 }
 
-async function fetchUpcoming(): Promise<UpcomingGame[]> {
-  const res = await fetch("/api/betting/upcoming");
+async function fetchUpcoming(date: string): Promise<UpcomingGame[]> {
+  const res = await fetch(`/api/betting/upcoming?date=${date}`);
   if (!res.ok) throw new Error("Failed to load upcoming betting insights");
   const data = await res.json();
   return data.games;
+}
+
+/** Local (not UTC) YYYY-MM-DD for a date — matches the API route's own
+ * local-day window, so "today" here always means the viewer's today. */
+function toDateParam(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 async function fetchAccuracy(): Promise<AccuracySummary> {
@@ -98,6 +126,12 @@ const CORE_STAT_TYPES = ["POINTS", "REBOUNDS", "ASSISTS", "THREE_POINTERS_MADE",
 function formatSigned(value: number | null, digits = 1): string {
   if (value === null) return "—";
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
+}
+
+/** American odds for the pick's own side, e.g. +150 / -110. */
+function formatOdds(odds: number | null): string {
+  if (odds === null) return "—";
+  return odds > 0 ? `+${odds}` : `${odds}`;
 }
 
 /** This app's own house notation for a line with a side (see the game
@@ -145,6 +179,17 @@ interface RecommendedPick {
   pickText: string;
   ourNumber: number;
   edgeRatio: number | null;
+  // Only set for `kind === "prop"` — lets the row link to that player's
+  // research page. Spread/total picks aren't tied to a single player.
+  playerId?: number;
+  statType?: string;
+  // null until the game goes FINAL and this pick is graded (see
+  // prediction-accuracy-tracking) — never recomputed with hindsight.
+  gradedCorrect: boolean | null;
+  // American odds for this pick's side — spread/total pull from the
+  // game's Odds row (homeSpreadOdds/awaySpreadOdds/overOdds/underOdds),
+  // props from their own PlayerPropOdds row.
+  odds: number | null;
 }
 
 /** Every pick on the slate that clears the confidence bar (see
@@ -171,6 +216,8 @@ function buildRecommendedPicks(games: UpcomingGame[]): RecommendedPick[] {
           pickText: formatSigned(marketSideSpread),
           ourNumber: ourSideSpread,
           edgeRatio: computeEdgeRatio(game.projection.projectedMargin, marketMargin, game.projection.marginStdev),
+          gradedCorrect: game.projection.gradedSpreadCorrect,
+          odds: side === "home" ? game.market.homeSpreadOdds : game.market.awaySpreadOdds,
         });
       }
     }
@@ -188,6 +235,8 @@ function buildRecommendedPicks(games: UpcomingGame[]): RecommendedPick[] {
           pickText: formatLine(lean, game.market.overUnder),
           ourNumber: ourTotal,
           edgeRatio: computeEdgeRatio(ourTotal, game.market.overUnder, game.projection.totalStdev),
+          gradedCorrect: game.projection.gradedTotalCorrect,
+          odds: lean === "OVER" ? game.market.overOdds : game.market.underOdds,
         });
       }
     }
@@ -203,6 +252,10 @@ function buildRecommendedPicks(games: UpcomingGame[]): RecommendedPick[] {
         pickText: formatLine(prop.lean, prop.line),
         ourNumber: prop.projectedValue,
         edgeRatio: computeEdgeRatio(prop.projectedValue, prop.line, prop.stdev),
+        playerId: prop.playerId,
+        statType: prop.statType,
+        gradedCorrect: prop.gradedCorrect,
+        odds: prop.odds,
       });
     }
   }
@@ -260,6 +313,21 @@ function BettableMark() {
   return (
     <span className="ml-1 text-accent" title="High-confidence pick" aria-label="High-confidence pick">
       ●
+    </span>
+  );
+}
+
+/** Hit/miss for a graded pick — renders nothing while `correct` is still
+ * null (game hasn't gone FINAL and been graded yet). */
+function ResultMark({ correct }: { correct: boolean | null }) {
+  if (correct === null) return null;
+  return correct ? (
+    <span className="ml-1 text-emerald-600 dark:text-emerald-400" title="Hit" aria-label="Hit">
+      ✓
+    </span>
+  ) : (
+    <span className="ml-1 text-red-600 dark:text-red-400" title="Miss" aria-label="Miss">
+      ✗
     </span>
   );
 }
@@ -340,8 +408,10 @@ function RecommendedPicksTable({ picks }: { picks: RecommendedPick[] }) {
               <th className="pb-2 font-normal">Market</th>
               <th className="pb-2 font-normal">Pick</th>
               <th className="pb-2 text-right font-normal">Line</th>
+              <th className="pb-2 text-right font-normal">Odds</th>
               <th className="pb-2 text-right font-normal">Our number</th>
               <th className="pb-2 text-right font-normal">Confidence</th>
+              <th className="pb-2 text-right font-normal">Result</th>
             </tr>
           </thead>
           <tbody>
@@ -355,11 +425,29 @@ function RecommendedPicksTable({ picks }: { picks: RecommendedPick[] }) {
                   </a>
                 </td>
                 <td className="py-1.5 text-foreground/72">{pick.statLabel}</td>
-                <td className="py-1.5 font-medium">{pick.label}</td>
+                <td className="py-1.5 font-medium">
+                  {pick.playerId != null && pick.statType ? (
+                    <Link href={`/betting/research/${pick.playerId}?stat=${pick.statType}`} className="hover:text-accent">
+                      {pick.label}
+                    </Link>
+                  ) : (
+                    pick.label
+                  )}
+                </td>
                 <td className="py-1.5 text-right font-semibold">{pick.pickText}</td>
+                <td className="py-1.5 text-right text-foreground/72">{formatOdds(pick.odds)}</td>
                 <td className="py-1.5 text-right text-foreground/72">{pick.ourNumber.toFixed(1)}</td>
                 <td className="py-1.5 text-right">
                   {pick.edgeRatio !== null ? <span className="text-accent font-medium">{pick.edgeRatio.toFixed(1)}σ</span> : "—"}
+                </td>
+                <td className="py-1.5 text-right">
+                  {pick.gradedCorrect === null ? (
+                    <span className="text-foreground/72">—</span>
+                  ) : (
+                    <span className={pick.gradedCorrect ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}>
+                      {pick.gradedCorrect ? "Hit" : "Miss"}
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -409,13 +497,15 @@ function GameCard({ game }: { game: UpcomingGame }) {
           <TeamLabel team={game.homeTeam} />
         </div>
         <span className="text-xs text-foreground/72">
-          {new Date(game.date).toLocaleString(undefined, {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          })}
+          {game.status === "FINAL" && game.awayScore != null && game.homeScore != null
+            ? `Final ${game.awayScore}-${game.homeScore}`
+            : new Date(game.date).toLocaleString(undefined, {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })}
         </span>
       </div>
 
@@ -436,11 +526,19 @@ function GameCard({ game }: { game: UpcomingGame }) {
                 <>
                   <td className={`py-1.5 text-right ${showSpreadPick && spreadValue === "away" ? "font-semibold text-foreground" : ""}`}>
                     {formatSigned(ourSpread.away)}
+                    {spreadValue === "away" && (
+                      <span className="text-foreground/60 text-xs"> {formatOdds(game.market?.awaySpreadOdds ?? null)}</span>
+                    )}
                     {showSpreadPick && spreadValue === "away" && <BettableMark />}
+                    {spreadValue === "away" && <ResultMark correct={game.projection?.gradedSpreadCorrect ?? null} />}
                   </td>
                   <td className={`py-1.5 text-right ${showSpreadPick && spreadValue === "home" ? "font-semibold text-foreground" : ""}`}>
                     {formatSigned(ourSpread.home)}
+                    {spreadValue === "home" && (
+                      <span className="text-foreground/60 text-xs"> {formatOdds(game.market?.homeSpreadOdds ?? null)}</span>
+                    )}
                     {showSpreadPick && spreadValue === "home" && <BettableMark />}
+                    {spreadValue === "home" && <ResultMark correct={game.projection?.gradedSpreadCorrect ?? null} />}
                   </td>
                 </>
               ) : (
@@ -454,7 +552,16 @@ function GameCard({ game }: { game: UpcomingGame }) {
                     ? formatLine(totalLean(ourTotal, game.market.overUnder), ourTotal)
                     : ourTotal.toFixed(1)
                   : "—"}
+                {ourTotal !== null && game.market?.overUnder != null && (
+                  <span className="text-foreground/60 text-xs">
+                    {" "}
+                    {formatOdds(
+                      totalLean(ourTotal, game.market.overUnder) === "OVER" ? game.market.overOdds : game.market.underOdds,
+                    )}
+                  </span>
+                )}
                 {game.projection?.totalBettable && <BettableMark />}
+                {game.market?.overUnder != null && <ResultMark correct={game.projection?.gradedTotalCorrect ?? null} />}
               </td>
             </tr>
             <tr className="border-t border-border/60">
@@ -541,13 +648,24 @@ function GameCard({ game }: { game: UpcomingGame }) {
                       return (
                         <td key={statType} className="py-1.5 text-right">
                           {prop ? (
-                            <>
+                            <Link
+                              href={`/betting/research/${prop.playerId}?stat=${prop.statType}`}
+                              className="hover:text-accent"
+                              title={`Research ${player.name}'s ${STAT_LABELS[statType]} prop`}
+                            >
                               <span className={prop.bettable ? "font-semibold text-foreground" : ""}>
                                 {formatLine(prop.lean, prop.line)}
-                              </span>{" "}
+                              </span>
+                              <span className="text-foreground/60 text-xs"> {formatOdds(prop.odds)}</span>{" "}
                               <span className="text-foreground/72 text-xs">({prop.projectedValue.toFixed(1)})</span>
                               {prop.bettable && <BettableMark />}
-                            </>
+                              {prop.gradedCorrect !== null && (
+                                <>
+                                  <ResultMark correct={prop.gradedCorrect} />
+                                  <span className="text-foreground/72 text-xs"> {prop.gradedActualValue}</span>
+                                </>
+                              )}
+                            </Link>
                           ) : (
                             <span className="text-foreground/72">—</span>
                           )}
@@ -565,23 +683,77 @@ function GameCard({ game }: { game: UpcomingGame }) {
   );
 }
 
+function startOfToday(): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+/** Prev/next-day stepper plus a jump back to today — lets a user walk
+ * back through past slates to see which picks hit vs. missed, without
+ * leaving the page. Next day is disabled once at today: results-shaped
+ * data for the future doesn't exist yet. */
+function DayNav({ date, onChange }: { date: Date; onChange: (date: Date) => void }) {
+  const isToday = toDateParam(date) === toDateParam(startOfToday());
+  const shift = (days: number) => {
+    const next = new Date(date);
+    next.setDate(next.getDate() + days);
+    onChange(next);
+  };
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <button
+        type="button"
+        onClick={() => shift(-1)}
+        className="rounded-md border border-border px-2.5 py-1 hover:border-foreground/50"
+      >
+        ← Prev day
+      </button>
+      <span className="font-medium min-w-[8rem] text-center">
+        {isToday ? "Today" : date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+      </span>
+      <button
+        type="button"
+        onClick={() => shift(1)}
+        disabled={isToday}
+        className="rounded-md border border-border px-2.5 py-1 hover:border-foreground/50 disabled:opacity-40 disabled:hover:border-border"
+      >
+        Next day →
+      </button>
+      {!isToday && (
+        <button type="button" onClick={() => onChange(startOfToday())} className="text-accent hover:underline">
+          Jump to today
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function BettingPage() {
+  const [selectedDate, setSelectedDate] = useState<Date>(startOfToday);
+  const dateParam = toDateParam(selectedDate);
+  const isToday = dateParam === toDateParam(startOfToday());
+
   const {
     data: games,
     isLoading: gamesLoading,
     error: gamesError,
-  } = useQuery({ queryKey: ["betting", "upcoming"], queryFn: fetchUpcoming });
+  } = useQuery({ queryKey: ["betting", "upcoming", dateParam], queryFn: () => fetchUpcoming(dateParam) });
   const { data: accuracy } = useQuery({ queryKey: ["betting", "accuracy"], queryFn: fetchAccuracy });
 
   const recommendedPicks = useMemo(() => (games ? buildRecommendedPicks(games) : []), [games]);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Bettor&apos;s Heaven</h1>
-        <p className="text-foreground/72 text-sm mt-1">
-          Our own projections for today&apos;s games and player props, measured against the market.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Bettor&apos;s Heaven</h1>
+          <p className="text-foreground/72 text-sm mt-1">
+            {isToday
+              ? "Our own projections for today's games and player props, measured against the market."
+              : "How our picks actually did, graded against the final result."}
+          </p>
+        </div>
+        <DayNav date={selectedDate} onChange={setSelectedDate} />
       </div>
 
       {accuracy && <AccuracyStrip accuracy={accuracy} />}
@@ -589,7 +761,9 @@ export default function BettingPage() {
       {gamesLoading && <p className="text-foreground/82">Loading…</p>}
       {gamesError && <p className="text-red-600 dark:text-red-400">Failed to load betting insights.</p>}
       {games && games.length === 0 && (
-        <p className="text-foreground/72">No games scheduled today — check back on game day.</p>
+        <p className="text-foreground/72">
+          {isToday ? "No games scheduled today — check back on game day." : "No games that day."}
+        </p>
       )}
 
       {games && games.length > 0 && <RecommendedPicksTable picks={recommendedPicks} />}

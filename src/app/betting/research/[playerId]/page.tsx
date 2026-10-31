@@ -1,0 +1,509 @@
+"use client";
+
+import { Suspense, useState, type ReactNode } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
+import { useTheme } from "next-themes";
+import { getTeamAccent } from "@/lib/team-accent";
+import { computeEdgeRatio } from "@lib/projections/confidence";
+import { SectionCard } from "@/components/SectionCard";
+
+interface TeamSummary {
+  id: number;
+  abbreviation: string;
+  name: string;
+  logoUrl: string | null;
+  color: string | null;
+}
+
+type PropResult = "OVER" | "UNDER" | "PUSH";
+type ResearchFilter = "all" | "home" | "away" | "opponent";
+
+interface HistoryGame {
+  gameEspnId: string;
+  date: string;
+  isHome: boolean;
+  opponent: TeamSummary;
+  value: number;
+  result: PropResult | null;
+}
+
+interface HitRateSummary {
+  games: number;
+  over: number;
+  under: number;
+  push: number;
+  sampleSizeNote: string | null;
+}
+
+interface ResearchData {
+  player: { id: number; espnId: string; displayName: string; headshotUrl: string | null };
+  game: { espnId: string; date: string; isHomeToday: boolean };
+  team: TeamSummary;
+  opponent: TeamSummary;
+  statType: string;
+  otherStatTypes: string[];
+  line: number | null;
+  odds: { over: number | null; under: number | null };
+  projection: { projectedValue: number; stdev: number | null; bettable: boolean } | null;
+  filter: ResearchFilter;
+  history: HistoryGame[];
+  hitRates: { l5: HitRateSummary; l10: HitRateSummary; l20: HitRateSummary; season: HitRateSummary };
+}
+
+type ResearchResponse = { notFound: true } | ResearchData;
+
+// Same display labels as the betting page (src/app/betting/page.tsx) — kept
+// local since this page has its own small set of stat tabs to label.
+const STAT_LABELS: Record<string, string> = {
+  POINTS: "Points",
+  REBOUNDS: "Rebounds",
+  ASSISTS: "Assists",
+  THREE_POINTERS_MADE: "3-Pointers Made",
+  STEALS: "Steals",
+  BLOCKS: "Blocks",
+  POINTS_ASSISTS: "Points + Assists",
+  POINTS_REBOUNDS: "Points + Rebounds",
+  REBOUNDS_ASSISTS: "Rebounds + Assists",
+  POINTS_REBOUNDS_ASSISTS: "Points + Rebounds + Assists",
+  DOUBLE_DOUBLE: "Double-Double",
+  TRIPLE_DOUBLE: "Triple-Double",
+};
+
+async function fetchResearch(playerId: string, stat: string | null, filter: ResearchFilter): Promise<ResearchResponse> {
+  const qs = new URLSearchParams();
+  if (stat) qs.set("stat", stat);
+  qs.set("filter", filter);
+  const res = await fetch(`/api/betting/research/${playerId}?${qs.toString()}`);
+  if (res.status === 404) return { notFound: true };
+  if (!res.ok) throw new Error("Failed to load player prop research");
+  return res.json();
+}
+
+function formatLine(line: number): string {
+  return Number.isInteger(line) ? `${line}` : line.toFixed(1);
+}
+
+/** American odds, e.g. +150 / -110 — same house convention as the game and
+ * betting pages' own `formatSigned` (each keeps a local copy). */
+function formatOdds(odds: number | null): string {
+  if (odds === null) return "—";
+  return odds > 0 ? `+${odds}` : `${odds}`;
+}
+
+function SegmentedToggle<T extends string>({
+  value,
+  options,
+  onChange,
+  accentColor,
+  accentForeground,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+  accentColor: string;
+  accentForeground: string;
+}) {
+  return (
+    <div className="inline-flex flex-wrap rounded-md border border-border text-xs overflow-hidden">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className="px-2.5 py-1.5 font-medium transition-colors"
+          style={
+            value === option.value
+              ? { backgroundColor: accentColor, color: accentForeground }
+              : { color: "var(--color-foreground)", opacity: 0.72 }
+          }
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Row of pill tabs, each sized to its own label and free to wrap onto
+ * multiple lines — unlike SegmentedToggle's single bordered pill, this
+ * fits an unbounded number of long labels (the combo stat types) without
+ * forcing the page wider than its viewport. */
+function TabList<T extends string>({
+  value,
+  options,
+  onChange,
+  accentColor,
+  accentForeground,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+  accentColor: string;
+  accentForeground: string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+          style={
+            value === option.value
+              ? { backgroundColor: accentColor, color: accentForeground, borderColor: accentColor }
+              : { color: "var(--color-foreground)", opacity: 0.72, borderColor: "var(--border)" }
+          }
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function resultColor(result: PropResult | null): string {
+  if (result === "OVER") return "var(--color-emerald-500, #10b981)";
+  if (result === "UNDER") return "var(--color-red-500, #ef4444)";
+  return "var(--border)";
+}
+
+const CHART_WIDTH = 480;
+const CHART_HEIGHT = 180;
+const CHART_GAMES = 20;
+
+function dateTick(date: string): string {
+  return new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** Bar per historical game (most recent `CHART_GAMES`, oldest to newest left
+ * to right), colored over/under/push against today's line, with the market
+ * line and (when available) our own projection drawn as reference lines —
+ * follows the hand-rolled SVG convention already used on the game detail
+ * page (GameFlowChart/ProbabilityChart) rather than a charting library. */
+function HistoryChart({
+  history,
+  line,
+  projection,
+  accentColor,
+}: {
+  history: HistoryGame[];
+  line: number | null;
+  projection: number | null;
+  accentColor: string;
+}) {
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const games = history.slice(0, CHART_GAMES).slice().reverse();
+
+  if (games.length === 0) {
+    return (
+      <p className="text-sm text-foreground/72 py-10 text-center">No games to chart for this filter — try a different split.</p>
+    );
+  }
+
+  const maxValue = Math.max(1, line ?? 0, projection ?? 0, ...games.map((g) => g.value)) * 1.08;
+  const barWidth = CHART_WIDTH / games.length;
+  const valueToY = (value: number) => CHART_HEIGHT - (value / maxValue) * CHART_HEIGHT;
+  const gridLines = [0.25, 0.5, 0.75];
+  const hovered = hoverIndex !== null ? games[hoverIndex] : null;
+  const tickIndices = games.length <= 1 ? [0] : [0, Math.floor((games.length - 1) / 2), games.length - 1];
+
+  return (
+    <div className="px-1 pt-2">
+      <div className="relative">
+        <svg
+          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+          preserveAspectRatio="none"
+          className="h-44 w-full overflow-visible"
+          onMouseLeave={() => setHoverIndex(null)}
+        >
+          {gridLines.map((fraction) => (
+            <line
+              key={fraction}
+              x1="0"
+              y1={CHART_HEIGHT * (1 - fraction)}
+              x2={CHART_WIDTH}
+              y2={CHART_HEIGHT * (1 - fraction)}
+              stroke="var(--border)"
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          {games.map((game, i) => {
+            const barHeight = CHART_HEIGHT - valueToY(game.value);
+            const x = i * barWidth + barWidth * 0.18;
+            const width = barWidth * 0.64;
+            return (
+              <g key={game.gameEspnId} onMouseEnter={() => setHoverIndex(i)}>
+                <rect x={i * barWidth} y={0} width={barWidth} height={CHART_HEIGHT} fill="transparent" />
+                <rect
+                  x={x}
+                  y={valueToY(game.value)}
+                  width={width}
+                  height={Math.max(barHeight, 1.5)}
+                  rx={1.5}
+                  fill={resultColor(game.result)}
+                  opacity={hoverIndex === null || hoverIndex === i ? 1 : 0.55}
+                />
+              </g>
+            );
+          })}
+          {line !== null && (
+            <line
+              x1="0"
+              y1={valueToY(line)}
+              x2={CHART_WIDTH}
+              y2={valueToY(line)}
+              stroke="var(--foreground)"
+              strokeDasharray="4,3"
+              strokeWidth={1.5}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+          {projection !== null && (
+            <line
+              x1="0"
+              y1={valueToY(projection)}
+              x2={CHART_WIDTH}
+              y2={valueToY(projection)}
+              stroke={accentColor}
+              strokeDasharray="1,3"
+              strokeWidth={2}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+        </svg>
+        {hovered && (
+          <div
+            className="pointer-events-none absolute -translate-x-1/2 -translate-y-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs shadow-sm whitespace-nowrap"
+            style={{
+              left: `${((hoverIndex! + 0.5) / games.length) * 100}%`,
+              top: `${Math.max(0, (valueToY(hovered.value) / CHART_HEIGHT) * 100 - 4)}%`,
+            }}
+          >
+            <div className="font-semibold text-foreground">
+              {hovered.value} {hovered.isHome ? "vs" : "@"} {hovered.opponent.abbreviation}
+            </div>
+            <div className="text-foreground/72">{new Date(hovered.date).toLocaleDateString()}</div>
+          </div>
+        )}
+      </div>
+      <div className="relative h-4 text-[10px] text-foreground/60">
+        {tickIndices.map((i) => (
+          <span
+            key={i}
+            className="absolute -translate-x-1/2"
+            style={{ left: `${((i + 0.5) / games.length) * 100}%` }}
+          >
+            {dateTick(games[i].date)}
+          </span>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-foreground/72 border-t border-border pt-3">
+        {line !== null && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-0 w-3 border-t-2 border-dashed border-foreground" /> Line ({formatLine(line)})
+          </span>
+        )}
+        {projection !== null && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-0 w-3 border-t-2 border-dotted" style={{ borderColor: accentColor }} /> Our projection (
+            {formatLine(projection)})
+          </span>
+        )}
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: resultColor("OVER") }} /> Over
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: resultColor("UNDER") }} /> Under
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function HitRateChip({ label, summary, accentColor }: { label: string; summary: HitRateSummary; accentColor: string }) {
+  const rate = summary.games > 0 ? Math.round((summary.over / summary.games) * 100) : null;
+  const barColor = rate === null ? "var(--border)" : rate >= 55 ? "var(--color-emerald-500, #10b981)" : rate <= 45 ? "var(--color-red-500, #ef4444)" : accentColor;
+  return (
+    <div className="flex-1 min-w-[90px] rounded-md border border-border bg-surface px-3 py-2.5 text-center">
+      <div className="text-xs text-foreground/72 mb-1">{label}</div>
+      <div className="text-xl font-bold text-foreground leading-tight">{rate !== null ? `${rate}%` : "—"}</div>
+      <div className="h-1 rounded-full bg-border mt-1.5 mb-1.5 overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${rate ?? 0}%`, backgroundColor: barColor }} />
+      </div>
+      <div className="text-xs text-foreground/72">
+        {summary.over}-{summary.under}
+        {summary.push > 0 ? `-${summary.push}` : ""}
+      </div>
+      {summary.sampleSizeNote && <div className="text-[10px] text-foreground/60 mt-0.5">{summary.sampleSizeNote}</div>}
+    </div>
+  );
+}
+
+function SummaryTile({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-md border border-border bg-surface px-3 py-2.5 text-center">
+      <div className="text-xs text-foreground/72">{label}</div>
+      <div className="text-lg font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+// useSearchParams requires a Suspense boundary so this route can still be
+// prerendered up to it (see Next's "blocking-prerender-client-hook" guidance).
+export default function PlayerPropResearchPage() {
+  return (
+    <Suspense fallback={<p className="text-foreground/82">Loading…</p>}>
+      <PlayerPropResearchContent />
+    </Suspense>
+  );
+}
+
+function PlayerPropResearchContent() {
+  const { playerId } = useParams<{ playerId: string }>();
+  const searchParams = useSearchParams();
+  const initialStat = searchParams.get("stat");
+  const { resolvedTheme } = useTheme();
+
+  const [stat, setStat] = useState<string | null>(initialStat);
+  const [filter, setFilter] = useState<ResearchFilter>("all");
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["betting", "research", playerId, stat, filter],
+    queryFn: () => fetchResearch(playerId, stat, filter),
+  });
+
+  if (isLoading) return <p className="text-foreground/82">Loading…</p>;
+  if (error) return <p className="text-red-600 dark:text-red-400">Failed to load player prop research.</p>;
+  if (!data) return null;
+
+  if ("notFound" in data) {
+    return (
+      <div className="rounded-lg border border-border bg-surface px-6 py-10 text-center space-y-1.5">
+        <h1 className="text-lg font-semibold">No research available</h1>
+        <p className="text-foreground/72 text-sm">This player has no live prop on today&apos;s slate.</p>
+        <Link href="/betting" className="inline-block text-sm text-accent hover:underline pt-1">
+          Back to Bettor&apos;s Heaven
+        </Link>
+      </div>
+    );
+  }
+
+  const { accent: accentColor, accentForeground } = getTeamAccent(data.team.color, resolvedTheme === "dark" ? "dark" : "light");
+  const statOptions = [data.statType, ...data.otherStatTypes].map((s) => ({ value: s, label: STAT_LABELS[s] ?? s }));
+  const edgeRatio = data.projection ? computeEdgeRatio(data.projection.projectedValue, data.line, data.projection.stdev) : null;
+  const [firstName, ...lastNameParts] = data.player.displayName.trim().split(/\s+/);
+  const lastName = lastNameParts.join(" ");
+
+  return (
+    <div className="space-y-6">
+      <div
+        className="relative left-1/2 right-1/2 -mx-[50vw] w-screen bg-surface border-b border-border"
+        style={{ borderTopColor: accentColor, borderTopWidth: 4 }}
+      >
+        <div className="mx-auto max-w-6xl grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-6 px-4 sm:px-6 py-5">
+          <div className="flex items-stretch gap-3 sm:gap-5">
+            <div
+              className="relative -my-5 h-[calc(100%+2.5rem)] w-20 sm:w-28 shrink-0 overflow-hidden"
+              style={{ background: `linear-gradient(135deg, ${accentColor}99, var(--surface))` }}
+            >
+              {data.team.logoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={data.team.logoUrl}
+                  alt=""
+                  className="absolute left-[4%] top-[34%] h-[115%] w-[95%] -translate-y-1/2 object-contain opacity-60"
+                />
+              )}
+              {data.player.headshotUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={data.player.headshotUrl}
+                  alt={data.player.displayName}
+                  className="absolute right-0 bottom-0 h-full w-full object-contain"
+                  style={{ objectPosition: "bottom right" }}
+                />
+              )}
+            </div>
+            <div className="flex flex-1 flex-col justify-center gap-1.5 min-w-0">
+              <h1 className="leading-tight">
+                <span className="block text-sm font-light tracking-widest text-foreground/92 uppercase">{firstName}</span>
+                <Link href={`/players/${data.player.espnId}`} className="block text-3xl font-bold tracking-wide text-foreground uppercase hover:text-accent">
+                  {lastName}
+                </Link>
+              </h1>
+              <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-foreground/82 min-w-0">
+                <Link href={`/teams/${data.team.id}`} className="flex items-center gap-1.5 hover:text-foreground">
+                  {data.team.logoUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={data.team.logoUrl} alt="" className="h-4 w-4 shrink-0" />
+                  )}
+                  <span className="whitespace-nowrap">{data.team.name}</span>
+                </Link>
+                <span className="text-foreground/50">·</span>
+                <span className="whitespace-nowrap">{data.game.isHomeToday ? "vs" : "@"} {data.opponent.abbreviation}</span>
+                <span className="text-foreground/50">·</span>
+                <span className="whitespace-nowrap">
+                  {new Date(data.game.date).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+                </span>
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 content-center">
+            <SummaryTile label={STAT_LABELS[data.statType] ?? data.statType} value={data.line !== null ? formatLine(data.line) : "—"} />
+            <SummaryTile label="Odds (o / u)" value={`${formatOdds(data.odds.over)} / ${formatOdds(data.odds.under)}`} />
+            <SummaryTile
+              label="Our Projection"
+              value={
+                data.projection ? (
+                  <span className="inline-flex items-center gap-1">
+                    {formatLine(data.projection.projectedValue)}
+                    {data.projection.bettable && <span style={{ color: accentColor }}>●</span>}
+                  </span>
+                ) : (
+                  "—"
+                )
+              }
+            />
+            <SummaryTile label="Confidence" value={edgeRatio !== null ? `${edgeRatio.toFixed(1)}σ` : "—"} />
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        {statOptions.length > 1 && (
+          <TabList value={data.statType} onChange={setStat} options={statOptions} accentColor={accentColor} accentForeground={accentForeground} />
+        )}
+
+        <SectionCard title="Game log" accentColor={accentColor}>
+          <div className="mb-5">
+            <SegmentedToggle
+              value={filter}
+              onChange={setFilter}
+              accentColor={accentColor}
+              accentForeground={accentForeground}
+              options={[
+                { value: "all", label: "All" },
+                { value: "home", label: "Home" },
+                { value: "away", label: "Away" },
+                { value: "opponent", label: `vs ${data.opponent.abbreviation}` },
+              ]}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2 mb-5">
+            <HitRateChip label="L5" summary={data.hitRates.l5} accentColor={accentColor} />
+            <HitRateChip label="L10" summary={data.hitRates.l10} accentColor={accentColor} />
+            <HitRateChip label="L20" summary={data.hitRates.l20} accentColor={accentColor} />
+            <HitRateChip label="Season" summary={data.hitRates.season} accentColor={accentColor} />
+          </div>
+
+          <HistoryChart history={data.history} line={data.line} projection={data.projection?.projectedValue ?? null} accentColor={accentColor} />
+        </SectionCard>
+      </div>
+    </div>
+  );
+}
