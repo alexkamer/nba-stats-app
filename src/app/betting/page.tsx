@@ -121,6 +121,21 @@ const STAT_LABELS: Record<string, string> = {
   POINTS_REBOUNDS_ASSISTS: "PRA",
 };
 
+// Full names for the same stat types, shown instead of the abbreviations
+// above once there's enough width for them (see the "Prop" column).
+const STAT_LABELS_FULL: Record<string, string> = {
+  POINTS: "Points",
+  REBOUNDS: "Rebounds",
+  ASSISTS: "Assists",
+  THREE_POINTERS_MADE: "3-Pointers Made",
+  STEALS: "Steals",
+  BLOCKS: "Blocks",
+  POINTS_ASSISTS: "Points + Assists",
+  POINTS_REBOUNDS: "Points + Rebounds",
+  REBOUNDS_ASSISTS: "Rebounds + Assists",
+  POINTS_REBOUNDS_ASSISTS: "Points + Rebounds + Assists",
+};
+
 const PROP_STAT_TYPES = Object.keys(STAT_LABELS);
 
 function formatSigned(value: number | null, digits = 1): string {
@@ -506,13 +521,19 @@ function GameCard({ game }: { game: UpcomingGame }) {
               </thead>
               <tbody>
                 {visibleProps.map((prop) => (
-                  <tr key={`${prop.playerId}-${prop.statType}`} className={`border-t border-border/60 ${prop.bettable ? "bg-accent/10" : ""}`}>
+                  <tr
+                    key={`${prop.playerId}-${prop.statType}`}
+                    className={`border-t border-border/60 ${propsView === "all" && prop.bettable ? "bg-accent/10" : ""}`}
+                  >
                     <td className="py-1.5 text-foreground/82">
                       <Link href={`/betting/research/${prop.playerId}?stat=${prop.statType}`} className="hover:text-accent">
                         {prop.playerName}
                       </Link>
                     </td>
-                    <td className="py-1.5 text-foreground/72">{STAT_LABELS[prop.statType]}</td>
+                    <td className="py-1.5 text-foreground/72">
+                      <span className="sm:hidden">{STAT_LABELS[prop.statType]}</span>
+                      <span className="hidden sm:inline">{STAT_LABELS_FULL[prop.statType]}</span>
+                    </td>
                     <td className="py-1.5 text-right">
                       <span className={prop.bettable ? "font-semibold text-foreground" : ""}>
                         {formatLine(prop.lean, prop.line)}
