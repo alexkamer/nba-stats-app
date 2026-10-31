@@ -279,7 +279,9 @@ function SegmentedToggle<T extends string>({
 }
 
 function GameCard({ game }: { game: UpcomingGame }) {
-  const [propsView, setPropsView] = useState<"all" | "recommended">("all");
+  const [propsView, setPropsView] = useState<"all" | "recommended">("recommended");
+  const [statFilter, setStatFilter] = useState<string>("all");
+  const [playerFilter, setPlayerFilter] = useState<string>("all");
 
   const ourSpread = game.projection ? impliedSpread(game.projection.projectedMargin) : null;
   const marketSpread =
@@ -297,15 +299,21 @@ function GameCard({ game }: { game: UpcomingGame }) {
       : null;
   const showSpreadPick = Boolean(game.projection?.spreadBettable && spreadValue !== null);
 
-  const propsByPlayer = new Map<number, { name: string; cells: Map<string, PlayerPropLean> }>();
-  for (const prop of game.playerProps) {
-    const entry = propsByPlayer.get(prop.playerId) ?? { name: prop.playerName, cells: new Map() };
-    entry.cells.set(prop.statType, prop);
-    propsByPlayer.set(prop.playerId, entry);
-  }
-  const allPlayers = [...propsByPlayer.values()];
-  const visiblePlayers =
-    propsView === "all" ? allPlayers : allPlayers.filter((p) => [...p.cells.values()].some((c) => c.bettable));
+  // Dropdown options, in a stable order — stat types that actually have a
+  // prop for this game (PROP_STAT_TYPES' own order), players alphabetical.
+  const statOptions = PROP_STAT_TYPES.filter((st) => game.playerProps.some((p) => p.statType === st));
+  const playerOptions = [...new Map(game.playerProps.map((p) => [p.playerId, p.playerName])).entries()].sort((a, b) =>
+    a[1].localeCompare(b[1]),
+  );
+
+  const visibleProps = game.playerProps
+    .filter((p) => propsView === "all" || p.bettable)
+    .filter((p) => statFilter === "all" || p.statType === statFilter)
+    .filter((p) => playerFilter === "all" || String(p.playerId) === playerFilter)
+    .sort(
+      (a, b) =>
+        a.playerName.localeCompare(b.playerName) || PROP_STAT_TYPES.indexOf(a.statType) - PROP_STAT_TYPES.indexOf(b.statType),
+    );
 
   return (
     <div id={`game-${game.espnId}`} className="rounded-lg border border-border">
@@ -435,66 +443,88 @@ function GameCard({ game }: { game: UpcomingGame }) {
         </table>
       </div>
 
-      {allPlayers.length > 0 && (
+      {game.playerProps.length > 0 && (
         <div className="px-4 pb-4">
-          <div className="flex items-center justify-between pt-3 border-t border-border mb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-border mb-2">
             <span className="text-xs font-medium text-foreground/72">Player props</span>
-            <SegmentedToggle
-              value={propsView}
-              onChange={setPropsView}
-              options={[
-                { value: "all", label: "All players" },
-                { value: "recommended", label: "Recommended only" },
-              ]}
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={statFilter}
+                onChange={(e) => setStatFilter(e.target.value)}
+                className="rounded-md border border-border bg-surface px-2 py-1 text-xs"
+              >
+                <option value="all">All stats</option>
+                {statOptions.map((statType) => (
+                  <option key={statType} value={statType}>
+                    {STAT_LABELS[statType]}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={playerFilter}
+                onChange={(e) => setPlayerFilter(e.target.value)}
+                className="rounded-md border border-border bg-surface px-2 py-1 text-xs"
+              >
+                <option value="all">All players</option>
+                {playerOptions.map(([playerId, playerName]) => (
+                  <option key={playerId} value={playerId}>
+                    {playerName}
+                  </option>
+                ))}
+              </select>
+              <SegmentedToggle
+                value={propsView}
+                onChange={setPropsView}
+                options={[
+                  { value: "recommended", label: "Recommended" },
+                  { value: "all", label: "All" },
+                ]}
+              />
+            </div>
           </div>
-          {visiblePlayers.length === 0 ? (
-            <p className="text-sm text-foreground/72">No player props clear our confidence bar for this game.</p>
+          {visibleProps.length === 0 ? (
+            <p className="text-sm text-foreground/72">
+              {propsView === "recommended" ? "No player props clear our confidence bar for this game." : "No player props match these filters."}
+            </p>
           ) : (
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="text-left text-foreground/72">
                   <th className="pb-2 font-normal">Player</th>
-                  {PROP_STAT_TYPES.map((statType) => (
-                    <th key={statType} className="pb-2 text-right font-normal">
-                      {STAT_LABELS[statType]}
-                    </th>
-                  ))}
+                  <th className="pb-2 font-normal">Prop</th>
+                  <th className="pb-2 text-right font-normal">Line</th>
+                  <th className="pb-2 text-right font-normal">Odds</th>
+                  <th className="pb-2 text-right font-normal">Our #</th>
+                  <th className="pb-2 text-right font-normal">Result</th>
                 </tr>
               </thead>
               <tbody>
-                {visiblePlayers.map((player) => (
-                  <tr key={player.name} className="border-t border-border/60">
-                    <td className="py-1.5 text-foreground/82">{player.name}</td>
-                    {PROP_STAT_TYPES.map((statType) => {
-                      const prop = player.cells.get(statType);
-                      return (
-                        <td key={statType} className={`py-1.5 text-right ${prop?.bettable ? "bg-accent/10" : ""}`}>
-                          {prop ? (
-                            <Link
-                              href={`/betting/research/${prop.playerId}?stat=${prop.statType}`}
-                              className="hover:text-accent"
-                              title={`Research ${player.name}'s ${STAT_LABELS[statType]} prop`}
-                            >
-                              <span className={prop.bettable ? "font-semibold text-foreground" : ""}>
-                                {formatLine(prop.lean, prop.line)}
-                              </span>
-                              <span className="text-foreground/60 text-xs"> {formatOdds(prop.odds)}</span>{" "}
-                              <span className="text-foreground/72 text-xs">({prop.projectedValue.toFixed(1)})</span>
-                              {prop.bettable && <BettableMark />}
-                              {prop.gradedCorrect !== null && (
-                                <>
-                                  <ResultMark correct={prop.gradedCorrect} />
-                                  <span className="text-foreground/72 text-xs"> {prop.gradedActualValue}</span>
-                                </>
-                              )}
-                            </Link>
-                          ) : (
-                            <span className="text-foreground/72">—</span>
-                          )}
-                        </td>
-                      );
-                    })}
+                {visibleProps.map((prop) => (
+                  <tr key={`${prop.playerId}-${prop.statType}`} className={`border-t border-border/60 ${prop.bettable ? "bg-accent/10" : ""}`}>
+                    <td className="py-1.5 text-foreground/82">
+                      <Link href={`/betting/research/${prop.playerId}?stat=${prop.statType}`} className="hover:text-accent">
+                        {prop.playerName}
+                      </Link>
+                    </td>
+                    <td className="py-1.5 text-foreground/72">{STAT_LABELS[prop.statType]}</td>
+                    <td className="py-1.5 text-right">
+                      <span className={prop.bettable ? "font-semibold text-foreground" : ""}>
+                        {formatLine(prop.lean, prop.line)}
+                      </span>
+                      {prop.bettable && <BettableMark />}
+                    </td>
+                    <td className="py-1.5 text-right text-foreground/72">{formatOdds(prop.odds)}</td>
+                    <td className="py-1.5 text-right text-foreground/72">{prop.projectedValue.toFixed(1)}</td>
+                    <td className="py-1.5 text-right text-foreground/72">
+                      {prop.gradedCorrect !== null ? (
+                        <>
+                          <ResultMark correct={prop.gradedCorrect} />
+                          <span className="text-xs"> {prop.gradedActualValue}</span>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
