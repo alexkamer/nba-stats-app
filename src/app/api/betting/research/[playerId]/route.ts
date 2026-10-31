@@ -160,8 +160,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
         ? requestedSeasonId
         : defaultSeason?.id ?? null;
 
+    // "vs Opponent" is its own small sample already — matchup history
+    // against one team is worth more career-wide than confined to
+    // whichever season happens to be selected, so skip season scoping here.
     const seasonScopedRows =
-      selectedSeasonId == null ? historyRows : historyRows.filter((row) => row.game.seasonId === selectedSeasonId);
+      filter === "opponent" || selectedSeasonId == null
+        ? historyRows
+        : historyRows.filter((row) => row.game.seasonId === selectedSeasonId);
 
     const fullHistory = seasonScopedRows.map((row) => {
       const raw: RawPlayerGameRow = row;
