@@ -39,10 +39,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         isCollapsed ? "lg:[--sidebar-w:0px] lg:[--sidebar-w-half:0px]" : "lg:[--sidebar-w:13rem] lg:[--sidebar-w-half:6.5rem]"
       }`}
     >
-      <TopBar collapsed={isCollapsed} onToggleSidebar={toggle} />
       <div className="flex-1 flex flex-col lg:flex-row">
         <Sidebar collapsed={isCollapsed} onToggle={toggle} />
-        {children}
+        <div className="flex-1 flex flex-col min-w-0">
+          <TopBar collapsed={isCollapsed} onToggleSidebar={toggle} />
+          {children}
+        </div>
       </div>
     </div>
   );
