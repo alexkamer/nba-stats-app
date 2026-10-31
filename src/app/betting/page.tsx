@@ -183,6 +183,17 @@ function spreadValueSide(ourMargin: number, marketMargin: number): "home" | "awa
   return ourMargin > marketMargin ? "home" : "away";
 }
 
+/** How many recommendations a game has to offer — spread, total, and
+ * bettable player props combined. Shared by the game card's own "N picks"
+ * badge and the page-level "Most picks" sort, so the two never disagree. */
+function recommendedCount(game: UpcomingGame): number {
+  const marketMarginValue = game.market?.spread != null ? -game.market.spread : null;
+  const spreadValue =
+    game.projection && marketMarginValue !== null ? spreadValueSide(game.projection.projectedMargin, marketMarginValue) : null;
+  const showSpreadPick = Boolean(game.projection?.spreadBettable && spreadValue !== null);
+  return (showSpreadPick ? 1 : 0) + (game.projection?.totalBettable ? 1 : 0) + game.playerProps.filter((p) => p.bettable).length;
+}
+
 /** A single accuracy figure, in the same label/big-number/caption shape as
  * the player page's own HeroStat tiles — keeps this page's stat language
  * consistent with the rest of the app instead of a one-off text line. */
@@ -491,13 +502,7 @@ function GameCard({ game }: { game: UpcomingGame }) {
   const awayLeading = hasScores && game.awayScore! > game.homeScore!;
   const homeLeading = hasScores && game.homeScore! > game.awayScore!;
 
-  // Lets the game list communicate which games are worth opening before a
-  // user expands any of them — counts every recommendation this card can
-  // make (spread, total, and player props), not just player props.
-  const recommendedCount =
-    (showSpreadPick ? 1 : 0) +
-    (game.projection?.totalBettable ? 1 : 0) +
-    game.playerProps.filter((p) => p.bettable).length;
+  const picksCount = recommendedCount(game);
 
   return (
     <div
@@ -515,9 +520,9 @@ function GameCard({ game }: { game: UpcomingGame }) {
             <TeamLabel team={game.homeTeam} />
           </span>
           {hasScores && <span className="font-bold tabular-nums text-foreground">{game.homeScore}</span>}
-          {recommendedCount > 0 && (
+          {picksCount > 0 && (
             <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
-              {recommendedCount} pick{recommendedCount === 1 ? "" : "s"}
+              {picksCount} pick{picksCount === 1 ? "" : "s"}
             </span>
           )}
         </div>
@@ -748,6 +753,27 @@ function DayNav({
   );
 }
 
+/** Horizontal row of per-game jump links to this page's own "game-{espnId}"
+ * anchors — those ids already existed on each GameCard but had nothing
+ * linking to them. Only worth showing once there's more than one game to
+ * jump between. */
+function GameNav({ games }: { games: UpcomingGame[] }) {
+  if (games.length < 2) return null;
+  return (
+    <div className="flex gap-1.5 overflow-x-auto pb-1">
+      {games.map((game) => (
+        <a
+          key={game.espnId}
+          href={`#game-${game.espnId}`}
+          className="shrink-0 whitespace-nowrap rounded-md border border-border px-2 py-1 text-xs text-foreground/72 hover:border-foreground/50 hover:text-foreground"
+        >
+          {game.awayTeam.abbreviation} @ {game.homeTeam.abbreviation}
+        </a>
+      ))}
+    </div>
+  );
+}
+
 export default function BettingPage() {
   // "Today" is only known once this effect runs — computing `new Date()`
   // directly during render is flagged by Next as an unstable prerender
@@ -756,6 +782,7 @@ export default function BettingPage() {
   // stays deterministic until `today` is set.
   const [today, setToday] = useState<Date | null>(null);
   const [dayOffset, setDayOffset] = useState(0);
+  const [sortBy, setSortBy] = useState<"time" | "picks">("time");
   useEffect(() => {
     setToday(startOfToday());
   }, []);
@@ -774,6 +801,10 @@ export default function BettingPage() {
     enabled: dateParam !== null,
   });
   const { data: accuracy } = useQuery({ queryKey: ["betting", "accuracy"], queryFn: fetchAccuracy });
+
+  // Games already arrive in start-time order from the API — "time" needs
+  // no re-sort, only "picks" (most recommendations first) does.
+  const sortedGames = games && sortBy === "picks" ? [...games].sort((a, b) => recommendedCount(b) - recommendedCount(a)) : games;
 
   if (!selectedDate) {
     return <p className="text-foreground/82">Loading…</p>;
@@ -809,10 +840,24 @@ export default function BettingPage() {
         </p>
       )}
 
+      {games && games.length > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <GameNav games={games} />
+          <SegmentedToggle
+            value={sortBy}
+            onChange={setSortBy}
+            options={[
+              { value: "time", label: "Start time" },
+              { value: "picks", label: "Most picks" },
+            ]}
+          />
+        </div>
+      )}
+
       <div className="space-y-4">
         {gamesLoading
           ? Array.from({ length: 3 }, (_, i) => <GameCardSkeleton key={i} />)
-          : games?.map((game) => <GameCard key={game.espnId} game={game} />)}
+          : sortedGames?.map((game) => <GameCard key={game.espnId} game={game} />)}
       </div>
     </div>
   );
