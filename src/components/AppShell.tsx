@@ -2,13 +2,14 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { Sidebar } from "@/components/Sidebar";
+import { TopBar } from "@/components/TopBar";
 
 const STORAGE_KEY = "sidebar-collapsed";
 
 /** Owns the sidebar's collapsed/expanded state and exposes its current
  * width as CSS variables (`--sidebar-w`/`--sidebar-w-half`) on the shared
- * flex-row wrapper, so `FullBleed` sections elsewhere in the tree can stay
- * flush with the sidebar's actual edge regardless of which state it's in. */
+ * wrapper, so `FullBleed` sections elsewhere in the tree can stay flush
+ * with the sidebar's actual edge regardless of which state it's in. */
 export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -34,12 +35,15 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div
-      className={`min-h-full flex flex-col lg:flex-row ${
-        isCollapsed ? "lg:[--sidebar-w:4rem] lg:[--sidebar-w-half:2rem]" : "lg:[--sidebar-w:13rem] lg:[--sidebar-w-half:6.5rem]"
+      className={`min-h-full flex flex-col ${
+        isCollapsed ? "lg:[--sidebar-w:0px] lg:[--sidebar-w-half:0px]" : "lg:[--sidebar-w:13rem] lg:[--sidebar-w-half:6.5rem]"
       }`}
     >
-      <Sidebar collapsed={isCollapsed} onToggle={toggle} />
-      {children}
+      <TopBar collapsed={isCollapsed} onToggleSidebar={toggle} />
+      <div className="flex-1 flex flex-col lg:flex-row">
+        <Sidebar collapsed={isCollapsed} onToggle={toggle} />
+        {children}
+      </div>
     </div>
   );
 }

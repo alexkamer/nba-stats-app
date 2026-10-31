@@ -28,7 +28,7 @@ export function ThemeToggle() {
     >
       <span
         className={`absolute top-0.5 h-6 w-6 rounded-full bg-accent transition-transform ${
-          isDark ? "translate-x-7" : "translate-x-0.5"
+          isDark ? "translate-x-0.5" : "translate-x-7"
         }`}
       />
     </button>
