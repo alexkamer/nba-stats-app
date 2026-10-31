@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { computeEdgeRatio } from "@lib/projections/confidence";
@@ -254,13 +254,137 @@ function ResultMark({ correct }: { correct: boolean | null }) {
 
 function TeamLabel({ team }: { team: TeamSummary }) {
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex items-center gap-1.5 font-semibold">
       {team.logoUrl && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={team.logoUrl} alt="" className="h-4 w-4" />
+        <img src={team.logoUrl} alt="" className="h-5 w-5" />
       )}
       {team.abbreviation}
     </span>
+  );
+}
+
+/** A confidence reading shown as a short filled bar rather than just the raw
+ * σ number — lets a row's edge be read at a glance, the same visual
+ * language used for every confidence figure on this page (the best-bets
+ * strip, a game's own pick rows, and its player props table). Capped at 3σ:
+ * beyond that the bar is already full and the exact number stops mattering
+ * for the "how much better is this than that" comparison the bar is for. */
+function ConfidenceMeter({ edgeRatio, bettable }: { edgeRatio: number | null; bettable: boolean }) {
+  const pct = edgeRatio !== null ? Math.min(edgeRatio / 3, 1) * 100 : 0;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="h-1 w-8 rounded-full bg-border overflow-hidden shrink-0">
+        <span
+          className="block h-full rounded-full"
+          style={{ width: `${pct}%`, backgroundColor: bettable ? "var(--color-accent)" : "var(--color-border)" }}
+        />
+      </span>
+      <span className="text-xs text-foreground/60 tabular-nums">{edgeRatio !== null ? `${edgeRatio.toFixed(1)}σ` : "—"}</span>
+    </span>
+  );
+}
+
+/** One of a game's two headline picks (spread or total) — the visual
+ * anchor of a game card. `mainLabel` null means there isn't enough history
+ * to have a pick at all (distinct from having one that just isn't
+ * confident enough to flag as bettable). */
+function PickRow({
+  label,
+  mainLabel,
+  odds,
+  edgeRatio,
+  bettable,
+  graded,
+}: {
+  label: string;
+  mainLabel: ReactNode | null;
+  odds: number | null;
+  edgeRatio: number | null;
+  bettable: boolean;
+  graded: boolean | null;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-xs text-foreground/60 w-14 shrink-0">{label}</span>
+      {mainLabel === null ? (
+        <span className="text-sm text-foreground/60">Not enough history yet</span>
+      ) : (
+        <div className="flex flex-1 items-center justify-end gap-2.5">
+          <span className={`text-base ${bettable ? "font-semibold text-foreground" : "text-foreground/82"}`}>{mainLabel}</span>
+          <span className="text-xs text-foreground/60 tabular-nums">{formatOdds(odds)}</span>
+          {bettable && <BettableMark />}
+          {graded !== null && <ResultMark correct={graded} />}
+          <ConfidenceMeter edgeRatio={edgeRatio} bettable={bettable} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Styled wrapper around a native <select> — keeps the browser's own
+ * keyboard/touch handling rather than building a custom combobox, but
+ * drops the default chrome so it reads as part of this app's own button
+ * vocabulary (rounded-md border-border, hover:border-foreground/50) same
+ * as the day-nav buttons, instead of generic OS select styling. */
+function FilterSelect({
+  value,
+  onChange,
+  children,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="appearance-none rounded-md border border-border bg-surface py-1 pl-2.5 pr-5 text-xs text-foreground hover:border-foreground/50 transition-colors"
+      >
+        {children}
+      </select>
+      <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-foreground/50">▾</span>
+    </div>
+  );
+}
+
+/** The page's one hero element: the day's highest-confidence player props
+ * across every game, as a horizontal row of scannable ticket chips — meant
+ * to be the first thing a visitor reads, ahead of any individual game's
+ * own (deliberately quieter) tables. */
+function BestBetsStrip({ games, isToday }: { games: UpcomingGame[]; isToday: boolean }) {
+  const picks = games
+    .flatMap((game) => game.playerProps.filter((p) => p.bettable))
+    .map((p) => ({ ...p, edgeRatio: computeEdgeRatio(p.projectedValue, p.line, p.stdev) ?? 0 }))
+    .sort((a, b) => b.edgeRatio - a.edgeRatio)
+    .slice(0, 8);
+
+  if (picks.length === 0) return null;
+
+  return (
+    <div>
+      <p className="text-xs font-medium text-foreground/72 mb-2">{isToday ? "Today's" : "That day's"} best bets</p>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {picks.map((p) => (
+          <Link
+            key={`${p.playerId}-${p.statType}`}
+            href={`/betting/research/${p.playerId}?stat=${p.statType}`}
+            className="w-36 shrink-0 rounded-lg border border-border bg-surface px-3 py-2.5 hover:border-accent transition-colors"
+          >
+            <p className="truncate text-xs text-foreground/72">{p.playerName}</p>
+            <p className="text-sm font-semibold text-foreground">
+              {formatLine(p.lean, p.line)} {STAT_LABELS[p.statType]}
+            </p>
+            <div className="mt-1.5 flex items-center justify-between">
+              <span className="text-xs text-foreground/60 tabular-nums">{formatOdds(p.odds)}</span>
+              <span className="text-xs font-medium text-accent tabular-nums">{p.edgeRatio.toFixed(1)}σ</span>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -314,6 +438,16 @@ function GameCard({ game }: { game: UpcomingGame }) {
       ? spreadValueSide(game.projection.projectedMargin, marketMarginValue)
       : null;
   const showSpreadPick = Boolean(game.projection?.spreadBettable && spreadValue !== null);
+  const spreadEdgeRatio =
+    game.projection && marketMarginValue !== null
+      ? computeEdgeRatio(game.projection.projectedMargin, marketMarginValue, game.projection.marginStdev)
+      : null;
+
+  const ourTotalLean = ourTotal !== null && game.market?.overUnder != null ? totalLean(ourTotal, game.market.overUnder) : null;
+  const totalEdgeRatio =
+    ourTotal !== null && game.market?.overUnder != null
+      ? computeEdgeRatio(ourTotal, game.market.overUnder, game.projection?.totalStdev ?? null)
+      : null;
 
   // Dropdown options, in a stable order — stat types that actually have a
   // prop for this game (PROP_STAT_TYPES' own order), players alphabetical.
@@ -356,111 +490,41 @@ function GameCard({ game }: { game: UpcomingGame }) {
         </span>
       </div>
 
-      <div className="px-4 py-3">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="text-left text-foreground/72">
-              <th className="pb-2 font-normal" />
-              <th className="pb-2 text-right font-normal">{game.awayTeam.abbreviation}</th>
-              <th className="pb-2 text-right font-normal">{game.homeTeam.abbreviation}</th>
-              <th className="pb-2 text-right font-normal pl-4">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-t border-border/60">
-              <td className="py-1.5 text-foreground/82">Our pick</td>
-              {ourSpread ? (
-                <>
-                  <td
-                    className={`py-1.5 text-right ${showSpreadPick && spreadValue === "away" ? "font-semibold text-foreground bg-accent/10" : ""}`}
-                  >
-                    {formatSigned(ourSpread.away)}
-                    {spreadValue === "away" && (
-                      <span className="text-foreground/60 text-xs"> {formatOdds(game.market?.awaySpreadOdds ?? null)}</span>
-                    )}
-                    {showSpreadPick && spreadValue === "away" && <BettableMark />}
-                    {spreadValue === "away" && <ResultMark correct={game.projection?.gradedSpreadCorrect ?? null} />}
-                  </td>
-                  <td
-                    className={`py-1.5 text-right ${showSpreadPick && spreadValue === "home" ? "font-semibold text-foreground bg-accent/10" : ""}`}
-                  >
-                    {formatSigned(ourSpread.home)}
-                    {spreadValue === "home" && (
-                      <span className="text-foreground/60 text-xs"> {formatOdds(game.market?.homeSpreadOdds ?? null)}</span>
-                    )}
-                    {showSpreadPick && spreadValue === "home" && <BettableMark />}
-                    {spreadValue === "home" && <ResultMark correct={game.projection?.gradedSpreadCorrect ?? null} />}
-                  </td>
-                </>
-              ) : (
-                <td className="py-1.5 text-right text-foreground/72" colSpan={2}>
-                  Not enough history yet
-                </td>
-              )}
-              <td className={`py-1.5 text-right pl-4 ${game.projection?.totalBettable ? "bg-accent/10" : ""}`}>
-                {ourTotal !== null
-                  ? game.market?.overUnder != null
-                    ? formatLine(totalLean(ourTotal, game.market.overUnder), ourTotal)
-                    : ourTotal.toFixed(1)
-                  : "—"}
-                {ourTotal !== null && game.market?.overUnder != null && (
-                  <span className="text-foreground/60 text-xs">
-                    {" "}
-                    {formatOdds(
-                      totalLean(ourTotal, game.market.overUnder) === "OVER" ? game.market.overOdds : game.market.underOdds,
-                    )}
+      <div className="px-4 py-3 space-y-2">
+        <PickRow
+          label="Spread"
+          mainLabel={
+            ourSpread && spreadValue
+              ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <TeamLabel team={spreadValue === "home" ? game.homeTeam : game.awayTeam} />
+                    {formatSigned(spreadValue === "home" ? ourSpread.home : ourSpread.away)}
                   </span>
-                )}
-                {game.projection?.totalBettable && <BettableMark />}
-                {game.market?.overUnder != null && <ResultMark correct={game.projection?.gradedTotalCorrect ?? null} />}
-              </td>
-            </tr>
-            <tr className="border-t border-border/60">
-              <td className="py-1.5 text-foreground/82">Market{game.market ? ` (${game.market.provider})` : ""}</td>
-              {marketSpread ? (
-                <>
-                  <td className={`py-1.5 text-right ${marketSpread.away < 0 ? "font-semibold text-foreground" : ""}`}>
-                    {formatSigned(marketSpread.away)}
-                  </td>
-                  <td className={`py-1.5 text-right ${marketSpread.home < 0 ? "font-semibold text-foreground" : ""}`}>
-                    {formatSigned(marketSpread.home)}
-                  </td>
-                </>
-              ) : (
-                <td className="py-1.5 text-right text-foreground/72" colSpan={2}>
-                  No line yet
-                </td>
-              )}
-              <td className="py-1.5 text-right pl-4">{game.market?.overUnder ?? "—"}</td>
-            </tr>
-            <tr className="border-t border-border/60">
-              <td className="py-1.5 text-foreground/82">ESPN predictor</td>
-              {game.predictor ? (
-                <>
-                  <td
-                    className={`py-1.5 text-right ${
-                      game.predictor.awayWinPct > game.predictor.homeWinPct ? "font-semibold text-foreground" : ""
-                    }`}
-                  >
-                    {game.predictor.awayWinPct.toFixed(0)}%
-                  </td>
-                  <td
-                    className={`py-1.5 text-right ${
-                      game.predictor.homeWinPct > game.predictor.awayWinPct ? "font-semibold text-foreground" : ""
-                    }`}
-                  >
-                    {game.predictor.homeWinPct.toFixed(0)}%
-                  </td>
-                </>
-              ) : (
-                <td className="py-1.5 text-right text-foreground/72" colSpan={2}>
-                  Unavailable
-                </td>
-              )}
-              <td className="py-1.5 text-right pl-4 text-foreground/72">—</td>
-            </tr>
-          </tbody>
-        </table>
+                )
+              : null
+          }
+          odds={spreadValue === "home" ? game.market?.homeSpreadOdds ?? null : game.market?.awaySpreadOdds ?? null}
+          edgeRatio={spreadEdgeRatio}
+          bettable={showSpreadPick}
+          graded={spreadValue !== null ? game.projection?.gradedSpreadCorrect ?? null : null}
+        />
+        <PickRow
+          label="Total"
+          mainLabel={ourTotal !== null ? (ourTotalLean ? formatLine(ourTotalLean, ourTotal) : ourTotal.toFixed(1)) : null}
+          odds={ourTotalLean === "OVER" ? game.market?.overOdds ?? null : ourTotalLean === "UNDER" ? game.market?.underOdds ?? null : null}
+          edgeRatio={totalEdgeRatio}
+          bettable={Boolean(game.projection?.totalBettable)}
+          graded={game.market?.overUnder != null ? game.projection?.gradedTotalCorrect ?? null : null}
+        />
+        <p className="text-xs text-foreground/60 pt-2 border-t border-border/60">
+          Market{game.market ? ` (${game.market.provider})` : ""}:{" "}
+          {marketSpread
+            ? `${game.awayTeam.abbreviation} ${formatSigned(marketSpread.away)}`
+            : "no line yet"}
+          {game.market?.overUnder != null && ` · O/U ${game.market.overUnder}`}
+          {game.predictor &&
+            ` · ESPN: ${game.awayTeam.abbreviation} ${game.predictor.awayWinPct.toFixed(0)}% – ${game.homeTeam.abbreviation} ${game.predictor.homeWinPct.toFixed(0)}%`}
+        </p>
       </div>
 
       {game.playerProps.length > 0 && (
@@ -468,30 +532,22 @@ function GameCard({ game }: { game: UpcomingGame }) {
           <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-border mb-2">
             <span className="text-xs font-medium text-foreground/72">Player props</span>
             <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={statFilter}
-                onChange={(e) => setStatFilter(e.target.value)}
-                className="rounded-md border border-border bg-surface px-2 py-1 text-xs"
-              >
+              <FilterSelect value={statFilter} onChange={setStatFilter}>
                 <option value="all">All stats</option>
                 {statOptions.map((statType) => (
                   <option key={statType} value={statType}>
                     {STAT_LABELS[statType]}
                   </option>
                 ))}
-              </select>
-              <select
-                value={playerFilter}
-                onChange={(e) => setPlayerFilter(e.target.value)}
-                className="rounded-md border border-border bg-surface px-2 py-1 text-xs"
-              >
+              </FilterSelect>
+              <FilterSelect value={playerFilter} onChange={setPlayerFilter}>
                 <option value="all">All players</option>
                 {playerOptions.map(([playerId, playerName]) => (
                   <option key={playerId} value={playerId}>
                     {playerName}
                   </option>
                 ))}
-              </select>
+              </FilterSelect>
               <SegmentedToggle
                 value={propsView}
                 onChange={setPropsView}
@@ -542,11 +598,8 @@ function GameCard({ game }: { game: UpcomingGame }) {
                     </td>
                     <td className="py-1.5 text-right text-foreground/72">{formatOdds(prop.odds)}</td>
                     <td className="py-1.5 text-right text-foreground/72">{prop.projectedValue.toFixed(1)}</td>
-                    <td className="py-1.5 text-right text-foreground/72">
-                      {(() => {
-                        const ratio = computeEdgeRatio(prop.projectedValue, prop.line, prop.stdev);
-                        return ratio !== null ? `${ratio.toFixed(1)}σ` : "—";
-                      })()}
+                    <td className="py-1.5 text-right">
+                      <ConfidenceMeter edgeRatio={computeEdgeRatio(prop.projectedValue, prop.line, prop.stdev)} bettable={prop.bettable} />
                     </td>
                     <td className="py-1.5 text-right text-foreground/72">
                       {prop.gradedCorrect !== null ? (
@@ -679,6 +732,8 @@ export default function BettingPage() {
           onJumpToday={() => setDayOffset(0)}
         />
       </div>
+
+      {games && games.length > 0 && <BestBetsStrip games={games} isToday={isToday} />}
 
       {accuracy && <AccuracyStrip accuracy={accuracy} />}
 
