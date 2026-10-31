@@ -1,46 +1,102 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NBA Stats App
 
-## Getting Started
+A Next.js app for browsing NBA scores, standings, teams, players, news, and
+in-house betting projections, backed by a Prisma/SQLite database that's kept
+current by a set of standalone ingestion scripts pulling from ESPN's
+unofficial public API.
 
-First, run the development server:
+- Full product spec: [`SPEC.md`](SPEC.md)
+- Original implementation plan: [`PLAN.md`](PLAN.md)
+- Per-page data source breakdown: [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md)
+- How betting projections/picks are computed and graded: [`docs/PREDICTIONS.md`](docs/PREDICTIONS.md)
+- Capability specs (OpenSpec): [`openspec/specs/`](openspec/specs)
+
+## Quickstart
+
+```bash
+git clone <repo-url>
+cd nba-stats-app
+npm install          # also runs `prisma generate` via postinstall
+```
+
+Create the SQLite database and apply migrations:
+
+```bash
+npx prisma migrate deploy
+```
+
+Then seed it. The full first-time sequence, in order (each step is
+idempotent/self-healing, so re-running any of them is safe):
+
+```bash
+npx tsx ingest/sync-reference-data.ts   # conferences, divisions, venues, teams, rosters
+npx tsx ingest/backfill.ts              # current season's games, box scores, plays
+npx tsx ingest/sync-aggregates.ts       # standings + season stats, derived from the games above
+npx tsx ingest/sync-betting-odds.ts     # discovers upcoming games + market odds/player props
+npx tsx ingest/generate-projections.ts  # our own game/prop picks, needs the odds above
+npx tsx ingest/grade-predictions.ts     # grades any already-finished games
+npx tsx ingest/sync-news.ts             # news feed
+```
+
+> `ingest/run-all-sync.ts` (and `scripts/run-daily-sync.sh`, meant to be
+> cron'd hourly) chains most of the same scripts but only looks back a few
+> days for completed games — it's built for **keeping an already-seeded DB
+> fresh**, not for the initial seed. Use the sequence above once, then
+> `run-all-sync.ts` (or the cron script) for ongoing refreshes.
+
+Finally:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-## Data source
+### Skip the database entirely
 
-By default (`DATA_SOURCE` unset or `db`) the app reads from the local Prisma/SQLite database (`prisma/dev.db`), which needs seeding via `npx tsx ingest/run-all-sync.ts` and a recurring refresh to stay current (see `scripts/run-daily-sync.sh`).
+Set `DATA_SOURCE=espn` to run purely against live ESPN endpoints — no
+migration, no seeding, nothing in `ingest/` to run. Trade-off: no
+multi-season history, no player season-rank, no news tagging, and no
+per-game box-score splits. See
+[`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) for exactly what each page
+loses in this mode.
 
-Set `DATA_SOURCE=espn` to skip the database entirely and run purely against live ESPN endpoints — no seeding required, at the cost of some simplifications (no multi-season history, no player season-rank, no news tagging, no per-game box-score splits). See `docs/DATA_SOURCES.md` for the full page-by-page breakdown.
+```bash
+DATA_SOURCE=espn npm run dev
+```
 
-## Betting insights (`/betting`)
+## Pages
 
-See `docs/PREDICTIONS.md` for how our own game/player-prop projections are computed, how "confident" picks are chosen, and how everything gets graded against final results.
+| Route | What it shows |
+|---|---|
+| `/` | Scoreboard for a given date (defaults to today) — always live from ESPN, never persisted. |
+| `/games/[eventId]` | Game detail: box score, play-by-play, odds, win probability, shot chart. |
+| `/teams` | Full list of teams. |
+| `/teams/[teamId]` | Team profile: roster, schedule, standings context, season stats, news, injuries, transactions. |
+| `/players` | Full list of active players, filterable client-side. |
+| `/players/[athleteId]` | Player profile: bio/awards, splits, game log, advanced stats, related news. |
+| `/standings` | Conference/division standings, plus NBA Cup standings. |
+| `/news` | League news feed. |
+| `/betting` | Our own game and player-prop projections vs. the market line and ESPN's predictor, plus a running accuracy scoreboard. See [`docs/PREDICTIONS.md`](docs/PREDICTIONS.md). |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Tech stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Framework:** Next.js (App Router) + TypeScript
+- **Styling:** Tailwind CSS
+- **Client data fetching/caching:** TanStack Query
+- **Database:** SQLite via Prisma
+- **Ingestion:** standalone scripts in `ingest/`, scheduled hourly via `scripts/run-daily-sync.sh`
+- **Data source:** ESPN's unofficial NBA API
 
-## Learn More
+## Scripts
 
-To learn more about Next.js, take a look at the following resources:
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Start the dev server. |
+| `npm run build` | Production build. |
+| `npm run start` | Run the production build. |
+| `npm run lint` | Lint the codebase. |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## License
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+[MIT](LICENSE)
