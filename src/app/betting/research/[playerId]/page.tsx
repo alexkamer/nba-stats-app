@@ -653,7 +653,7 @@ function PlayerPropResearchContent() {
             <HitRateChip label="Season" summary={data.hitRates.season} accentColor={accentColor} />
           </div>
 
-          <details className="mb-5">
+          <details className="mb-5" open>
             <summary className="cursor-pointer text-sm font-medium text-foreground/72 hover:text-foreground">
               Trend chart — {STAT_LABELS[data.statType] ?? data.statType}
             </summary>
