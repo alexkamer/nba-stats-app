@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
 interface GameCard {
@@ -41,9 +42,14 @@ export default function Home() {
 }
 
 function ScoreboardContent() {
+  const searchParams = useSearchParams();
+  const dateParam = searchParams.get("date");
   // "Today" is the viewer's local date (SPEC.md Sec 9.3) — computed in the
-  // browser, not guessed server-side.
-  const [date, setDate] = useState(() => toYyyymmdd(new Date()));
+  // browser, not guessed server-side — unless a deep link (e.g. from the
+  // betting research page's game log) requests a specific date.
+  const [date, setDate] = useState(() =>
+    dateParam && /^\d{8}$/.test(dateParam) ? dateParam : toYyyymmdd(new Date()),
+  );
   const { data: games, isLoading, error } = useQuery({
     queryKey: ["scoreboard", date],
     queryFn: () => fetchScoreboard(date),

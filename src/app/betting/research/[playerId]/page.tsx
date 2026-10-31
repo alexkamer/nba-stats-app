@@ -238,6 +238,15 @@ function formatGridDate(date: string): string {
   return `${mm}/${dd}/${yy}`;
 }
 
+// Scoreboard page (src/app/page.tsx) reads its date from `?date=YYYYMMDD`.
+function toScoreboardDateParam(date: string): string {
+  const d = new Date(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
+}
+
 /** Bar per historical game (most recent `CHART_GAMES`, oldest to newest left
  * to right), colored over/under/push against today's line, with the market
  * line and (when available) our own projection drawn as reference lines —
@@ -438,12 +447,17 @@ function HitRateGrid({
             <tr key={row.gameEspnId} className="border-t border-border/60">
               <td className="py-1.5 pr-3 whitespace-nowrap">
                 <span className="inline-flex items-center gap-1.5 text-foreground/72">
-                  {formatGridDate(row.date)} {row.isHome ? "vs" : "@"}
-                  {row.opponent.logoUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={row.opponent.logoUrl} alt="" className="h-4 w-4 object-contain" />
-                  )}
-                  <span className="font-semibold tracking-wide text-foreground">{row.opponent.abbreviation}</span>
+                  <Link href={`/?date=${toScoreboardDateParam(row.date)}`} className="hover:underline hover:text-foreground">
+                    {formatGridDate(row.date)}
+                  </Link>
+                  {row.isHome ? "vs" : "@"}
+                  <Link href={`/games/${row.gameEspnId}`} className="inline-flex items-center gap-1.5 hover:underline">
+                    {row.opponent.logoUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={row.opponent.logoUrl} alt="" className="h-4 w-4 object-contain" />
+                    )}
+                    <span className="font-semibold tracking-wide text-foreground">{row.opponent.abbreviation}</span>
+                  </Link>
                 </span>
               </td>
               <td className="py-1.5 pr-3 text-right text-foreground/82">{row.minutes ?? "—"}</td>
