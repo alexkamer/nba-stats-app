@@ -36,20 +36,27 @@ async function fetchScoreboard(date: string): Promise<GameCard[]> {
 export default function Home() {
   return (
     <Suspense fallback={<p className="text-foreground/82">Loading…</p>}>
-      <ScoreboardContent />
+      <ScoreboardGate />
     </Suspense>
   );
 }
 
-function ScoreboardContent() {
+// A client-side nav to "/" with a new ?date= (e.g. from the research page's
+// game log) reuses the already-mounted ScoreboardContent, so a useState
+// initializer there wouldn't rerun — keying on the param forces a remount
+// instead, which re-seeds ScoreboardContent's own date state from scratch.
+function ScoreboardGate() {
   const searchParams = useSearchParams();
   const dateParam = searchParams.get("date");
+  const initialDate = dateParam && /^\d{8}$/.test(dateParam) ? dateParam : null;
+  return <ScoreboardContent key={initialDate ?? "today"} initialDate={initialDate} />;
+}
+
+function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
   // "Today" is the viewer's local date (SPEC.md Sec 9.3) — computed in the
-  // browser, not guessed server-side — unless a deep link (e.g. from the
-  // betting research page's game log) requests a specific date.
-  const [date, setDate] = useState(() =>
-    dateParam && /^\d{8}$/.test(dateParam) ? dateParam : toYyyymmdd(new Date()),
-  );
+  // browser, not guessed server-side — unless a deep link requested a
+  // specific date (see ScoreboardGate).
+  const [date, setDate] = useState(() => initialDate ?? toYyyymmdd(new Date()));
   const { data: games, isLoading, error } = useQuery({
     queryKey: ["scoreboard", date],
     queryFn: () => fetchScoreboard(date),
