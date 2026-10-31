@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Suspense, useId, useState, type ReactNode } from "react";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
+import { FullBleed } from "@/components/FullBleed";
 import { getTeamAccent } from "@/lib/team-accent";
 
 // The API returns one of two shapes depending on whether the game has been
@@ -453,9 +454,9 @@ function GameDetailContent() {
 
       {activeTab === "gamecast" && (
         // Full-bleed, same trick as ScoreboardHeader: this grid needs the
-        // whole viewport width for its 3-column layout, not just <main>'s
-        // centered max-w-6xl column.
-        <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen px-6">
+        // whole content area's width for its 3-column layout, not just
+        // <main>'s centered max-w-6xl column.
+        <FullBleed className="px-6">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr_340px]">
             <div className="space-y-6">
               <GameLeaders away={away} home={home} awayPlayerRows={awayPlayerRows} homePlayerRows={homePlayerRows} />
@@ -479,7 +480,7 @@ function GameDetailContent() {
               )}
             </div>
           </div>
-        </div>
+        </FullBleed>
       )}
       {activeTab === "recap" && <RecapTab away={away} home={home} recap={recap} />}
       {activeTab === "teamstats" && <TeamStatsTab away={away} home={home} teamStatsBreakdown={teamStatsBreakdown} />}
@@ -2109,9 +2110,10 @@ function ScoreboardHeader({
 
   return (
     // Full-bleed: this page's <main> caps content at max-w-6xl with side
-    // gutters, but the scoreboard header should span the whole viewport
-    // width like ESPN's real game header, not just the content column.
-    <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen overflow-hidden border-y border-border bg-background">
+    // gutters, but the scoreboard header should span the whole content
+    // area's width like ESPN's real game header, not just the centered
+    // column.
+    <FullBleed className="overflow-hidden border-y border-border bg-background">
       <div
         className="h-1 w-full"
         style={{ background: `linear-gradient(90deg, ${away.accent}, ${home.accent})` }}
@@ -2205,6 +2207,6 @@ function ScoreboardHeader({
         </div>
       </div>
       <TabPager tabs={tabs} activeTab={activeTab} onChange={onTabChange} accentColor={home.accent} />
-    </div>
+    </FullBleed>
   );
 }

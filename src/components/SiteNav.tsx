@@ -3,37 +3,27 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { SECTIONS } from "@/components/Sidebar";
 
-const LINKS = [
-  { href: "/standings", label: "Standings" },
-  { href: "/teams", label: "Teams" },
-  { href: "/players", label: "Players" },
-  { href: "/news", label: "News" },
-  { href: "/betting", label: "Betting" },
-];
-
-/** Site-wide nav — collapses the link list behind a toggle below `sm` so
- * the header never has to fit six items on one row (that overflowed the
- * page horizontally on phone-width screens). */
+/** Mobile top bar — shown below `lg`, where Sidebar (the desktop
+ * equivalent) is hidden. Collapses the same section list Sidebar shows
+ * into a hamburger menu so the header doesn't have to fit every link on
+ * one row at phone widths. */
 export function SiteNav() {
   const [open, setOpen] = useState(false);
 
   return (
-    <nav className="text-sm font-medium">
+    <nav className="text-sm font-medium lg:hidden">
       <div className="flex items-center gap-6">
-        <Link href="/" className="font-semibold text-base" onClick={() => setOpen(false)}>
+        <Link
+          href="/"
+          className="font-display text-lg font-extrabold uppercase tracking-tight text-foreground"
+          onClick={() => setOpen(false)}
+        >
           NBA Stats
         </Link>
 
-        <div className="hidden sm:flex items-center gap-6">
-          {LINKS.map((link) => (
-            <Link key={link.href} href={link.href} className="text-foreground/82 hover:text-foreground">
-              {link.label}
-            </Link>
-          ))}
-        </div>
-
-        <span className="ml-auto hidden sm:inline-flex">
+        <span className="ml-auto">
           <ThemeToggle />
         </span>
 
@@ -42,7 +32,7 @@ export function SiteNav() {
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
           aria-label={open ? "Close menu" : "Open menu"}
-          className="ml-auto sm:ml-0 sm:hidden rounded-md border border-border p-2"
+          className="rounded-md border border-border p-2"
         >
           <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.5}>
             {open ? (
@@ -55,18 +45,17 @@ export function SiteNav() {
       </div>
 
       {open && (
-        <div className="sm:hidden mt-3 flex flex-col gap-3 pb-1">
-          {LINKS.map((link) => (
+        <div className="mt-3 flex flex-col gap-3 pb-1">
+          {SECTIONS.map((section) => (
             <Link
-              key={link.href}
-              href={link.href}
+              key={section.href}
+              href={section.href}
               onClick={() => setOpen(false)}
               className="text-foreground/82 hover:text-foreground"
             >
-              {link.label}
+              {section.label}
             </Link>
           ))}
-          <ThemeToggle />
         </div>
       )}
     </nav>

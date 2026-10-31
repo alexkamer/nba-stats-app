@@ -257,7 +257,7 @@ export default function StandingsPage() {
     return (
       <div className="space-y-8">
         <div className="space-y-4">
-          <h1 className="text-2xl font-semibold">
+          <h1 className="text-3xl font-extrabold tracking-tight">
             NBA Standings
             {cupData.season && (
               <span className="text-foreground/72 text-base ml-2">{seasonLabel(cupData.season.year)}</span>
@@ -361,7 +361,7 @@ export default function StandingsPage() {
   return (
     <div className="space-y-8">
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">
+        <h1 className="text-3xl font-extrabold tracking-tight">
           NBA Standings
           {data.season && <span className="text-foreground/72 text-base ml-2">{seasonLabel(data.season.year)}</span>}
         </h1>

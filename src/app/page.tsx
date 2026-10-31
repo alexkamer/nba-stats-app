@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import { CircularBadge } from "@/components/CircularBadge";
 
 interface GameCard {
   espnId: string;
@@ -11,8 +12,8 @@ interface GameCard {
   statusDetail: string;
   period: number | null;
   clock: string | null;
-  home: { abbreviation: string; displayName: string; score: number | null };
-  away: { abbreviation: string; displayName: string; score: number | null };
+  home: { abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null };
+  away: { abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null };
 }
 
 function toYyyymmdd(date: Date): string {
@@ -71,7 +72,7 @@ function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Scoreboard</h1>
+        <h1 className="text-3xl font-extrabold tracking-tight">Scoreboard</h1>
         <div className="flex items-center gap-3">
           <button onClick={() => shiftDay(-1)} className="text-foreground/82 hover:text-foreground">
             ← Prev
@@ -91,25 +92,41 @@ function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
       {games && games.length === 0 && <p className="text-foreground/72">No games on this date.</p>}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {games?.map((game) => (
-          <Link
-            key={game.espnId}
-            href={`/games/${game.espnId}`}
-            className="rounded-lg border border-border bg-surface p-4 hover:border-accent space-y-2"
-          >
-            <div className="flex items-center justify-between text-sm">
-              <span>{game.away.abbreviation}</span>
-              <span className="font-medium">{game.away.score ?? "-"}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span>{game.home.abbreviation}</span>
-              <span className="font-medium">{game.home.score ?? "-"}</span>
-            </div>
-            <div className="text-xs text-foreground/72 pt-1 border-t border-border">
-              {game.statusName === "STATUS_IN_PROGRESS" ? `Q${game.period} ${game.clock ?? ""}` : game.statusDetail}
-            </div>
-          </Link>
-        ))}
+        {games?.map((game) => {
+          const isLive = game.statusName === "STATUS_IN_PROGRESS";
+          return (
+            <Link
+              key={game.espnId}
+              href={`/games/${game.espnId}`}
+              className="group relative overflow-hidden rounded-lg bg-surface-muted p-4 space-y-2.5 transition-transform hover:-translate-y-0.5"
+            >
+              <div
+                className="pointer-events-none absolute inset-0 opacity-15 transition-opacity group-hover:opacity-25"
+                style={{
+                  background: `linear-gradient(135deg, ${game.away.color ?? "var(--color-accent)"}, ${game.home.color ?? "var(--color-accent)"})`,
+                }}
+              />
+              <div className="relative flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 font-semibold">
+                  <CircularBadge src={game.away.logoUrl} alt="" size="sm" />
+                  {game.away.abbreviation}
+                </span>
+                <span className="font-display text-xl font-extrabold tabular-nums">{game.away.score ?? "-"}</span>
+              </div>
+              <div className="relative flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 font-semibold">
+                  <CircularBadge src={game.home.logoUrl} alt="" size="sm" />
+                  {game.home.abbreviation}
+                </span>
+                <span className="font-display text-xl font-extrabold tabular-nums">{game.home.score ?? "-"}</span>
+              </div>
+              <div className="relative flex items-center gap-1.5 pt-1.5 text-xs font-medium text-foreground/60">
+                {isLive && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
+                {isLive ? `Q${game.period} ${game.clock ?? ""}` : game.statusDetail}
+              </div>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

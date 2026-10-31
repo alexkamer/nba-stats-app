@@ -3,13 +3,15 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { CircularBadge } from "@/components/CircularBadge";
 
 interface Player {
   id: number;
   displayName: string;
+  headshotUrl: string | null;
   jersey: string | null;
   position: { abbreviation: string } | null;
-  currentTeam: { abbreviation: string } | null;
+  currentTeam: { abbreviation: string; color: string | null } | null;
 }
 
 async function fetchPlayers(): Promise<Player[]> {
@@ -36,7 +38,7 @@ export default function PlayersPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Players</h1>
+      <h1 className="text-3xl font-extrabold tracking-tight">Players</h1>
       <input
         type="text"
         placeholder="Search by name or team…"
@@ -49,19 +51,26 @@ export default function PlayersPage() {
       {error && <p className="text-red-600 dark:text-red-400">Failed to load players.</p>}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-        {filtered.map((player) => (
-          <Link
-            key={player.id}
-            href={`/players/${player.id}`}
-            className="rounded-md border border-border bg-surface px-3 py-2 text-sm hover:border-accent"
-          >
-            <div>{player.displayName}</div>
-            <div className="text-foreground/72 text-xs">
-              {player.currentTeam?.abbreviation ?? "FA"}
-              {player.position && ` · ${player.position.abbreviation}`}
-            </div>
-          </Link>
-        ))}
+        {filtered.map((player) => {
+          const accent = player.currentTeam?.color ? `#${player.currentTeam.color}` : "var(--color-border)";
+          return (
+            <Link
+              key={player.id}
+              href={`/players/${player.id}`}
+              className="flex items-center gap-2.5 rounded-md bg-surface-muted px-3 py-2 text-sm transition-transform hover:-translate-y-0.5"
+              style={{ boxShadow: `inset 3px 0 0 0 ${accent}` }}
+            >
+              <CircularBadge src={player.headshotUrl} alt="" size="md" />
+              <div className="min-w-0">
+                <div className="truncate font-semibold">{player.displayName}</div>
+                <div className="text-foreground/60 text-xs">
+                  {player.currentTeam?.abbreviation ?? "FA"}
+                  {player.position && ` · ${player.position.abbreviation}`}
+                </div>
+              </div>
+            </Link>
+          );
+        })}
       </div>
       {players && filtered.length === 0 && <p className="text-foreground/72">No players match &ldquo;{search}&rdquo;.</p>}
     </div>

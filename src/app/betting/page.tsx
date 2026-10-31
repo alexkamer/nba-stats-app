@@ -4,6 +4,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { computeEdgeRatio } from "@lib/projections/confidence";
+import { StatBlock, ComparisonBar } from "@/components/StatBlock";
+import { CircularBadge } from "@/components/CircularBadge";
 
 interface TeamSummary {
   id: number;
@@ -194,21 +196,6 @@ function recommendedCount(game: UpcomingGame): number {
   return (showSpreadPick ? 1 : 0) + (game.projection?.totalBettable ? 1 : 0) + game.playerProps.filter((p) => p.bettable).length;
 }
 
-/** A single accuracy figure, in the same label/big-number/caption shape as
- * the player page's own HeroStat tiles — keeps this page's stat language
- * consistent with the rest of the app instead of a one-off text line. */
-function AccuracyTile({ label, bucket }: { label: string; bucket: AccuracyBucket }) {
-  return (
-    <div className="min-w-[9rem] rounded-md border border-border bg-surface px-3 py-2.5 text-center">
-      <p className="text-xs text-foreground/72">{label}</p>
-      <p className="text-xl font-bold text-foreground">{bucket.hitRate !== null ? `${(bucket.hitRate * 100).toFixed(0)}%` : "—"}</p>
-      <p className="text-xs text-foreground/60 tabular-nums">
-        {bucket.correct}/{bucket.graded}
-      </p>
-    </div>
-  );
-}
-
 function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
   const nothingGraded = accuracy.ourModel.overall.graded === 0 && accuracy.espnPredictor.graded === 0;
   if (nothingGraded) {
@@ -220,10 +207,24 @@ function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
   }
   return (
     <div className="flex flex-wrap gap-2">
-      <AccuracyTile label="Our model, this season" bucket={accuracy.ourModel.overall} />
-      <AccuracyTile label="ESPN's predictor" bucket={accuracy.espnPredictor} />
+      <StatBlock
+        label="Our model, this season"
+        value={accuracy.ourModel.overall.hitRate !== null ? `${(accuracy.ourModel.overall.hitRate * 100).toFixed(0)}%` : null}
+        caption={`${accuracy.ourModel.overall.correct}/${accuracy.ourModel.overall.graded}`}
+      />
+      <StatBlock
+        label="ESPN's predictor"
+        value={accuracy.espnPredictor.hitRate !== null ? `${(accuracy.espnPredictor.hitRate * 100).toFixed(0)}%` : null}
+        caption={`${accuracy.espnPredictor.correct}/${accuracy.espnPredictor.graded}`}
+      />
       {accuracy.ourModel.bettableProps.graded > 0 && (
-        <AccuracyTile label="Our high-confidence props" bucket={accuracy.ourModel.bettableProps} />
+        <StatBlock
+          label="Our high-confidence props"
+          value={
+            accuracy.ourModel.bettableProps.hitRate !== null ? `${(accuracy.ourModel.bettableProps.hitRate * 100).toFixed(0)}%` : null
+          }
+          caption={`${accuracy.ourModel.bettableProps.correct}/${accuracy.ourModel.bettableProps.graded}`}
+        />
       )}
     </div>
   );
@@ -234,9 +235,12 @@ function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
  * distinct from every number we project and track for grading. */
 function BettableMark() {
   return (
-    <span className="ml-1 text-accent" title="High-confidence pick" aria-label="High-confidence pick">
-      ●
-    </span>
+    <CircularBadge
+      alt="High-confidence pick"
+      size="xs"
+      className="ml-1"
+      fallback={<span className="h-full w-full rounded-full bg-accent" />}
+    />
   );
 }
 
@@ -244,24 +248,28 @@ function BettableMark() {
  * null (game hasn't gone FINAL and been graded yet). */
 function ResultMark({ correct }: { correct: boolean | null }) {
   if (correct === null) return null;
-  return correct ? (
-    <span className="ml-1 text-emerald-600 dark:text-emerald-400" title="Hit" aria-label="Hit">
-      ✓
-    </span>
-  ) : (
-    <span className="ml-1 text-red-600 dark:text-red-400" title="Miss" aria-label="Miss">
-      ✗
-    </span>
+  return (
+    <CircularBadge
+      alt={correct ? "Hit" : "Miss"}
+      size="xs"
+      className="ml-1"
+      fallback={
+        <span
+          className={`flex h-full w-full items-center justify-center rounded-full text-[9px] font-bold text-white ${
+            correct ? "bg-emerald-600 dark:bg-emerald-500" : "bg-red-600 dark:bg-red-500"
+          }`}
+        >
+          {correct ? "✓" : "✗"}
+        </span>
+      }
+    />
   );
 }
 
 function TeamLabel({ team }: { team: TeamSummary }) {
   return (
     <span className="inline-flex items-center gap-1.5 font-semibold">
-      {team.logoUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={team.logoUrl} alt="" className="h-5 w-5" />
-      )}
+      <CircularBadge src={team.logoUrl} alt="" size="sm" />
       {team.abbreviation}
     </span>
   );
@@ -270,18 +278,16 @@ function TeamLabel({ team }: { team: TeamSummary }) {
 /** A confidence reading shown as a short filled bar rather than just the raw
  * σ number — lets a row's edge be read at a glance, the same visual
  * language used for every confidence figure on this page (the best-bets
- * strip, a game's own pick rows, and its player props table). Capped at 3σ:
- * beyond that the bar is already full and the exact number stops mattering
- * for the "how much better is this than that" comparison the bar is for. */
+ * strip, a game's own pick rows, and its player props table), backed by the
+ * same `ComparisonBar` primitive `StatBlock` uses. Capped at 3σ: beyond that
+ * the bar is already full and the exact number stops mattering for the
+ * "how much better is this than that" comparison the bar is for. */
 function ConfidenceMeter({ edgeRatio, bettable }: { edgeRatio: number | null; bettable: boolean }) {
   const pct = edgeRatio !== null ? Math.min(edgeRatio / 3, 1) * 100 : 0;
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="h-1 w-8 rounded-full bg-border overflow-hidden shrink-0">
-        <span
-          className="block h-full rounded-full"
-          style={{ width: `${pct}%`, backgroundColor: bettable ? "var(--color-accent)" : "var(--color-border)" }}
-        />
+      <span className="w-8 shrink-0">
+        <ComparisonBar pct={pct} color={bettable ? "var(--color-accent)" : "var(--color-border)"} />
       </span>
       <span className="text-xs text-foreground/60 tabular-nums">{edgeRatio !== null ? `${edgeRatio.toFixed(1)}σ` : "—"}</span>
     </span>
@@ -814,7 +820,7 @@ export default function BettingPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Bettor&apos;s Heaven</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight">Bettor&apos;s Heaven</h1>
           <p className="text-foreground/72 text-sm mt-1">
             {isToday
               ? "Our own projections for today's games and player props, measured against the market."

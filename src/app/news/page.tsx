@@ -30,7 +30,7 @@ export default function NewsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">News</h1>
+      <h1 className="text-3xl font-extrabold tracking-tight">News</h1>
       <div className="space-y-3">
         {articles.map((article) => (
           // A plain div, not a link — the headline below is the (external)

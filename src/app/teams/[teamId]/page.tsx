@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Fragment, Suspense, useState } from "react";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
+import { FullBleed } from "@/components/FullBleed";
 import { getTeamAccent } from "@/lib/team-accent";
 
 interface SeasonInfo {
@@ -392,8 +393,8 @@ function TeamDetailContent() {
 
   return (
     <div className="space-y-8">
-      <div
-        className="relative left-1/2 right-1/2 -mx-[50vw] w-screen bg-surface border-b border-border"
+      <FullBleed
+        className="bg-surface border-b border-border"
         style={{ borderTopColor: accentColor, borderTopWidth: 4 }}
       >
         <div className="mx-auto max-w-6xl flex items-center gap-4 px-6 py-5 sm:py-6">
@@ -402,7 +403,7 @@ function TeamDetailContent() {
             <img src={team.logoUrl} alt={team.displayName} className="h-16 w-16" />
           )}
           <div>
-            <h1 className="text-2xl font-semibold">{team.displayName}</h1>
+            <h1 className="text-3xl font-extrabold tracking-tight">{team.displayName}</h1>
             <p className="text-foreground/82 text-sm">
               {standing
                 ? `${standing.wins}-${standing.losses} · ${ordinal(standing.divisionRank)} in ${team.division?.name} Division`
@@ -411,7 +412,7 @@ function TeamDetailContent() {
           </div>
         </div>
         <TabPager tabs={TEAM_TABS} activeTab={activeTab} onChange={setActiveTab} accentColor={accentColor} />
-      </div>
+      </FullBleed>
 
       {activeTab === "home" && (
         <div className="grid grid-cols-1 md:grid-cols-[220px_1fr_320px] gap-6">

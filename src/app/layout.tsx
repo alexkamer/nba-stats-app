@@ -1,11 +1,20 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Suspense } from "react";
+import { Inter, Barlow_Condensed, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { SiteNav } from "@/components/SiteNav";
+import { Sidebar } from "@/components/Sidebar";
+import { Breadcrumb, BreadcrumbProvider } from "@/components/Breadcrumb";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+});
+
+const barlowCondensed = Barlow_Condensed({
+  variable: "--font-barlow-condensed",
+  weight: ["600", "700", "800"],
   subsets: ["latin"],
 });
 
@@ -24,14 +33,26 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${barlowCondensed.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
+      <body className="min-h-full flex flex-col lg:flex-row bg-background text-foreground">
         <Providers>
-          <header className="border-b border-border px-6 py-4">
-            <SiteNav />
-          </header>
-          <main className="flex-1 px-6 py-6 max-w-6xl w-full mx-auto">{children}</main>
+          <BreadcrumbProvider>
+            <Sidebar />
+            <div className="flex-1 flex flex-col min-w-0">
+              <header className="bg-surface px-6 py-4 lg:hidden">
+                <SiteNav />
+              </header>
+              <main className="flex-1 px-6 py-6">
+                <div className="max-w-6xl w-full mx-auto">
+                  <Suspense fallback={<div className="h-5" aria-hidden="true" />}>
+                    <Breadcrumb />
+                  </Suspense>
+                  <div className="mt-4">{children}</div>
+                </div>
+              </main>
+            </div>
+          </BreadcrumbProvider>
         </Providers>
       </body>
     </html>

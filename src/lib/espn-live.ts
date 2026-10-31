@@ -22,6 +22,9 @@ interface EspnScoreboardTeam {
   id: string;
   abbreviation: string;
   displayName: string;
+  color?: string;
+  alternateColor?: string;
+  logos?: { href: string }[];
 }
 
 interface EspnScoreboardEvent {
@@ -443,8 +446,16 @@ export interface ScoreboardGameCard {
   statusDetail: string;
   period: number | null;
   clock: string | null;
-  home: { espnId: string; abbreviation: string; displayName: string; score: number | null };
-  away: { espnId: string; abbreviation: string; displayName: string; score: number | null };
+  home: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null };
+  away: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null };
+}
+
+// ESPN's scoreboard endpoint doesn't include each competitor's logo (unlike
+// the richer summary endpoint LiveGameDetail reads from) — but team logos
+// at this CDN path are predictable from the abbreviation alone, matching
+// what's already stored as each DB team's own logoUrl (e.g. .../atl.png).
+function teamLogoUrl(abbreviation: string): string {
+  return `https://a.espncdn.com/i/teamlogos/nba/500/${abbreviation.toLowerCase()}.png`;
 }
 
 export async function getScoreboard(date: string): Promise<ScoreboardGameCard[]> {
@@ -469,12 +480,16 @@ export async function getScoreboard(date: string): Promise<ScoreboardGameCard[]>
         abbreviation: home!.team.abbreviation,
         displayName: home!.team.displayName,
         score: !isScheduled && home!.score !== undefined ? Number(home!.score) : null,
+        logoUrl: home!.team.logos?.[0]?.href ?? teamLogoUrl(home!.team.abbreviation),
+        color: home!.team.color ? `#${home!.team.color}` : null,
       },
       away: {
         espnId: away!.team.id,
         abbreviation: away!.team.abbreviation,
         displayName: away!.team.displayName,
         score: !isScheduled && away!.score !== undefined ? Number(away!.score) : null,
+        logoUrl: away!.team.logos?.[0]?.href ?? teamLogoUrl(away!.team.abbreviation),
+        color: away!.team.color ? `#${away!.team.color}` : null,
       },
     };
   });

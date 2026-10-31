@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 import { Suspense, useState, type ReactNode } from "react";
 import { SectionCard } from "@/components/SectionCard";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
+import { FullBleed } from "@/components/FullBleed";
 import { getTeamAccent } from "@/lib/team-accent";
 
 interface PlayerDetail {
@@ -356,8 +357,8 @@ function PlayerDetailContent() {
 
   return (
     <div className="space-y-8">
-      <div
-        className="relative left-1/2 right-1/2 -mx-[50vw] w-screen bg-surface border-b border-border"
+      <FullBleed
+        className="bg-surface border-b border-border"
         style={{ borderTopColor: accentColor, borderTopWidth: 4 }}
       >
         <div className="mx-auto max-w-6xl grid grid-cols-1 lg:grid-cols-[1.5fr_0.8fr_1.1fr] gap-6 px-6 py-4">
@@ -450,7 +451,7 @@ function PlayerDetailContent() {
         </div>
         <NextGameBar nextGame={nextGame} player={player} accentColor={accentColor} />
         <TabPager tabs={PLAYER_TABS} activeTab={activeTab} onChange={setActiveTab} accentColor={accentColor} />
-      </div>
+      </FullBleed>
 
       {activeTab === "overview" && (
         <OverviewTab
