@@ -86,13 +86,24 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
     const statType: PropStatType =
       statParam && liveStatTypes.includes(statParam as PropStatType) ? (statParam as PropStatType) : liveStatTypes[0];
 
+    // Today's line per live stat type — same derivation as `line` below,
+    // computed for every tracked stat so the grid can grade each of its
+    // columns, not just the selected one.
+    const lineByStatType = new Map<PropStatType, number | null>();
+    for (const stat of liveStatTypes) {
+      const rows = livePropOdds.filter((p) => p.statType === stat);
+      const over = rows.find((p) => p.side === "OVER");
+      const under = rows.find((p) => p.side === "UNDER");
+      lineByStatType.set(stat, over?.line ?? under?.line ?? null);
+    }
+
     const rowsForStat = livePropOdds.filter((p) => p.statType === statType);
     const representative = rowsForStat[0];
     const game = representative.game;
     const player = representative.player;
     const overRow = rowsForStat.find((p) => p.side === "OVER");
     const underRow = rowsForStat.find((p) => p.side === "UNDER");
-    const line = overRow?.line ?? underRow?.line ?? null;
+    const line = lineByStatType.get(statType) ?? null;
     const projectionRow = rowsForStat.map((p) => p.projection).find((p) => p != null) ?? null;
 
     const isHomeToday = player.currentTeamId === game.homeTeamId;
@@ -139,12 +150,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
       };
     });
 
-    const filteredHistory = fullHistory.filter((g) => {
+    const filterPredicate = (g: { isHome: boolean; opponent: { id: number } }) => {
       if (filter === "home") return g.isHome;
       if (filter === "away") return !g.isHome;
       if (filter === "opponent") return g.opponent.id === opponentTeam.id;
       return true;
-    });
+    };
+
+    const filteredHistory = fullHistory.filter(filterPredicate);
     const filteredResults = filteredHistory.map((g) => g.result).filter((r): r is PropResult => r !== null);
     const hitRates = {
       l5: summarizeWindow(filteredResults, 5),
@@ -152,6 +165,30 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
       l20: summarizeWindow(filteredResults, 20),
       season: summarizeWindow(filteredResults, null),
     };
+
+    // Grid rows: same filtered set of games as the chart/hit-rates above,
+    // but with one cell per live stat type instead of just the selected
+    // one — lets the research page show a player's full prop board at
+    // once instead of requiring a stat switch per column.
+    const grid = historyRows
+      .map((row) => {
+        const raw: RawPlayerGameRow = row;
+        const isHome = row.teamId === row.game.homeTeamId;
+        const opponent = isHome ? row.game.awayTeam : row.game.homeTeam;
+        return { row, raw, isHome, opponent };
+      })
+      .filter(filterPredicate)
+      .map(({ row, raw, isHome, opponent }) => ({
+        gameEspnId: row.game.espnId,
+        date: row.game.date,
+        isHome,
+        opponent,
+        cells: liveStatTypes.map((stat) => {
+          const value = extractStatValue(stat, raw);
+          const statLine = lineByStatType.get(stat) ?? null;
+          return { statType: stat, value, result: statLine !== null ? compareToLine(value, statLine) : null };
+        }),
+      }));
 
     return NextResponse.json({
       player: { id: player.id, espnId: player.espnId, displayName: player.displayName, headshotUrl: player.headshotUrl },
@@ -168,6 +205,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
       filter,
       history: filteredHistory,
       hitRates,
+      grid,
     });
   } catch (error) {
     console.error(`GET /api/betting/research/${playerIdParam} failed:`, error);

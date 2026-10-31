@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { computeEdgeRatio } from "@lib/projections/confidence";
 
 interface TeamSummary {
   id: number;
@@ -168,101 +167,6 @@ function spreadValueSide(ourMargin: number, marketMargin: number): "home" | "awa
   return ourMargin > marketMargin ? "home" : "away";
 }
 
-type PickKind = "spread" | "total" | "prop";
-
-interface RecommendedPick {
-  key: string;
-  kind: PickKind;
-  game: UpcomingGame;
-  label: string;
-  statLabel: string;
-  pickText: string;
-  ourNumber: number;
-  edgeRatio: number | null;
-  // Only set for `kind === "prop"` — lets the row link to that player's
-  // research page. Spread/total picks aren't tied to a single player.
-  playerId?: number;
-  statType?: string;
-  // null until the game goes FINAL and this pick is graded (see
-  // prediction-accuracy-tracking) — never recomputed with hindsight.
-  gradedCorrect: boolean | null;
-  // American odds for this pick's side — spread/total pull from the
-  // game's Odds row (homeSpreadOdds/awaySpreadOdds/overOdds/underOdds),
-  // props from their own PlayerPropOdds row.
-  odds: number | null;
-}
-
-/** Every pick on the slate that clears the confidence bar (see
- * lib/projections/confidence.ts), across every game — spreads, totals, and
- * player props alike — sorted by how confident each one is. This is the
- * page's actual recommendation list; everything else is supporting detail. */
-function buildRecommendedPicks(games: UpcomingGame[]): RecommendedPick[] {
-  const picks: RecommendedPick[] = [];
-
-  for (const game of games) {
-    if (game.projection && game.market?.spread != null) {
-      const marketMargin = -game.market.spread;
-      const side = spreadValueSide(game.projection.projectedMargin, marketMargin);
-      if (side !== null && game.projection.spreadBettable) {
-        const team = side === "home" ? game.homeTeam : game.awayTeam;
-        const marketSideSpread = side === "home" ? game.market.spread : -game.market.spread;
-        const ourSideSpread = side === "home" ? -game.projection.projectedMargin : game.projection.projectedMargin;
-        picks.push({
-          key: `${game.espnId}-spread`,
-          kind: "spread",
-          game,
-          label: team.abbreviation,
-          statLabel: "Spread",
-          pickText: formatSigned(marketSideSpread),
-          ourNumber: ourSideSpread,
-          edgeRatio: computeEdgeRatio(game.projection.projectedMargin, marketMargin, game.projection.marginStdev),
-          gradedCorrect: game.projection.gradedSpreadCorrect,
-          odds: side === "home" ? game.market.homeSpreadOdds : game.market.awaySpreadOdds,
-        });
-      }
-    }
-
-    if (game.projection && game.market?.overUnder != null && game.projection.totalBettable) {
-      const ourTotal = game.projection.projectedHomeScore + game.projection.projectedAwayScore;
-      const lean = totalLean(ourTotal, game.market.overUnder);
-      if (lean !== "PUSH") {
-        picks.push({
-          key: `${game.espnId}-total`,
-          kind: "total",
-          game,
-          label: "Total",
-          statLabel: "O/U",
-          pickText: formatLine(lean, game.market.overUnder),
-          ourNumber: ourTotal,
-          edgeRatio: computeEdgeRatio(ourTotal, game.market.overUnder, game.projection.totalStdev),
-          gradedCorrect: game.projection.gradedTotalCorrect,
-          odds: lean === "OVER" ? game.market.overOdds : game.market.underOdds,
-        });
-      }
-    }
-
-    for (const prop of game.playerProps) {
-      if (!prop.bettable) continue;
-      picks.push({
-        key: `${game.espnId}-${prop.playerId}-${prop.statType}`,
-        kind: "prop",
-        game,
-        label: prop.playerName,
-        statLabel: STAT_LABELS[prop.statType] ?? prop.statType,
-        pickText: formatLine(prop.lean, prop.line),
-        ourNumber: prop.projectedValue,
-        edgeRatio: computeEdgeRatio(prop.projectedValue, prop.line, prop.stdev),
-        playerId: prop.playerId,
-        statType: prop.statType,
-        gradedCorrect: prop.gradedCorrect,
-        odds: prop.odds,
-      });
-    }
-  }
-
-  return picks.sort((a, b) => (b.edgeRatio ?? 0) - (a.edgeRatio ?? 0));
-}
-
 function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
   const nothingGraded = accuracy.ourModel.overall.graded === 0 && accuracy.espnPredictor.graded === 0;
   if (nothingGraded) {
@@ -374,90 +278,6 @@ function SegmentedToggle<T extends string>({
   );
 }
 
-function RecommendedPicksTable({ picks }: { picks: RecommendedPick[] }) {
-  const [filter, setFilter] = useState<"all" | "game" | "prop">("all");
-  const filtered = picks.filter((p) => {
-    if (filter === "all") return true;
-    if (filter === "game") return p.kind === "spread" || p.kind === "total";
-    return p.kind === "prop";
-  });
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-medium text-foreground/82">Recommended picks</h2>
-        <SegmentedToggle
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: "all", label: "All" },
-            { value: "game", label: "Spread & total" },
-            { value: "prop", label: "Props" },
-          ]}
-        />
-      </div>
-      {filtered.length === 0 ? (
-        <p className="text-sm text-foreground/72">
-          Nothing clears our confidence bar yet for this filter — check back as more lines come in.
-        </p>
-      ) : (
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="text-left text-foreground/72">
-              <th className="pb-2 font-normal">Game</th>
-              <th className="pb-2 font-normal">Market</th>
-              <th className="pb-2 font-normal">Pick</th>
-              <th className="pb-2 text-right font-normal">Line</th>
-              <th className="pb-2 text-right font-normal">Odds</th>
-              <th className="pb-2 text-right font-normal">Our number</th>
-              <th className="pb-2 text-right font-normal">Confidence</th>
-              <th className="pb-2 text-right font-normal">Result</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((pick) => (
-              <tr key={pick.key} className="border-t border-border/60">
-                <td className="py-1.5">
-                  <a href={`#game-${pick.game.espnId}`} className="inline-flex items-center gap-1 hover:text-accent">
-                    <TeamLabel team={pick.game.awayTeam} />
-                    <span className="text-foreground/72">@</span>
-                    <TeamLabel team={pick.game.homeTeam} />
-                  </a>
-                </td>
-                <td className="py-1.5 text-foreground/72">{pick.statLabel}</td>
-                <td className="py-1.5 font-medium">
-                  {pick.playerId != null && pick.statType ? (
-                    <Link href={`/betting/research/${pick.playerId}?stat=${pick.statType}`} className="hover:text-accent">
-                      {pick.label}
-                    </Link>
-                  ) : (
-                    pick.label
-                  )}
-                </td>
-                <td className="py-1.5 text-right font-semibold">{pick.pickText}</td>
-                <td className="py-1.5 text-right text-foreground/72">{formatOdds(pick.odds)}</td>
-                <td className="py-1.5 text-right text-foreground/72">{pick.ourNumber.toFixed(1)}</td>
-                <td className="py-1.5 text-right">
-                  {pick.edgeRatio !== null ? <span className="text-accent font-medium">{pick.edgeRatio.toFixed(1)}σ</span> : "—"}
-                </td>
-                <td className="py-1.5 text-right">
-                  {pick.gradedCorrect === null ? (
-                    <span className="text-foreground/72">—</span>
-                  ) : (
-                    <span className={pick.gradedCorrect ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}>
-                      {pick.gradedCorrect ? "Hit" : "Miss"}
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
 function GameCard({ game }: { game: UpcomingGame }) {
   const [propsView, setPropsView] = useState<"all" | "recommended">("all");
 
@@ -524,7 +344,9 @@ function GameCard({ game }: { game: UpcomingGame }) {
               <td className="py-1.5 text-foreground/82">Our pick</td>
               {ourSpread ? (
                 <>
-                  <td className={`py-1.5 text-right ${showSpreadPick && spreadValue === "away" ? "font-semibold text-foreground" : ""}`}>
+                  <td
+                    className={`py-1.5 text-right ${showSpreadPick && spreadValue === "away" ? "font-semibold text-foreground bg-accent/10" : ""}`}
+                  >
                     {formatSigned(ourSpread.away)}
                     {spreadValue === "away" && (
                       <span className="text-foreground/60 text-xs"> {formatOdds(game.market?.awaySpreadOdds ?? null)}</span>
@@ -532,7 +354,9 @@ function GameCard({ game }: { game: UpcomingGame }) {
                     {showSpreadPick && spreadValue === "away" && <BettableMark />}
                     {spreadValue === "away" && <ResultMark correct={game.projection?.gradedSpreadCorrect ?? null} />}
                   </td>
-                  <td className={`py-1.5 text-right ${showSpreadPick && spreadValue === "home" ? "font-semibold text-foreground" : ""}`}>
+                  <td
+                    className={`py-1.5 text-right ${showSpreadPick && spreadValue === "home" ? "font-semibold text-foreground bg-accent/10" : ""}`}
+                  >
                     {formatSigned(ourSpread.home)}
                     {spreadValue === "home" && (
                       <span className="text-foreground/60 text-xs"> {formatOdds(game.market?.homeSpreadOdds ?? null)}</span>
@@ -546,7 +370,7 @@ function GameCard({ game }: { game: UpcomingGame }) {
                   Not enough history yet
                 </td>
               )}
-              <td className="py-1.5 text-right pl-4">
+              <td className={`py-1.5 text-right pl-4 ${game.projection?.totalBettable ? "bg-accent/10" : ""}`}>
                 {ourTotal !== null
                   ? game.market?.overUnder != null
                     ? formatLine(totalLean(ourTotal, game.market.overUnder), ourTotal)
@@ -646,7 +470,7 @@ function GameCard({ game }: { game: UpcomingGame }) {
                     {CORE_STAT_TYPES.map((statType) => {
                       const prop = player.cells.get(statType);
                       return (
-                        <td key={statType} className="py-1.5 text-right">
+                        <td key={statType} className={`py-1.5 text-right ${prop?.bettable ? "bg-accent/10" : ""}`}>
                           {prop ? (
                             <Link
                               href={`/betting/research/${prop.playerId}?stat=${prop.statType}`}
@@ -688,22 +512,38 @@ function startOfToday(): Date {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
 /** Prev/next-day stepper plus a jump back to today — lets a user walk
  * back through past slates to see which picks hit vs. missed, without
  * leaving the page. Next day is disabled once at today: results-shaped
- * data for the future doesn't exist yet. */
-function DayNav({ date, onChange }: { date: Date; onChange: (date: Date) => void }) {
-  const isToday = toDateParam(date) === toDateParam(startOfToday());
-  const shift = (days: number) => {
-    const next = new Date(date);
-    next.setDate(next.getDate() + days);
-    onChange(next);
-  };
+ * data for the future doesn't exist yet.
+ *
+ * Takes `isToday`/`onShift`/`onJumpToday` rather than computing "today"
+ * itself — constructing `new Date()` during a client component's render
+ * trips Next's blocking-prerender-current-time-client check, so the
+ * caller derives "today" once in an effect and this component stays a
+ * pure function of its props. */
+function DayNav({
+  date,
+  isToday,
+  onShift,
+  onJumpToday,
+}: {
+  date: Date;
+  isToday: boolean;
+  onShift: (days: number) => void;
+  onJumpToday: () => void;
+}) {
   return (
     <div className="flex items-center gap-2 text-sm">
       <button
         type="button"
-        onClick={() => shift(-1)}
+        onClick={() => onShift(-1)}
         className="rounded-md border border-border px-2.5 py-1 hover:border-foreground/50"
       >
         ← Prev day
@@ -713,14 +553,14 @@ function DayNav({ date, onChange }: { date: Date; onChange: (date: Date) => void
       </span>
       <button
         type="button"
-        onClick={() => shift(1)}
+        onClick={() => onShift(1)}
         disabled={isToday}
         className="rounded-md border border-border px-2.5 py-1 hover:border-foreground/50 disabled:opacity-40 disabled:hover:border-border"
       >
         Next day →
       </button>
       {!isToday && (
-        <button type="button" onClick={() => onChange(startOfToday())} className="text-accent hover:underline">
+        <button type="button" onClick={onJumpToday} className="text-accent hover:underline">
           Jump to today
         </button>
       )}
@@ -729,18 +569,35 @@ function DayNav({ date, onChange }: { date: Date; onChange: (date: Date) => void
 }
 
 export default function BettingPage() {
-  const [selectedDate, setSelectedDate] = useState<Date>(startOfToday);
-  const dateParam = toDateParam(selectedDate);
-  const isToday = dateParam === toDateParam(startOfToday());
+  // "Today" is only known once this effect runs — computing `new Date()`
+  // directly during render is flagged by Next as an unstable prerender
+  // value (see Next's blocking-prerender-current-time-client guidance).
+  // `dayOffset` (days away from today) needs no Date at all, so render
+  // stays deterministic until `today` is set.
+  const [today, setToday] = useState<Date | null>(null);
+  const [dayOffset, setDayOffset] = useState(0);
+  useEffect(() => {
+    setToday(startOfToday());
+  }, []);
+
+  const selectedDate = today ? addDays(today, dayOffset) : null;
+  const dateParam = selectedDate ? toDateParam(selectedDate) : null;
+  const isToday = dayOffset === 0;
 
   const {
     data: games,
     isLoading: gamesLoading,
     error: gamesError,
-  } = useQuery({ queryKey: ["betting", "upcoming", dateParam], queryFn: () => fetchUpcoming(dateParam) });
+  } = useQuery({
+    queryKey: ["betting", "upcoming", dateParam],
+    queryFn: () => fetchUpcoming(dateParam!),
+    enabled: dateParam !== null,
+  });
   const { data: accuracy } = useQuery({ queryKey: ["betting", "accuracy"], queryFn: fetchAccuracy });
 
-  const recommendedPicks = useMemo(() => (games ? buildRecommendedPicks(games) : []), [games]);
+  if (!selectedDate) {
+    return <p className="text-foreground/82">Loading…</p>;
+  }
 
   return (
     <div className="space-y-6">
@@ -753,7 +610,12 @@ export default function BettingPage() {
               : "How our picks actually did, graded against the final result."}
           </p>
         </div>
-        <DayNav date={selectedDate} onChange={setSelectedDate} />
+        <DayNav
+          date={selectedDate}
+          isToday={isToday}
+          onShift={(days) => setDayOffset((offset) => offset + days)}
+          onJumpToday={() => setDayOffset(0)}
+        />
       </div>
 
       {accuracy && <AccuracyStrip accuracy={accuracy} />}
@@ -765,8 +627,6 @@ export default function BettingPage() {
           {isToday ? "No games scheduled today — check back on game day." : "No games that day."}
         </p>
       )}
-
-      {games && games.length > 0 && <RecommendedPicksTable picks={recommendedPicks} />}
 
       <div className="space-y-4">
         {games?.map((game) => (

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, type ReactNode } from "react";
+import { Suspense, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
@@ -37,6 +37,20 @@ interface HitRateSummary {
   sampleSizeNote: string | null;
 }
 
+interface GridCell {
+  statType: string;
+  value: number;
+  result: PropResult | null;
+}
+
+interface GridRow {
+  gameEspnId: string;
+  date: string;
+  isHome: boolean;
+  opponent: TeamSummary;
+  cells: GridCell[];
+}
+
 interface ResearchData {
   player: { id: number; espnId: string; displayName: string; headshotUrl: string | null };
   game: { espnId: string; date: string; isHomeToday: boolean };
@@ -50,6 +64,7 @@ interface ResearchData {
   filter: ResearchFilter;
   history: HistoryGame[];
   hitRates: { l5: HitRateSummary; l10: HitRateSummary; l20: HitRateSummary; season: HitRateSummary };
+  grid: GridRow[];
 }
 
 type ResearchResponse = { notFound: true } | ResearchData;
@@ -324,6 +339,84 @@ function HistoryChart({
   );
 }
 
+/** The page's primary history view: one row per recent game, one column
+ * per the player's live tracked stat types, each cell tinted over/under/
+ * push against today's line for that column — lets a user see a player's
+ * whole prop board at once instead of switching stats to see each one
+ * (see player-prop-research-page spec, "Multi-stat hit-rate grid"). */
+function HitRateGrid({
+  rows,
+  statTypes,
+  selectedStat,
+  onSelectStat,
+  accentColor,
+}: {
+  rows: GridRow[];
+  statTypes: string[];
+  selectedStat: string;
+  onSelectStat: (stat: string) => void;
+  accentColor: string;
+}) {
+  const games = rows.slice(0, CHART_GAMES);
+
+  if (games.length === 0) {
+    return (
+      <p className="text-sm text-foreground/72 py-10 text-center">No games to show for this filter — try a different split.</p>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="text-left text-foreground/72">
+            <th className="pb-2 pr-3 font-normal">Game</th>
+            {statTypes.map((stat) => (
+              <th key={stat} className="pb-2 text-right font-normal">
+                <button
+                  type="button"
+                  onClick={() => onSelectStat(stat)}
+                  className="rounded px-1.5 py-0.5 font-medium transition-colors"
+                  style={stat === selectedStat ? { color: accentColor } : undefined}
+                >
+                  {STAT_LABELS[stat] ?? stat}
+                </button>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {games.map((row) => (
+            <tr key={row.gameEspnId} className="border-t border-border/60">
+              <td className="py-1.5 pr-3 text-foreground/72 whitespace-nowrap">
+                {dateTick(row.date)} {row.isHome ? "vs" : "@"} {row.opponent.abbreviation}
+              </td>
+              {row.cells.map((cell) => (
+                <td
+                  key={cell.statType}
+                  className="py-1.5 text-right"
+                  style={cell.statType === selectedStat ? { backgroundColor: `${accentColor}14` } : undefined}
+                >
+                  <span
+                    className="inline-block min-w-[1.75rem] rounded px-1.5 py-0.5 font-medium"
+                    style={
+                      cell.result
+                        ? { backgroundColor: `${resultColor(cell.result)}26`, color: resultColor(cell.result) }
+                        : undefined
+                    }
+                  >
+                    {cell.value}
+                  </span>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function HitRateChip({ label, summary, accentColor }: { label: string; summary: HitRateSummary; accentColor: string }) {
   const rate = summary.games > 0 ? Math.round((summary.over / summary.games) * 100) : null;
   const barColor = rate === null ? "var(--border)" : rate >= 55 ? "var(--color-emerald-500, #10b981)" : rate <= 45 ? "var(--color-red-500, #ef4444)" : accentColor;
@@ -339,15 +432,6 @@ function HitRateChip({ label, summary, accentColor }: { label: string; summary: 
         {summary.push > 0 ? `-${summary.push}` : ""}
       </div>
       {summary.sampleSizeNote && <div className="text-[10px] text-foreground/60 mt-0.5">{summary.sampleSizeNote}</div>}
-    </div>
-  );
-}
-
-function SummaryTile({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="rounded-md border border-border bg-surface px-3 py-2.5 text-center">
-      <div className="text-xs text-foreground/72">{label}</div>
-      <div className="text-lg font-semibold text-foreground">{value}</div>
     </div>
   );
 }
@@ -394,6 +478,11 @@ function PlayerPropResearchContent() {
 
   const { accent: accentColor, accentForeground } = getTeamAccent(data.team.color, resolvedTheme === "dark" ? "dark" : "light");
   const statOptions = [data.statType, ...data.otherStatTypes].map((s) => ({ value: s, label: STAT_LABELS[s] ?? s }));
+  // The grid's column order must match `row.cells`' fixed order from the
+  // API (independent of which stat is selected) — `statOptions` always
+  // puts the selected stat first, which would reorder the headers out of
+  // step with the (unreordered) cells underneath them.
+  const gridStatTypes = data.grid[0]?.cells.map((cell) => cell.statType) ?? statOptions.map((s) => s.value);
   const edgeRatio = data.projection ? computeEdgeRatio(data.projection.projectedValue, data.line, data.projection.stdev) : null;
   const [firstName, ...lastNameParts] = data.player.displayName.trim().split(/\s+/);
   const lastName = lastNameParts.join(" ");
@@ -401,75 +490,50 @@ function PlayerPropResearchContent() {
   return (
     <div className="space-y-6">
       <div
-        className="relative left-1/2 right-1/2 -mx-[50vw] w-screen bg-surface border-b border-border"
-        style={{ borderTopColor: accentColor, borderTopWidth: 4 }}
+        className="sticky top-0 z-10 -mx-6 bg-surface border-b border-border"
+        style={{ borderTopColor: accentColor, borderTopWidth: 3 }}
       >
-        <div className="mx-auto max-w-6xl grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-6 px-4 sm:px-6 py-5">
-          <div className="flex items-stretch gap-3 sm:gap-5">
-            <div
-              className="relative -my-5 h-[calc(100%+2.5rem)] w-20 sm:w-28 shrink-0 overflow-hidden"
-              style={{ background: `linear-gradient(135deg, ${accentColor}99, var(--surface))` }}
-            >
-              {data.team.logoUrl && (
+        <div className="flex flex-wrap items-center gap-3 px-6 py-2.5">
+          <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-muted">
+            {data.player.headshotUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={data.player.headshotUrl} alt={data.player.displayName} className="h-full w-full object-cover" />
+            ) : (
+              data.team.logoUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={data.team.logoUrl}
-                  alt=""
-                  className="absolute left-[4%] top-[34%] h-[115%] w-[95%] -translate-y-1/2 object-contain opacity-60"
-                />
-              )}
-              {data.player.headshotUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={data.player.headshotUrl}
-                  alt={data.player.displayName}
-                  className="absolute right-0 bottom-0 h-full w-full object-contain"
-                  style={{ objectPosition: "bottom right" }}
-                />
-              )}
-            </div>
-            <div className="flex flex-1 flex-col justify-center gap-1.5 min-w-0">
-              <h1 className="leading-tight">
-                <span className="block text-sm font-light tracking-widest text-foreground/92 uppercase">{firstName}</span>
-                <Link href={`/players/${data.player.espnId}`} className="block text-3xl font-bold tracking-wide text-foreground uppercase hover:text-accent">
-                  {lastName}
-                </Link>
-              </h1>
-              <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-foreground/82 min-w-0">
-                <Link href={`/teams/${data.team.id}`} className="flex items-center gap-1.5 hover:text-foreground">
-                  {data.team.logoUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={data.team.logoUrl} alt="" className="h-4 w-4 shrink-0" />
-                  )}
-                  <span className="whitespace-nowrap">{data.team.name}</span>
-                </Link>
-                <span className="text-foreground/50">·</span>
-                <span className="whitespace-nowrap">{data.game.isHomeToday ? "vs" : "@"} {data.opponent.abbreviation}</span>
-                <span className="text-foreground/50">·</span>
-                <span className="whitespace-nowrap">
-                  {new Date(data.game.date).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric" })}
-                </span>
-              </p>
-            </div>
+                <img src={data.team.logoUrl} alt="" className="h-full w-full object-contain p-1" />
+              )
+            )}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 content-center">
-            <SummaryTile label={STAT_LABELS[data.statType] ?? data.statType} value={data.line !== null ? formatLine(data.line) : "—"} />
-            <SummaryTile label="Odds (o / u)" value={`${formatOdds(data.odds.over)} / ${formatOdds(data.odds.under)}`} />
-            <SummaryTile
-              label="Our Projection"
-              value={
-                data.projection ? (
-                  <span className="inline-flex items-center gap-1">
-                    {formatLine(data.projection.projectedValue)}
-                    {data.projection.bettable && <span style={{ color: accentColor }}>●</span>}
-                  </span>
-                ) : (
-                  "—"
-                )
-              }
-            />
-            <SummaryTile label="Confidence" value={edgeRatio !== null ? `${edgeRatio.toFixed(1)}σ` : "—"} />
+          <div className="flex flex-1 flex-col min-w-0 leading-tight">
+            <Link href={`/players/${data.player.espnId}`} className="truncate font-semibold text-foreground hover:text-accent">
+              {firstName} {lastName}
+            </Link>
+            <span className="truncate text-xs text-foreground/72">
+              {data.team.abbreviation} {data.game.isHomeToday ? "vs" : "@"} {data.opponent.abbreviation} ·{" "}
+              {new Date(data.game.date).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-4 text-sm basis-full sm:basis-auto sm:shrink-0">
+            <span className="text-foreground/72">
+              {STAT_LABELS[data.statType] ?? data.statType}{" "}
+              <span className="font-semibold text-foreground">{data.line !== null ? formatLine(data.line) : "—"}</span>
+            </span>
+            <span className="hidden sm:inline text-foreground/72">
+              Odds <span className="font-medium text-foreground">{formatOdds(data.odds.over)} / {formatOdds(data.odds.under)}</span>
+            </span>
+            <span className="hidden sm:inline text-foreground/72">
+              Our #{" "}
+              <span className="font-medium text-foreground">
+                {data.projection ? formatLine(data.projection.projectedValue) : "—"}
+              </span>
+              {data.projection?.bettable && <span style={{ color: accentColor }}> ●</span>}
+            </span>
+            <span className="text-foreground/72">
+              Confidence <span className="font-medium" style={{ color: accentColor }}>{edgeRatio !== null ? `${edgeRatio.toFixed(1)}σ` : "—"}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -501,7 +565,20 @@ function PlayerPropResearchContent() {
             <HitRateChip label="Season" summary={data.hitRates.season} accentColor={accentColor} />
           </div>
 
-          <HistoryChart history={data.history} line={data.line} projection={data.projection?.projectedValue ?? null} accentColor={accentColor} />
+          <HitRateGrid
+            rows={data.grid}
+            statTypes={gridStatTypes}
+            selectedStat={data.statType}
+            onSelectStat={setStat}
+            accentColor={accentColor}
+          />
+
+          <details className="mt-5">
+            <summary className="cursor-pointer text-sm font-medium text-foreground/72 hover:text-foreground">
+              Trend chart — {STAT_LABELS[data.statType] ?? data.statType}
+            </summary>
+            <HistoryChart history={data.history} line={data.line} projection={data.projection?.projectedValue ?? null} accentColor={accentColor} />
+          </details>
         </SectionCard>
       </div>
     </div>
