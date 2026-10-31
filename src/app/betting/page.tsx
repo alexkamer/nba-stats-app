@@ -545,11 +545,14 @@ function GameCard({ game }: { game: UpcomingGame }) {
         <PickRow
           label="Spread"
           mainLabel={
-            ourSpread && spreadValue
+            ourSpread && marketSpread && spreadValue
               ? (
                   <span className="inline-flex items-center gap-1.5">
                     <TeamLabel team={spreadValue === "home" ? game.homeTeam : game.awayTeam} />
-                    {formatSigned(spreadValue === "home" ? ourSpread.home : ourSpread.away)}
+                    {formatSigned(spreadValue === "home" ? marketSpread.home : marketSpread.away)}
+                    <span className="text-sm font-normal text-foreground/60">
+                      ({formatSigned(spreadValue === "home" ? ourSpread.home : ourSpread.away)})
+                    </span>
                   </span>
                 )
               : null
@@ -561,7 +564,18 @@ function GameCard({ game }: { game: UpcomingGame }) {
         />
         <PickRow
           label="Total"
-          mainLabel={ourTotal !== null ? (ourTotalLean ? formatLine(ourTotalLean, ourTotal) : ourTotal.toFixed(1)) : null}
+          mainLabel={
+            ourTotal !== null
+              ? ourTotalLean && game.market?.overUnder != null
+                ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      {formatLine(ourTotalLean, game.market.overUnder)}
+                      <span className="text-sm font-normal text-foreground/60">({ourTotal.toFixed(1)})</span>
+                    </span>
+                  )
+                : ourTotal.toFixed(1)
+              : null
+          }
           odds={ourTotalLean === "OVER" ? game.market?.overOdds ?? null : ourTotalLean === "UNDER" ? game.market?.underOdds ?? null : null}
           edgeRatio={totalEdgeRatio}
           bettable={Boolean(game.projection?.totalBettable)}
