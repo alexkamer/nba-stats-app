@@ -48,6 +48,9 @@ interface GridRow {
   date: string;
   isHome: boolean;
   opponent: TeamSummary;
+  minutes: number | null;
+  fgMade: number | null;
+  fgAtt: number | null;
   cells: GridCell[];
 }
 
@@ -403,6 +406,8 @@ function HitRateGrid({
         <thead>
           <tr className="text-left text-foreground/72">
             <th className="pb-2 pr-3 font-normal">Game</th>
+            <th className="pb-2 pr-3 text-right font-normal">MIN</th>
+            <th className="pb-2 pr-3 text-right font-normal">FG</th>
             {statTypes.map((stat) => (
               <th key={stat} className="pb-2 text-right font-normal">
                 <button
@@ -423,6 +428,10 @@ function HitRateGrid({
             <tr key={row.gameEspnId} className="border-t border-border/60">
               <td className="py-1.5 pr-3 text-foreground/72 whitespace-nowrap">
                 {dateTick(row.date)} {row.isHome ? "vs" : "@"} {row.opponent.abbreviation}
+              </td>
+              <td className="py-1.5 pr-3 text-right text-foreground/82">{row.minutes ?? "—"}</td>
+              <td className="py-1.5 pr-3 text-right text-foreground/82 whitespace-nowrap">
+                {row.fgMade ?? "—"}-{row.fgAtt ?? "—"}
               </td>
               {row.cells.map((cell) => (
                 <td

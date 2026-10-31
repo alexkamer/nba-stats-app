@@ -125,6 +125,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
         steals: true,
         blocks: true,
         minutes: true,
+        fgMade: true,
+        fgAtt: true,
         game: {
           select: {
             espnId: true,
@@ -209,6 +211,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
         date: row.game.date,
         isHome,
         opponent,
+        minutes: row.minutes,
+        fgMade: row.fgMade,
+        fgAtt: row.fgAtt,
         cells: liveStatTypes.map((stat) => {
           const value = extractStatValue(stat, raw);
           const statLine = lineByStatType.get(stat) ?? null;
