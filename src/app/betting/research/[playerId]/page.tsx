@@ -228,6 +228,16 @@ function dateTick(date: string): string {
   return new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+// %m/%d/%y, e.g. "04/13/26" — the grid's own date format, distinct from
+// dateTick's "Apr 13" used by the chart's axis ticks and tooltip.
+function formatGridDate(date: string): string {
+  const d = new Date(date);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${mm}/${dd}/${yy}`;
+}
+
 /** Bar per historical game (most recent `CHART_GAMES`, oldest to newest left
  * to right), colored over/under/push against today's line, with the market
  * line and (when available) our own projection drawn as reference lines —
@@ -426,8 +436,15 @@ function HitRateGrid({
         <tbody>
           {games.map((row) => (
             <tr key={row.gameEspnId} className="border-t border-border/60">
-              <td className="py-1.5 pr-3 text-foreground/72 whitespace-nowrap">
-                {dateTick(row.date)} {row.isHome ? "vs" : "@"} {row.opponent.abbreviation}
+              <td className="py-1.5 pr-3 whitespace-nowrap text-black">
+                <span className="inline-flex items-center gap-1.5">
+                  {formatGridDate(row.date)} {row.isHome ? "vs" : "@"}
+                  {row.opponent.logoUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={row.opponent.logoUrl} alt="" className="h-4 w-4 object-contain" />
+                  )}
+                  <span className="font-bold">{row.opponent.abbreviation}</span>
+                </span>
               </td>
               <td className="py-1.5 pr-3 text-right text-foreground/82">{row.minutes ?? "—"}</td>
               <td className="py-1.5 pr-3 text-right text-foreground/82 whitespace-nowrap">
