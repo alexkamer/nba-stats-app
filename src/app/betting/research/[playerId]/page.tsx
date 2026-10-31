@@ -60,7 +60,7 @@ interface ResearchData {
   team: TeamSummary;
   opponent: TeamSummary;
   statType: string;
-  otherStatTypes: string[];
+  statTypes: string[];
   line: number | null;
   odds: { over: number | null; under: number | null };
   projection: { projectedValue: number; stdev: number | null; bettable: boolean } | null;
@@ -554,11 +554,9 @@ function PlayerPropResearchContent() {
   }
 
   const { accent: accentColor, accentForeground } = getTeamAccent(data.team.color, resolvedTheme === "dark" ? "dark" : "light");
-  const statOptions = [data.statType, ...data.otherStatTypes].map((s) => ({ value: s, label: STAT_LABELS[s] ?? s }));
-  // The grid's column order must match `row.cells`' fixed order from the
-  // API (independent of which stat is selected) — `statOptions` always
-  // puts the selected stat first, which would reorder the headers out of
-  // step with the (unreordered) cells underneath them.
+  // Fixed order (not reordered to put the selected stat first) so the tabs
+  // don't shuffle position every time the user picks a different one.
+  const statOptions = data.statTypes.map((s) => ({ value: s, label: STAT_LABELS[s] ?? s }));
   const gridStatTypes = data.grid[0]?.cells.map((cell) => cell.statType) ?? statOptions.map((s) => s.value);
   const edgeRatio = data.projection ? computeEdgeRatio(data.projection.projectedValue, data.line, data.projection.stdev) : null;
   const [firstName, ...lastNameParts] = data.player.displayName.trim().split(/\s+/);

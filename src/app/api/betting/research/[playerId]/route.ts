@@ -232,7 +232,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
       team,
       opponent: opponentTeam,
       statType,
-      otherStatTypes: liveStatTypes.filter((s) => s !== statType),
+      statTypes: liveStatTypes,
       line,
       odds: { over: overRow?.odds ?? null, under: underRow?.odds ?? null },
       projection: projectionRow
