@@ -350,7 +350,11 @@ function FilterSelect({
  * own (deliberately quieter) tables. */
 function BestBetsStrip({ games, isToday }: { games: UpcomingGame[]; isToday: boolean }) {
   const picks = games
-    .flatMap((game) => game.playerProps.filter((p) => p.bettable))
+    .flatMap((game) =>
+      game.playerProps
+        .filter((p) => p.bettable)
+        .map((p) => ({ ...p, matchup: `${game.awayTeam.abbreviation} @ ${game.homeTeam.abbreviation}` })),
+    )
     .map((p) => ({ ...p, edgeRatio: computeEdgeRatio(p.projectedValue, p.line, p.stdev) ?? 0 }))
     .sort((a, b) => b.edgeRatio - a.edgeRatio)
     .slice(0, 8);
@@ -367,6 +371,7 @@ function BestBetsStrip({ games, isToday }: { games: UpcomingGame[]; isToday: boo
             href={`/betting/research/${p.playerId}?stat=${p.statType}`}
             className="w-36 shrink-0 rounded-lg border border-border bg-surface px-3 py-2.5 hover:border-accent transition-colors"
           >
+            <p className="truncate text-[10px] text-foreground/50">{p.matchup}</p>
             <p className="truncate text-xs text-foreground/72">{p.playerName}</p>
             <p className="text-sm font-semibold text-foreground">
               {formatLine(p.lean, p.line)} {STAT_LABELS[p.statType]}
@@ -377,6 +382,25 @@ function BestBetsStrip({ games, isToday }: { games: UpcomingGame[]; isToday: boo
             </div>
           </Link>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** Pulsing placeholder in the same card shape as a loaded GameCard, shown
+ * while the day's games are still loading — keeps the loading state from
+ * reading as a plain, unstyled "Loading…" line next to the rest of the
+ * page's now-deliberate visual language. */
+function GameCardSkeleton() {
+  return (
+    <div className="rounded-lg border border-border animate-pulse">
+      <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-border">
+        <div className="h-4 w-32 rounded bg-surface-muted" />
+        <div className="h-3 w-20 rounded bg-surface-muted" />
+      </div>
+      <div className="px-4 py-3 space-y-3">
+        <div className="h-4 w-full rounded bg-surface-muted" />
+        <div className="h-4 w-full rounded bg-surface-muted" />
       </div>
     </div>
   );
@@ -467,6 +491,14 @@ function GameCard({ game }: { game: UpcomingGame }) {
   const awayLeading = hasScores && game.awayScore! > game.homeScore!;
   const homeLeading = hasScores && game.homeScore! > game.awayScore!;
 
+  // Lets the game list communicate which games are worth opening before a
+  // user expands any of them — counts every recommendation this card can
+  // make (spread, total, and player props), not just player props.
+  const recommendedCount =
+    (showSpreadPick ? 1 : 0) +
+    (game.projection?.totalBettable ? 1 : 0) +
+    game.playerProps.filter((p) => p.bettable).length;
+
   return (
     <div
       id={`game-${game.espnId}`}
@@ -483,6 +515,11 @@ function GameCard({ game }: { game: UpcomingGame }) {
             <TeamLabel team={game.homeTeam} />
           </span>
           {hasScores && <span className="font-bold tabular-nums text-foreground">{game.homeScore}</span>}
+          {recommendedCount > 0 && (
+            <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+              {recommendedCount} pick{recommendedCount === 1 ? "" : "s"}
+            </span>
+          )}
         </div>
         <span className="flex items-center gap-1.5 text-xs text-foreground/72">
           {game.status === "LIVE" && (
@@ -751,7 +788,6 @@ export default function BettingPage() {
 
       {accuracy && <AccuracyStrip accuracy={accuracy} />}
 
-      {gamesLoading && <p className="text-foreground/82">Loading…</p>}
       {gamesError && <p className="text-red-600 dark:text-red-400">Failed to load betting insights.</p>}
       {games && games.length === 0 && (
         <p className="text-foreground/72">
@@ -760,9 +796,9 @@ export default function BettingPage() {
       )}
 
       <div className="space-y-4">
-        {games?.map((game) => (
-          <GameCard key={game.espnId} game={game} />
-        ))}
+        {gamesLoading
+          ? Array.from({ length: 3 }, (_, i) => <GameCardSkeleton key={i} />)
+          : games?.map((game) => <GameCard key={game.espnId} game={game} />)}
       </div>
     </div>
   );
