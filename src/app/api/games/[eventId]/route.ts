@@ -8,6 +8,13 @@ import { NextResponse } from "next/server";
 // (ingested by the sync jobs); anything else (scheduled/in-progress, or
 // simply not ingested yet) falls back to the live ESPN proxy, which is
 // never persisted. In espn-only mode, always take the live branch.
+//
+// A DB row can exist but still be stale — it was created when the game was
+// merely scheduled, and the sync job only backfills box score/plays/odds
+// once the game goes final — so a non-final row has those relations sitting
+// empty even while the game is actually live right now. Rather than render
+// that emptiness as "no data", such a row is treated the same as "not
+// ingested yet" and served from the live proxy instead (SPEC.md Sec 4).
 export async function GET(_request: Request, { params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = await params;
 
@@ -15,7 +22,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
     const game = isEspnOnly()
       ? null
       : await prisma.game.findUnique({
-          where: { espnId: eventId },
+          where: { espnId: eventId, status: "FINAL" },
           include: {
             homeTeam: true,
             awayTeam: true,
