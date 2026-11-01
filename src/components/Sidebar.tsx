@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export const SECTIONS = [
   { href: "/standings", label: "Standings" },
@@ -18,16 +19,19 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
   return (
     <aside className="hidden lg:flex lg:w-52 lg:shrink-0 lg:flex-col lg:gap-7 lg:bg-surface lg:px-5 lg:py-7">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-label="Hide sidebar"
-        className="self-end rounded-md p-1.5 text-foreground/60 hover:bg-surface-muted hover:text-foreground"
-      >
-        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.5}>
-          <path d="M12.5 5l-5 5 5 5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
+      <div className="flex items-center justify-between">
+        <ThemeToggle />
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label="Hide sidebar"
+          className="rounded-md p-1.5 text-foreground/60 hover:bg-surface-muted hover:text-foreground"
+        >
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.5}>
+            <path d="M12.5 5l-5 5 5 5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
       <nav className="flex flex-col gap-1 text-sm font-semibold">
         {SECTIONS.map((section) => (
           <Link

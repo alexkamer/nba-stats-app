@@ -12,7 +12,7 @@ export function ThemeToggle() {
   }, []);
 
   if (!mounted) {
-    return <div className="h-8 w-14 rounded-full bg-surface-muted" aria-hidden="true" />;
+    return <div className="h-7 w-24 rounded-sm bg-surface-muted" aria-hidden="true" />;
   }
 
   const isDark = resolvedTheme === "dark";
@@ -24,13 +24,24 @@ export function ThemeToggle() {
       aria-checked={isDark}
       aria-label="Toggle dark mode"
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="relative h-8 w-14 rounded-full border border-border bg-surface-muted transition-colors"
+      className={`flex h-7 w-24 overflow-hidden rounded-sm border p-0.5 font-display transition-colors ${
+        isDark ? "border-black/40 bg-black" : "border-border bg-surface-muted"
+      }`}
     >
       <span
-        className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-accent transition-transform ${
-          isDark ? "translate-x-[26px]" : "translate-x-0"
+        className={`flex flex-1 items-center justify-center rounded-[1px] text-[10px] font-bold uppercase tracking-wider transition-colors ${
+          !isDark ? "bg-accent text-accent-foreground [text-shadow:0_0_6px_var(--accent)]" : "text-white/50"
         }`}
-      />
+      >
+        Light
+      </span>
+      <span
+        className={`flex flex-1 items-center justify-center rounded-[1px] text-[10px] font-bold uppercase tracking-wider transition-colors ${
+          isDark ? "bg-accent text-accent-foreground [text-shadow:0_0_6px_var(--accent)]" : "text-foreground/30"
+        }`}
+      >
+        Dark
+      </span>
     </button>
   );
 }

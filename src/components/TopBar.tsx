@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { SECTIONS } from "@/components/Sidebar";
 
 /** Desktop top bar (`lg` and above), always visible regardless of the
@@ -34,9 +33,6 @@ export function TopBar({ collapsed, onToggleSidebar }: { collapsed: boolean; onT
           </Link>
         ))}
       </nav>
-      <span className="ml-auto">
-        <ThemeToggle />
-      </span>
     </header>
   );
 }
