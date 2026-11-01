@@ -27,13 +27,28 @@ interface EspnScoreboardTeam {
   logos?: { href: string }[];
 }
 
+interface EspnScoreboardOddsEntry {
+  provider: { priority: number };
+  moneyline?: {
+    home?: { close?: { odds?: string } };
+    away?: { close?: { odds?: string } };
+  };
+}
+
 interface EspnScoreboardEvent {
   id: string;
   date: string;
   status: { type: { name: string; detail?: string } };
   competitions: {
     status: { period?: number; displayClock?: string };
-    competitors: { homeAway: "home" | "away"; score?: string; team: EspnScoreboardTeam }[];
+    competitors: {
+      homeAway: "home" | "away";
+      score?: string;
+      team: EspnScoreboardTeam;
+      linescores?: { displayValue: string; period: number }[];
+      records?: { type: string; summary: string }[];
+    }[];
+    odds?: EspnScoreboardOddsEntry[];
   }[];
 }
 
@@ -446,8 +461,14 @@ export interface ScoreboardGameCard {
   statusDetail: string;
   period: number | null;
   clock: string | null;
-  home: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null };
-  away: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null };
+  home: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; moneyline: number | null; lineScore: string[]; overallRecord: string | null; splitRecord: string | null };
+  away: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; moneyline: number | null; lineScore: string[]; overallRecord: string | null; splitRecord: string | null };
+}
+
+function parseMoneyline(value: string | undefined): number | null {
+  if (value === undefined) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 // ESPN's scoreboard endpoint doesn't include each competitor's logo (unlike
@@ -468,6 +489,11 @@ export async function getScoreboard(date: string): Promise<ScoreboardGameCard[]>
     // ESPN reports "0" (not omitted) for a game that hasn't tipped off yet —
     // treat that as "no score to show", not a real 0-0 score.
     const isScheduled = statusType.name === "STATUS_SCHEDULED";
+    const primaryOdds = [...(competition.odds ?? [])].sort((a, b) => a.provider.priority - b.provider.priority)[0];
+    const lineScoreFor = (competitor: typeof home) =>
+      [...(competitor!.linescores ?? [])].sort((a, b) => a.period - b.period).map((p) => p.displayValue);
+    const recordFor = (competitor: typeof home, type: string) =>
+      competitor!.records?.find((r) => r.type === type)?.summary ?? null;
     return {
       espnId: event.id,
       date: event.date,
@@ -482,6 +508,10 @@ export async function getScoreboard(date: string): Promise<ScoreboardGameCard[]>
         score: !isScheduled && home!.score !== undefined ? Number(home!.score) : null,
         logoUrl: home!.team.logos?.[0]?.href ?? teamLogoUrl(home!.team.abbreviation),
         color: home!.team.color ? `#${home!.team.color}` : null,
+        moneyline: isScheduled ? parseMoneyline(primaryOdds?.moneyline?.home?.close?.odds) : null,
+        lineScore: lineScoreFor(home),
+        overallRecord: recordFor(home, "total"),
+        splitRecord: recordFor(home, "home"),
       },
       away: {
         espnId: away!.team.id,
@@ -490,6 +520,10 @@ export async function getScoreboard(date: string): Promise<ScoreboardGameCard[]>
         score: !isScheduled && away!.score !== undefined ? Number(away!.score) : null,
         logoUrl: away!.team.logos?.[0]?.href ?? teamLogoUrl(away!.team.abbreviation),
         color: away!.team.color ? `#${away!.team.color}` : null,
+        moneyline: isScheduled ? parseMoneyline(primaryOdds?.moneyline?.away?.close?.odds) : null,
+        lineScore: lineScoreFor(away),
+        overallRecord: recordFor(away, "total"),
+        splitRecord: recordFor(away, "road"),
       },
     };
   });
