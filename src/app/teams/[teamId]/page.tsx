@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 import { Fragment, Suspense, useState } from "react";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
 import { FullBleed } from "@/components/FullBleed";
+import { useBreadcrumbLabel } from "@/components/Breadcrumb";
 import { getTeamAccent } from "@/lib/team-accent";
 
 interface SeasonInfo {
@@ -352,6 +353,7 @@ function TeamDetailContent() {
     queryFn: fetchLeagueTeams,
   });
   const { resolvedTheme } = useTheme();
+  useBreadcrumbLabel(data?.team.displayName);
 
   if (isLoading) return <p className="text-foreground/82">Loading…</p>;
   if (error || !data) return <p className="text-red-600 dark:text-red-400">Failed to load team.</p>;
