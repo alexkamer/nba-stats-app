@@ -2,18 +2,24 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { Suspense, useState } from "react";
+import { Fragment, Suspense, useState } from "react";
 import { CircularBadge } from "@/components/CircularBadge";
 import { SectionCard } from "@/components/SectionCard";
 
 interface GameCard {
   espnId: string;
+  date: string;
   statusName: string;
   statusDetail: string;
   period: number | null;
   clock: string | null;
-  home: { name: string; score: number | null; logoUrl: string | null };
-  away: { name: string; score: number | null; logoUrl: string | null };
+  spreadDetails: string | null;
+  home: { name: string; score: number | null; logoUrl: string | null; overallRecord: string | null };
+  away: { name: string; score: number | null; logoUrl: string | null; overallRecord: string | null };
+}
+
+function formatGameTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 }
 
 interface Standing {
@@ -125,6 +131,32 @@ function HomeContent() {
                 .slice(0, 6)
                 .map((game) => {
                   const isLive = game.statusName === "STATUS_IN_PROGRESS";
+                  const isScheduled = game.statusName === "STATUS_SCHEDULED";
+
+                  if (isScheduled) {
+                    return (
+                      <Link
+                        key={game.espnId}
+                        href={`/games/${game.espnId}`}
+                        className="flex items-center gap-3 rounded-md border border-border p-3 transition-colors hover:bg-surface-muted"
+                      >
+                        <div className="grid min-w-0 flex-1 grid-cols-[auto_1fr_auto] items-center gap-x-2 gap-y-1.5">
+                          {[game.away, game.home].map((team, i) => (
+                            <Fragment key={i}>
+                              <CircularBadge src={team.logoUrl} alt="" size="sm" />
+                              <span className="truncate text-sm font-semibold">{team.name}</span>
+                              <span className="shrink-0 text-xs text-foreground/50">{team.overallRecord}</span>
+                            </Fragment>
+                          ))}
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1.5 border-l border-border pl-3 text-xs text-foreground/60">
+                          <span>{formatGameTime(game.date)}</span>
+                          {game.spreadDetails && <span>{game.spreadDetails}</span>}
+                        </div>
+                      </Link>
+                    );
+                  }
+
                   return (
                     <Link
                       key={game.espnId}

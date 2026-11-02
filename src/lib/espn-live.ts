@@ -30,6 +30,7 @@ interface EspnScoreboardTeam {
 
 interface EspnScoreboardOddsEntry {
   provider: { priority: number };
+  details?: string;
   moneyline?: {
     home?: { close?: { odds?: string } };
     away?: { close?: { odds?: string } };
@@ -462,6 +463,7 @@ export interface ScoreboardGameCard {
   statusDetail: string;
   period: number | null;
   clock: string | null;
+  spreadDetails: string | null;
   home: { espnId: string; abbreviation: string; displayName: string; name: string; score: number | null; logoUrl: string | null; color: string | null; moneyline: number | null; lineScore: string[]; overallRecord: string | null; splitRecord: string | null };
   away: { espnId: string; abbreviation: string; displayName: string; name: string; score: number | null; logoUrl: string | null; color: string | null; moneyline: number | null; lineScore: string[]; overallRecord: string | null; splitRecord: string | null };
 }
@@ -502,6 +504,7 @@ export async function getScoreboard(date: string): Promise<ScoreboardGameCard[]>
       statusDetail: statusType.detail ?? statusType.name,
       period: competition.status.period ?? null,
       clock: competition.status.displayClock ?? null,
+      spreadDetails: isScheduled ? primaryOdds?.details ?? null : null,
       home: {
         espnId: home!.team.id,
         abbreviation: home!.team.abbreviation,
