@@ -3,6 +3,14 @@ import { isEspnOnly } from "@/lib/data-source";
 import { getNewsLive } from "@/lib/espn-news-live";
 import { NextRequest, NextResponse } from "next/server";
 
+// "Media"-typed game highlight clips and "Preview"-typed auto-generated
+// game blurbs aren't articles — exclude them from the news feed.
+const GAME_HIGHLIGHTS_RE = /:\s*Game Highlights$/i;
+const EXCLUDED_TYPES = new Set(["Preview"]);
+function isExcluded(article: { type: string | null; headline: string }): boolean {
+  return GAME_HIGHLIGHTS_RE.test(article.headline) || (!!article.type && EXCLUDED_TYPES.has(article.type));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -15,22 +23,27 @@ export async function GET(request: NextRequest) {
     if (isEspnOnly()) {
       // playerId filtering requires a local join we don't have live —
       // return the general feed regardless (see docs/DATA_SOURCES.md).
-      const articles = (await getNewsLive(take)).filter((a) => !type || a.type === type);
+      const articles = (await getNewsLive(take))
+        .filter((a) => !type || a.type === type)
+        .filter((a) => !isExcluded(a));
       return NextResponse.json({ articles });
     }
 
-    const articles = await prisma.newsArticle.findMany({
+    // Over-fetch since excluded article types get filtered out after the
+    // query, so the final result still has up to `take` articles.
+    const rows = await prisma.newsArticle.findMany({
       where: {
         ...(playerId ? { players: { some: { playerId } } } : {}),
         ...(type ? { type } : {}),
       },
       orderBy: { publishedAt: "desc" },
-      take,
+      take: take * 2,
       include: {
         teams: { select: { teamId: true } },
         players: { select: { playerId: true } },
       },
     });
+    const articles = rows.filter((a) => !isExcluded(a)).slice(0, take);
 
     const teamIds = [...new Set(articles.flatMap((a) => a.teams.map((t) => t.teamId)))];
     const playerIds = [...new Set(articles.flatMap((a) => a.players.map((p) => p.playerId)))];

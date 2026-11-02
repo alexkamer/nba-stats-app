@@ -18,6 +18,8 @@ export interface EspnNewsArticle {
   images?: { url: string }[];
   links?: { web?: { href?: string } };
   categories?: EspnNewsCategory[];
+  byline?: string;
+  story?: string;
 }
 
 export interface NewsArticleUpsertInput {
@@ -28,6 +30,8 @@ export interface NewsArticleUpsertInput {
   url: string | null;
   imageUrl: string | null;
   publishedAt: Date | null;
+  byline: string | null;
+  story: string | null;
 }
 
 export function mapNewsArticle(article: EspnNewsArticle): NewsArticleUpsertInput {
@@ -39,6 +43,8 @@ export function mapNewsArticle(article: EspnNewsArticle): NewsArticleUpsertInput
     url: article.links?.web?.href ?? null,
     imageUrl: article.images?.[0]?.url ?? null,
     publishedAt: article.published ? new Date(article.published) : null,
+    byline: article.byline ?? null,
+    story: article.story ?? null,
   };
 }
 

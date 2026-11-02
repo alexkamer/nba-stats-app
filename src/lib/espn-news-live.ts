@@ -18,6 +18,8 @@ export interface LiveNewsArticle {
   url: string | null;
   imageUrl: string | null;
   publishedAt: Date | null;
+  byline: string | null;
+  story: string | null;
   teams: never[];
   players: never[];
 }
@@ -32,4 +34,9 @@ async function fetchNewsLive(limit: number): Promise<LiveNewsArticle[]> {
 
 export function getNewsLive(limit: number): Promise<LiveNewsArticle[]> {
   return cachedEspn(`news-live-${limit}`, 5 * 60 * 1000, () => fetchNewsLive(limit));
+}
+
+export async function getNewsArticleLive(id: string): Promise<LiveNewsArticle | null> {
+  const articles = await getNewsLive(50);
+  return articles.find((a) => a.id === id) ?? null;
 }
