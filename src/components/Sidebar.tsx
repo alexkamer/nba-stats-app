@@ -8,6 +8,7 @@ export const SECTIONS = [
   { href: "/players", label: "Players" },
   { href: "/news", label: "News" },
   { href: "/betting", label: "Betting" },
+  { href: "/betting/history", label: "Cover Story" },
 ];
 
 /** Persistent section nav at `lg` and above. Below `lg` the same sections

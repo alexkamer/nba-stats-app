@@ -23,6 +23,26 @@ export function computeAccuracy(gradedCorrectValues: Array<boolean | null>): Acc
   };
 }
 
+/** Groups already-graded rows by a key (e.g. `method`, `statType`) and
+ * computes accuracy within each group, instead of pooling everything into
+ * one number that can't tell groups apart. */
+function accuracyByKey<T>(
+  rows: T[],
+  keyOf: (row: T) => string,
+  gradedValue: (row: T) => boolean | null,
+): Record<string, AccuracySummary> {
+  const byKey = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = keyOf(row);
+    const group = byKey.get(key);
+    if (group) group.push(row);
+    else byKey.set(key, [row]);
+  }
+  return Object.fromEntries(
+    [...byKey.entries()].map(([key, group]) => [key, computeAccuracy(group.map(gradedValue))]),
+  );
+}
+
 /** Groups already-graded rows by their frozen `method` tag and computes
  * accuracy within each group — lets a methodology change (e.g.
  * `v1-recency-weighted` vs `v2-opponent-rating`) be judged against its
@@ -32,13 +52,15 @@ export function accuracyByMethod<T extends { method: string }>(
   rows: T[],
   gradedValue: (row: T) => boolean | null,
 ): Record<string, AccuracySummary> {
-  const byMethod = new Map<string, T[]>();
-  for (const row of rows) {
-    const group = byMethod.get(row.method);
-    if (group) group.push(row);
-    else byMethod.set(row.method, [row]);
-  }
-  return Object.fromEntries(
-    [...byMethod.entries()].map(([method, group]) => [method, computeAccuracy(group.map(gradedValue))]),
-  );
+  return accuracyByKey(rows, (row) => row.method, gradedValue);
+}
+
+/** Groups already-graded player-prop rows by `statType` (e.g. POINTS,
+ * ASSISTS) and computes accuracy within each — so a strong points-prop
+ * hit rate can't hide a weak assists-prop one, or vice versa. */
+export function accuracyByStatType<T extends { statType: string }>(
+  rows: T[],
+  gradedValue: (row: T) => boolean | null,
+): Record<string, AccuracySummary> {
+  return accuracyByKey(rows, (row) => row.statType, gradedValue);
 }

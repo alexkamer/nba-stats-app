@@ -107,6 +107,7 @@ model Team {
   standings         Standing[]
   playerGameStats   PlayerGameStat[]
   nbaCupStandings   NbaCupStanding[]
+  coverRecords      TeamCoverRecord[]
 
   @@map("team")
 }
@@ -161,6 +162,7 @@ model Player {
   propOdds        PlayerPropOdds[]
   propProjections PlayerPropProjection[]
   availabilities  PlayerAvailability[]
+  dailyStatLeaderEntries DailyStatLeaderEntry[]
 
   @@map("player")
 }
@@ -175,6 +177,7 @@ model Season {
   playerSeasonStats PlayerSeasonStat[]
   standings         Standing[]
   nbaCupStandings   NbaCupStanding[]
+  coverRecords      TeamCoverRecord[]
 
   @@unique([year, type])
   @@map("season")
@@ -249,6 +252,12 @@ model Odds {
   awaySpreadOdds    Int?   @map("away_spread_odds")
   overOdds          Int?   @map("over_odds")
   underOdds         Int?   @map("under_odds")
+  // Stamped once this game's result has been folded into both teams'
+  // `TeamCoverRecord` aggregate (team-cover-record-tracking capability) —
+  // mirrors the grading-timestamp convention `GameProjection.gradedAt` and
+  // `PredictorSnapshot.gradedAt` already use, so re-running the aggregate
+  // script is idempotent instead of double-counting a game.
+  coverRecordComputedAt DateTime? @map("cover_record_computed_at")
 
   @@map("odds")
 }
@@ -502,6 +511,36 @@ model PlayerGameStat {
   @@map("player_game_stat")
 }
 
+// Per calendar date, the player(s) with the highest combined
+// points+rebounds+assists total across that day's completed games (see
+// daily-stat-leader-tracking capability). Only written once every game on
+// that date has reached FINAL (see design.md "Full-slate check for daily
+// leaders"), so a date is simply absent here until then.
+model DailyStatLeader {
+  id      Int      @id @default(autoincrement())
+  date    DateTime @unique
+
+  entries DailyStatLeaderEntry[]
+
+  @@map("daily_stat_leader")
+}
+
+// One row per player tied for a given date's lead — a plain join table
+// rather than a single playerId column so ties are represented structurally
+// instead of needing an arbitrary tiebreak.
+model DailyStatLeaderEntry {
+  id                    Int             @id @default(autoincrement())
+  dailyStatLeaderId     Int             @map("daily_stat_leader_id")
+  dailyStatLeader       DailyStatLeader @relation(fields: [dailyStatLeaderId], references: [id])
+  playerId              Int             @map("player_id")
+  player                Player          @relation(fields: [playerId], references: [id])
+  pointsReboundsAssists Int             @map("points_rebounds_assists")
+  hadTripleDouble       Boolean         @default(false) @map("had_triple_double")
+
+  @@unique([dailyStatLeaderId, playerId])
+  @@map("daily_stat_leader_entry")
+}
+
 // ---------- Season aggregates ----------
 
 model TeamSeasonStat {
@@ -518,6 +557,46 @@ model TeamSeasonStat {
 
   @@unique([teamId, seasonId])
   @@map("team_season_stat")
+}
+
+// Season-to-date against-the-spread and over/under record per team,
+// derived from `Odds` (the line in effect at tip-off) and each game's final
+// score (see team-cover-record-tracking capability). Flat counters, not a
+// per-game log — the page only ever needs the aggregate and the current
+// streak. `atsCurrentStreak`/`ouCurrentStreak` are signed: positive counts
+// a current covering/over streak, negative a current non-covering/under
+// streak, 0 means no graded games yet.
+model TeamCoverRecord {
+  id       Int    @id @default(autoincrement())
+  teamId   Int    @map("team_id")
+  team     Team   @relation(fields: [teamId], references: [id])
+  seasonId Int    @map("season_id")
+  season   Season @relation(fields: [seasonId], references: [id])
+
+  atsWins         Int @default(0) @map("ats_wins")
+  atsLosses       Int @default(0) @map("ats_losses")
+  atsPushes       Int @default(0) @map("ats_pushes")
+  atsHomeWins     Int @default(0) @map("ats_home_wins")
+  atsHomeLosses   Int @default(0) @map("ats_home_losses")
+  atsHomePushes   Int @default(0) @map("ats_home_pushes")
+  atsAwayWins     Int @default(0) @map("ats_away_wins")
+  atsAwayLosses   Int @default(0) @map("ats_away_losses")
+  atsAwayPushes   Int @default(0) @map("ats_away_pushes")
+  atsCurrentStreak Int @default(0) @map("ats_current_streak")
+
+  ouWins          Int @default(0) @map("ou_wins")
+  ouLosses        Int @default(0) @map("ou_losses")
+  ouPushes        Int @default(0) @map("ou_pushes")
+  ouHomeWins      Int @default(0) @map("ou_home_wins")
+  ouHomeLosses    Int @default(0) @map("ou_home_losses")
+  ouHomePushes    Int @default(0) @map("ou_home_pushes")
+  ouAwayWins      Int @default(0) @map("ou_away_wins")
+  ouAwayLosses    Int @default(0) @map("ou_away_losses")
+  ouAwayPushes    Int @default(0) @map("ou_away_pushes")
+  ouCurrentStreak Int @default(0) @map("ou_current_streak")
+
+  @@unique([teamId, seasonId])
+  @@map("team_cover_record")
 }
 
 model PlayerSeasonStat {

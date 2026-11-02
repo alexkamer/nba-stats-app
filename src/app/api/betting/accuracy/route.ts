@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { computeAccuracy, accuracyByMethod } from "@lib/accuracy/compute-accuracy";
+import { computeAccuracy, accuracyByMethod, accuracyByStatType } from "@lib/accuracy/compute-accuracy";
 import { gradeMarketFavorite } from "@lib/accuracy/grade-game";
 import { BEST_BETS_PER_DAY, HIGH_CONFIDENCE_EDGE_RATIO, computeEdgeRatio } from "@lib/projections/confidence";
 import { NextResponse } from "next/server";
@@ -46,6 +46,7 @@ export async function GET() {
         where: { gradedAt: { not: null } },
         select: {
           method: true,
+          statType: true,
           gradedCorrect: true,
           bettable: true,
           projectedValue: true,
@@ -133,6 +134,14 @@ export async function GET() {
       bettableProps: accuracyByMethod(propRows.filter((r) => r.bettable), (r) => r.gradedCorrect),
     };
 
+    // Retrospective breakdown for the betting-history-page capability
+    // (prediction-accuracy-tracking's stat-type requirement) — only stat
+    // types with at least one graded pick are included, rather than
+    // showing a meaningless null-hit-rate entry for one with none yet.
+    const propsByStatType = Object.fromEntries(
+      Object.entries(accuracyByStatType(propRows, (r) => r.gradedCorrect)).filter(([, summary]) => summary.graded > 0),
+    );
+
     return NextResponse.json({
       ourModel: {
         game: gameAccuracy,
@@ -149,6 +158,7 @@ export async function GET() {
       espnPredictor: predictorAccuracy,
       marketFavorite: marketFavoriteAccuracy,
       byMethod,
+      propsByStatType,
     });
   } catch (error) {
     console.error("GET /api/betting/accuracy failed:", error);
