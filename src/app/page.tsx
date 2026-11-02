@@ -2,9 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { CircularBadge } from "@/components/CircularBadge";
+import { SectionCard } from "@/components/SectionCard";
 
 interface GameCard {
   espnId: string;
@@ -12,29 +12,35 @@ interface GameCard {
   statusDetail: string;
   period: number | null;
   clock: string | null;
-  home: { abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; moneyline: number | null; lineScore: string[]; overallRecord: string | null; splitRecord: string | null };
-  away: { abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; moneyline: number | null; lineScore: string[]; overallRecord: string | null; splitRecord: string | null };
+  home: { abbreviation: string; displayName: string; score: number | null; logoUrl: string | null };
+  away: { abbreviation: string; displayName: string; score: number | null; logoUrl: string | null };
 }
 
-function formatMoneyline(value: number | null): string | null {
-  if (value === null) return null;
-  return value > 0 ? `+${value}` : `${value}`;
+interface Standing {
+  conferenceRank: number | null;
+  wins: number | null;
+  losses: number | null;
+  team: { id: number; displayName: string; abbreviation: string; logoUrl?: string | null };
 }
 
-function formatRecord(overallRecord: string | null, splitRecord: string | null, splitLabel: string): string | null {
-  if (!overallRecord) return null;
-  return splitRecord ? `${overallRecord} (${splitRecord} ${splitLabel})` : overallRecord;
+interface StandingsResponse {
+  conferences: { conferenceName: string; standings: Standing[] }[];
 }
 
-function toYyyymmdd(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}${m}${d}`;
+interface NewsArticle {
+  id: number;
+  headline: string;
+  url: string | null;
+  imageUrl: string | null;
+  publishedAt: string | null;
 }
 
-function fromYyyymmdd(value: string): Date {
-  return new Date(`${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00`);
+function todayYyyymmdd(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
 }
 
 async function fetchScoreboard(date: string): Promise<GameCard[]> {
@@ -44,175 +50,178 @@ async function fetchScoreboard(date: string): Promise<GameCard[]> {
   return data.games;
 }
 
-export default function Home() {
+async function fetchStandings(): Promise<StandingsResponse> {
+  const res = await fetch("/api/standings");
+  if (!res.ok) throw new Error("Failed to load standings");
+  return res.json();
+}
+
+async function fetchNews(): Promise<NewsArticle[]> {
+  const res = await fetch("/api/news?limit=4");
+  if (!res.ok) throw new Error("Failed to load news");
+  const data = await res.json();
+  return data.articles;
+}
+
+export default function HomePage() {
+  // Reading today's date would be evaluated during the server prerender
+  // instead of per-visit (Next.js breaking change) unless deferred behind
+  // Suspense — same pattern as the scoreboard page.
   return (
     <Suspense fallback={<p className="text-foreground/82">Loading…</p>}>
-      <ScoreboardGate />
+      <HomeContent />
     </Suspense>
   );
 }
 
-// A client-side nav to "/" with a new ?date= (e.g. from the research page's
-// game log) reuses the already-mounted ScoreboardContent, so a useState
-// initializer there wouldn't rerun — keying on the param forces a remount
-// instead, which re-seeds ScoreboardContent's own date state from scratch.
-function ScoreboardGate() {
-  const searchParams = useSearchParams();
-  const dateParam = searchParams.get("date");
-  const initialDate = dateParam && /^\d{8}$/.test(dateParam) ? dateParam : null;
-  return <ScoreboardContent key={initialDate ?? "today"} initialDate={initialDate} />;
-}
-
-function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
-  // "Today" is the viewer's local date (SPEC.md Sec 9.3) — computed in the
-  // browser, not guessed server-side — unless a deep link requested a
-  // specific date (see ScoreboardGate).
-  const [date, setDate] = useState(() => initialDate ?? toYyyymmdd(new Date()));
-  const { data: games, isLoading, error } = useQuery({
+function HomeContent() {
+  const [date] = useState(() => todayYyyymmdd());
+  const { data: games, isLoading: gamesLoading } = useQuery({
     queryKey: ["scoreboard", date],
     queryFn: () => fetchScoreboard(date),
   });
-
-  function shiftDay(delta: number) {
-    const d = fromYyyymmdd(date);
-    d.setDate(d.getDate() + delta);
-    setDate(toYyyymmdd(d));
-  }
+  const { data: standings, isLoading: standingsLoading } = useQuery({
+    queryKey: ["standings"],
+    queryFn: fetchStandings,
+  });
+  const { data: news, isLoading: newsLoading } = useQuery({
+    queryKey: ["news", "home"],
+    queryFn: fetchNews,
+  });
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="space-y-8">
+      <div className="space-y-1">
         <h1 className="font-display text-4xl font-extrabold tracking-tight">
-          Score<span className="text-accent">board</span>
+          NBA <span className="text-accent">Stats</span>
         </h1>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 rounded-full border border-border bg-surface-muted p-1">
-            <button
-              onClick={() => shiftDay(-1)}
-              aria-label="Previous day"
-              className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-surface hover:text-foreground"
-            >
-              <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M15 18l-6-6 6-6" />
-              </svg>
-            </button>
-            <span className="min-w-36 text-center font-display text-base font-bold tabular-nums">
-              {fromYyyymmdd(date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
-            </span>
-            <button
-              onClick={() => shiftDay(1)}
-              aria-label="Next day"
-              className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-surface hover:text-foreground"
-            >
-              <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 6l6 6-6 6" />
-              </svg>
-            </button>
-          </div>
-          <button
-            onClick={() => setDate(toYyyymmdd(new Date()))}
-            className="rounded-full bg-accent px-3.5 py-1.5 text-xs font-bold text-accent-foreground transition-opacity hover:opacity-90"
-          >
-            Today
-          </button>
-        </div>
+        <p className="text-foreground/72">Scores, standings, and news in one place.</p>
       </div>
 
-      {isLoading && <p className="text-foreground/82">Loading…</p>}
-      {error && <p className="text-red-600 dark:text-red-400">Failed to load scoreboard.</p>}
-      {games && games.length === 0 && <p className="text-foreground/72">No games on this date.</p>}
-
-      <div className="divide-y divide-border">
-        {games?.map((game) => {
-          const isLive = game.statusName === "STATUS_IN_PROGRESS";
-          const isFinal = game.statusName === "STATUS_FINAL";
-          const isScheduled = game.statusName === "STATUS_SCHEDULED";
-          const awayWon = isFinal && game.away.score != null && game.home.score != null && game.away.score > game.home.score;
-          const homeWon = isFinal && game.away.score != null && game.home.score != null && game.home.score > game.away.score;
-          const awayMoneyline = formatMoneyline(game.away.moneyline);
-          const homeMoneyline = formatMoneyline(game.home.moneyline);
-          const awayRecord = formatRecord(game.away.overallRecord, game.away.splitRecord, "Away");
-          const homeRecord = formatRecord(game.home.overallRecord, game.home.splitRecord, "Home");
-          const periods = isScheduled ? 0 : Math.max(4, game.away.lineScore.length, game.home.lineScore.length);
-          const periodLabels = Array.from({ length: periods }, (_, i) => (i < 4 ? `${i + 1}` : `OT${i - 3 > 1 ? i - 3 : ""}`));
-          const gridTemplateColumns = periods > 0 ? `1fr ${"1.25rem ".repeat(periods)}1rem 2.5rem` : "1fr 2.5rem";
-          return (
-            <div key={game.espnId} className="group flex items-center gap-4 px-2 py-4 transition-colors hover:bg-surface-muted">
-              <Link href={`/games/${game.espnId}`} className="flex flex-1 flex-col gap-1.5">
-                <span className="flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-foreground/60">
+      <SectionCard
+        title="Today's Games"
+        accentColor="var(--accent)"
+        action={
+          <Link href="/scoreboard" className="text-sm font-semibold text-accent hover:underline">
+            Full scoreboard
+          </Link>
+        }
+      >
+        {gamesLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+        {!gamesLoading && (!games || games.length === 0) && (
+          <p className="text-foreground/72 text-sm">No games scheduled today.</p>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {games?.map((game) => {
+            const isLive = game.statusName === "STATUS_IN_PROGRESS";
+            return (
+              <Link
+                key={game.espnId}
+                href={`/games/${game.espnId}`}
+                className="flex flex-col gap-2 rounded-md border border-border p-3 transition-colors hover:bg-surface-muted"
+              >
+                <span className="flex items-center gap-1.5 text-xs font-medium text-foreground/60">
                   {isLive && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
                   {isLive ? `Q${game.period} ${game.clock ?? ""}` : game.statusDetail}
                 </span>
-                <div className="grid items-center gap-x-2 gap-y-1.5" style={{ gridTemplateColumns }}>
-                  {periods > 0 && (
-                    <>
-                      <span />
-                      {periodLabels.map((label, i) => (
-                        <span key={i} className="text-right text-[10px] font-medium text-foreground/50">
-                          {label}
-                        </span>
-                      ))}
-                      <span />
-                      <span />
-                    </>
-                  )}
-                  <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className={`flex min-w-0 items-center gap-2 text-sm font-semibold ${isFinal && !awayWon ? "text-foreground/40" : ""}`}>
-                      <CircularBadge src={game.away.logoUrl} alt="" size="sm" />
-                      <span className="truncate">
-                        <span className="sm:hidden">{game.away.abbreviation}</span>
-                        <span className="hidden sm:inline">{game.away.displayName}</span>
-                      </span>
-                      {isScheduled && awayMoneyline && <span className="shrink-0 font-normal text-foreground/50">({awayMoneyline})</span>}
-                    </span>
-                    {awayRecord && <span className="truncate pl-7 text-xs font-normal text-foreground/50">{awayRecord}</span>}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    <CircularBadge src={game.away.logoUrl} alt="" size="sm" />
+                    {game.away.abbreviation}
                   </span>
-                  {periodLabels.map((_, i) => (
-                    <span key={i} className="text-right text-xs tabular-nums text-foreground/50">
-                      {game.away.lineScore[i] ?? "-"}
-                    </span>
-                  ))}
-                  {periods > 0 && <span />}
-                  <span className={`text-right font-display text-xl tabular-nums font-extrabold ${isFinal && !awayWon ? "text-foreground/40" : "text-foreground"}`}>
-                    {game.away.score ?? "-"}
+                  <span className="font-display text-lg font-extrabold tabular-nums">{game.away.score ?? "-"}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    <CircularBadge src={game.home.logoUrl} alt="" size="sm" />
+                    {game.home.abbreviation}
                   </span>
-                  <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className={`flex min-w-0 items-center gap-2 text-sm font-semibold ${isFinal && !homeWon ? "text-foreground/40" : ""}`}>
-                      <CircularBadge src={game.home.logoUrl} alt="" size="sm" />
-                      <span className="truncate">
-                        <span className="sm:hidden">{game.home.abbreviation}</span>
-                        <span className="hidden sm:inline">{game.home.displayName}</span>
-                      </span>
-                      {isScheduled && homeMoneyline && <span className="shrink-0 font-normal text-foreground/50">({homeMoneyline})</span>}
-                    </span>
-                    {homeRecord && <span className="truncate pl-7 text-xs font-normal text-foreground/50">{homeRecord}</span>}
-                  </span>
-                  {periodLabels.map((_, i) => (
-                    <span key={i} className="text-right text-xs tabular-nums text-foreground/50">
-                      {game.home.lineScore[i] ?? "-"}
-                    </span>
-                  ))}
-                  {periods > 0 && <span />}
-                  <span className={`text-right font-display text-xl tabular-nums font-extrabold ${isFinal && !homeWon ? "text-foreground/40" : "text-foreground"}`}>
-                    {game.home.score ?? "-"}
-                  </span>
+                  <span className="font-display text-lg font-extrabold tabular-nums">{game.home.score ?? "-"}</span>
                 </div>
               </Link>
-              <div className="w-0.5 shrink-0 self-stretch bg-foreground/15" />
-              <div className="flex shrink-0 flex-col items-start gap-2 text-xs font-medium text-foreground/60">
-                <Link href={`/games/${game.espnId}?tab=gamecast`} className="hover:text-foreground">
-                  Gamecast
-                </Link>
-                <Link href={`/games/${game.espnId}?tab=boxscore`} className="hover:text-foreground">
-                  Box Score
-                </Link>
-                <Link href={`/games/${game.espnId}?tab=playbyplay`} className="hover:text-foreground">
-                  Play-by-Play
-                </Link>
+            );
+          })}
+        </div>
+      </SectionCard>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <SectionCard
+          title="Standings"
+          accentColor="var(--accent)"
+          action={
+            <Link href="/standings" className="text-sm font-semibold text-accent hover:underline">
+              Full standings
+            </Link>
+          }
+        >
+          {standingsLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {standings?.conferences.map((conf) => (
+              <div key={conf.conferenceName} className="space-y-2">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-foreground/60">{conf.conferenceName}</h3>
+                <div className="space-y-1.5">
+                  {conf.standings
+                    .slice()
+                    .sort((a, b) => (a.conferenceRank ?? 99) - (b.conferenceRank ?? 99))
+                    .slice(0, 5)
+                    .map((s) => (
+                      <Link
+                        key={s.team.id}
+                        href={`/teams/${s.team.id}`}
+                        className="flex items-center justify-between gap-2 text-sm hover:text-foreground"
+                      >
+                        <span className="flex items-center gap-2 truncate text-foreground/82">
+                          <span className="w-4 shrink-0 text-right text-xs text-foreground/50">{s.conferenceRank}</span>
+                          <CircularBadge src={s.team.logoUrl} alt="" size="xs" />
+                          <span className="truncate">{s.team.displayName}</span>
+                        </span>
+                        <span className="shrink-0 tabular-nums text-foreground/60">
+                          {s.wins}-{s.losses}
+                        </span>
+                      </Link>
+                    ))}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Latest News"
+          accentColor="var(--accent)"
+          action={
+            <Link href="/news" className="text-sm font-semibold text-accent hover:underline">
+              All news
+            </Link>
+          }
+        >
+          {newsLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+          {!newsLoading && (!news || news.length === 0) && (
+            <p className="text-foreground/72 text-sm">No news available.</p>
+          )}
+          <div className="space-y-3">
+            {news?.map((article) => (
+              <a
+                key={article.id}
+                href={article.url ?? "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex gap-3 group"
+              >
+                {article.imageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element -- external ESPN CDN images
+                  <img src={article.imageUrl} alt="" className="h-12 w-16 shrink-0 rounded-md object-cover" />
+                )}
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium leading-snug group-hover:text-foreground/92">{article.headline}</p>
+                  {article.publishedAt && (
+                    <p className="text-xs text-foreground/60">{new Date(article.publishedAt).toLocaleDateString()}</p>
+                  )}
+                </div>
+              </a>
+            ))}
+          </div>
+        </SectionCard>
       </div>
     </div>
   );

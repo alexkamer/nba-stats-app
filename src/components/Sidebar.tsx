@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 export const SECTIONS = [
+  { href: "/scoreboard", label: "Scoreboard" },
   { href: "/standings", label: "Standings" },
   { href: "/teams", label: "Teams" },
   { href: "/players", label: "Players" },

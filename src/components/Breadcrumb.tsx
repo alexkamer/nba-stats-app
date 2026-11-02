@@ -31,6 +31,7 @@ export function useBreadcrumbLabel(label: string | null | undefined) {
 }
 
 const SEGMENT_LABELS: Record<string, string> = {
+  scoreboard: "Scoreboard",
   standings: "Standings",
   teams: "Teams",
   players: "Players",

@@ -447,7 +447,7 @@ function HitRateGrid({
             <tr key={row.gameEspnId} className="border-t border-border/60">
               <td className="py-1.5 pr-3 whitespace-nowrap">
                 <span className="inline-flex items-center gap-1.5 text-foreground/72">
-                  <Link href={`/?date=${toScoreboardDateParam(row.date)}`} className="hover:underline hover:text-foreground">
+                  <Link href={`/scoreboard?date=${toScoreboardDateParam(row.date)}`} className="hover:underline hover:text-foreground">
                     {formatGridDate(row.date)}
                   </Link>
                   {row.isHome ? "vs" : "@"}
