@@ -12,15 +12,101 @@
  * Run with: npx tsx ingest/generate-projections.ts
  */
 import { prisma } from "./lib/db";
-import { projectGame, type TeamProjectionInput, type TeamRecentGame } from "../lib/projections/game-projection";
+import {
+  projectGame,
+  blendRating,
+  type TeamProjectionInput,
+  type TeamRecentGame,
+  type UnavailableScorer,
+} from "../lib/projections/game-projection";
 import { projectPlayerStat } from "../lib/projections/player-prop-projection";
 import { extractStatValue, type RawPlayerGameRow } from "../lib/projections/extract-prop-stat";
 import { computeOpponentFactors, type AllowedStatRow } from "../lib/projections/opponent-factor";
-import { computeStdev, combineStdev, isBettable } from "../lib/projections/confidence";
+import { computeStdev, isBettable } from "../lib/projections/confidence";
+import { computeTeammateRoleAdjustment } from "../lib/projections/teammate-role-adjustment";
+import { solveTeamRatings, hasEnoughLeagueData, type TeamGameRow, type TeamRating } from "../lib/projections/team-rating";
 import type { PropStatType } from "../lib/espn/prop-types";
+import type { AvailabilityStatus } from "../lib/espn/injury-status-mapping";
 
-const METHOD = "v1-recency-weighted";
+// Separate method tags per table — the two methodologies change
+// independently (improve-game-rating-model only touched game projections;
+// add-player-availability-signal's OUT-skip/teammate-role-bump only
+// touched player props), so one shared tag would mislabel whichever table
+// didn't actually change, corrupting later per-methodology grading
+// analysis. GAME_METHOD bumped for the opponent-rating model;
+// PROP_METHOD bumped here too — retroactively, since the availability
+// change shipped OUT-skip + teammate-role-bump without ever giving props
+// their own distinct tag, leaving every prop since then indistinguishable
+// from the original pre-availability v1 rows.
+const GAME_METHOD = "v2-opponent-rating";
+const PROP_METHOD = "v2-availability-aware";
 const RECENT_GAMES_WINDOW = 10;
+
+// Every team's own most-recent RECENT_GAMES_WINDOW final games, paired
+// with the opponent faced in each — league-wide input for the
+// recency-window rating solve (team-rating.ts). Computed once per run,
+// not once per game, since the solve needs every team's data at once.
+// Each team's window is independently sized (same "not a strict
+// same-season cutoff" convention as loadTeamProjectionInput), so this is
+// not a single shared league-wide date range.
+async function loadLeagueRecentGames(): Promise<TeamGameRow[]> {
+  const teams = await prisma.team.findMany({ select: { id: true } });
+  const rows: TeamGameRow[] = [];
+  for (const { id: teamId } of teams) {
+    const games = await prisma.game.findMany({
+      where: { status: "FINAL", OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }] },
+      orderBy: { date: "desc" },
+      take: RECENT_GAMES_WINDOW,
+      select: { homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true },
+    });
+    for (const g of games) {
+      if (g.homeScore === null || g.awayScore === null) continue;
+      const isHome = g.homeTeamId === teamId;
+      rows.push({
+        teamId,
+        opponentId: isHome ? g.awayTeamId : g.homeTeamId,
+        pointsFor: isHome ? g.homeScore : g.awayScore,
+        pointsAgainst: isHome ? g.awayScore : g.homeScore,
+      });
+    }
+  }
+  return rows;
+}
+
+// Every FINAL game in `seasonId`, both sides — league-wide input for the
+// season-window rating solve. Symmetric by construction (one query covers
+// every team), unlike the per-team recency loader above.
+async function loadLeagueSeasonGames(seasonId: number): Promise<TeamGameRow[]> {
+  const games = await prisma.game.findMany({
+    where: { status: "FINAL", seasonId },
+    select: { homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true },
+  });
+  const rows: TeamGameRow[] = [];
+  for (const g of games) {
+    if (g.homeScore === null || g.awayScore === null) continue;
+    rows.push({ teamId: g.homeTeamId, opponentId: g.awayTeamId, pointsFor: g.homeScore, pointsAgainst: g.awayScore });
+    rows.push({ teamId: g.awayTeamId, opponentId: g.homeTeamId, pointsFor: g.awayScore, pointsAgainst: g.homeScore });
+  }
+  return rows;
+}
+
+function leagueAvgPointsOf(games: TeamGameRow[]): number | undefined {
+  if (games.length === 0) return undefined;
+  return games.reduce((sum, g) => sum + g.pointsFor, 0) / games.length;
+}
+
+// Keyed `${gameId}|${playerId}` -> status, for every SCHEDULED game's
+// frozen availability snapshot (see player-availability-tracking
+// capability). A player with no row here (e.g. sync hasn't run yet for
+// this game) is treated as available by every caller below, same as the
+// sync step's own "no report entry means available" default.
+async function loadAvailabilityByGamePlayer(): Promise<Map<string, AvailabilityStatus>> {
+  const rows = await prisma.playerAvailability.findMany({
+    where: { game: { status: "SCHEDULED" } },
+    select: { gameId: true, playerId: true, status: true },
+  });
+  return new Map(rows.map((r) => [`${r.gameId}|${r.playerId}`, r.status as AvailabilityStatus]));
+}
 
 // Stats with a clean team-level "allowed" analog (sum of raw box-score
 // categories). DOUBLE_DOUBLE/TRIPLE_DOUBLE are per-player achievement
@@ -114,29 +200,154 @@ async function loadTeamProjectionInput(teamId: number, seasonId: number): Promis
   };
 }
 
-async function generateGameProjections() {
+// Rostered players on `teamId` frozen OUT for `gameId`, with their recent
+// per-game scoring (see game-projection.ts "Team offense adjustment") —
+// reuses `loadPlayerGameLog`'s cache so this doesn't re-query a player
+// whose log the prop-projection pass already pulled this run.
+async function loadUnavailableScorers(
+  teamId: number,
+  gameId: number,
+  availabilityByGamePlayer: Map<string, AvailabilityStatus>,
+): Promise<UnavailableScorer[]> {
+  const roster = await prisma.player.findMany({ where: { currentTeamId: teamId }, select: { id: true } });
+  const outPlayerIds = roster
+    .map((p) => p.id)
+    .filter((playerId) => availabilityByGamePlayer.get(`${gameId}|${playerId}`) === "OUT");
+  if (outPlayerIds.length === 0) return [];
+
+  const scorers: UnavailableScorer[] = [];
+  for (const playerId of outPlayerIds) {
+    const gameLog = await loadPlayerGameLog(playerId);
+    const recentPoints = gameLog.slice(-RECENT_GAMES_WINDOW).map((row) => row.points ?? 0);
+    scorers.push({ recentPoints });
+  }
+  return scorers;
+}
+
+// How many of the league's most recent completed games to backtest the
+// current ratings against for the residual-based stdev (design.md
+// "Residual-based stdev") — a single shared, league-wide figure, not
+// per-team/per-matchup.
+const RESIDUAL_BACKTEST_GAMES = 90;
+
+// Standard deviation of (actual margin/total - what the current ratings
+// would have projected), over the league's last RESIDUAL_BACKTEST_GAMES
+// completed games. Uses today's ratings applied retroactively, not each
+// game's own pre-game snapshot (documented lookahead-bias limitation,
+// design.md) — and omits home-court edge/availability for this backtest
+// pass, since it's a variance estimate, not a frozen pick.
+async function computeResidualStdevs(
+  recentRatings: Map<number, TeamRating>,
+  seasonRatingsBySeasonId: Map<number, Map<number, TeamRating>>,
+  leagueAvgPointsBySeasonId: Map<number, number | undefined>,
+  recentGameCountByTeam: Map<number, number>,
+): Promise<{ marginStdev: number | null; totalStdev: number | null }> {
+  const backtestGames = await prisma.game.findMany({
+    where: { status: "FINAL" },
+    orderBy: { date: "desc" },
+    take: RESIDUAL_BACKTEST_GAMES,
+    select: { seasonId: true, homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true },
+  });
+
+  const marginResiduals: number[] = [];
+  const totalResiduals: number[] = [];
+  for (const g of backtestGames) {
+    if (g.homeScore === null || g.awayScore === null) continue;
+    const leagueAvgPoints = leagueAvgPointsBySeasonId.get(g.seasonId);
+    if (leagueAvgPoints === undefined) continue;
+    const seasonRatings = seasonRatingsBySeasonId.get(g.seasonId) ?? new Map<number, TeamRating>();
+
+    const homeBlend = blendRating(
+      seasonRatings.get(g.homeTeamId),
+      recentRatings.get(g.homeTeamId),
+      recentGameCountByTeam.get(g.homeTeamId) ?? 0,
+    );
+    const awayBlend = blendRating(
+      seasonRatings.get(g.awayTeamId),
+      recentRatings.get(g.awayTeamId),
+      recentGameCountByTeam.get(g.awayTeamId) ?? 0,
+    );
+    if (!homeBlend || !awayBlend) continue;
+
+    const projectedHome = leagueAvgPoints + (homeBlend.offRating + awayBlend.defRating) / 2;
+    const projectedAway = leagueAvgPoints + (awayBlend.offRating + homeBlend.defRating) / 2;
+    marginResiduals.push(g.homeScore - g.awayScore - (projectedHome - projectedAway));
+    totalResiduals.push(g.homeScore + g.awayScore - (projectedHome + projectedAway));
+  }
+
+  return { marginStdev: computeStdev(marginResiduals), totalStdev: computeStdev(totalResiduals) };
+}
+
+async function generateGameProjections(availabilityByGamePlayer: Map<string, AvailabilityStatus>) {
   const scheduledGames = await prisma.game.findMany({
     where: { status: "SCHEDULED", gameProjection: null },
     select: { id: true, seasonId: true, homeTeamId: true, awayTeamId: true },
   });
+  if (scheduledGames.length === 0) return { checked: 0, created: 0 };
+
+  // League-wide rating solve, computed once for this whole run rather than
+  // per game (design.md "Scope of the iterative solve"). Recency is
+  // season-independent; season ratings are solved once per distinct season
+  // id among today's scheduled games (normally just one).
+  const leagueRecentGames = await loadLeagueRecentGames();
+  const recentRatings = hasEnoughLeagueData(leagueRecentGames)
+    ? solveTeamRatings(leagueRecentGames)
+    : new Map<number, TeamRating>();
+  const recentLeagueAvgPoints = leagueAvgPointsOf(leagueRecentGames);
+
+  const seasonIds = [...new Set(scheduledGames.map((g) => g.seasonId))];
+  const seasonRatingsBySeasonId = new Map<number, Map<number, TeamRating>>();
+  const leagueAvgPointsBySeasonId = new Map<number, number | undefined>();
+  for (const seasonId of seasonIds) {
+    const leagueSeasonGames = await loadLeagueSeasonGames(seasonId);
+    seasonRatingsBySeasonId.set(
+      seasonId,
+      hasEnoughLeagueData(leagueSeasonGames) ? solveTeamRatings(leagueSeasonGames) : new Map(),
+    );
+    leagueAvgPointsBySeasonId.set(seasonId, leagueAvgPointsOf(leagueSeasonGames) ?? recentLeagueAvgPoints);
+  }
+
+  const recentGameCountByTeam = new Map<number, number>();
+  for (const row of leagueRecentGames) {
+    recentGameCountByTeam.set(row.teamId, (recentGameCountByTeam.get(row.teamId) ?? 0) + 1);
+  }
+  const { marginStdev, totalStdev } = await computeResidualStdevs(
+    recentRatings,
+    seasonRatingsBySeasonId,
+    leagueAvgPointsBySeasonId,
+    recentGameCountByTeam,
+  );
 
   let created = 0;
   for (const game of scheduledGames) {
-    const [home, away] = await Promise.all([
+    const [homeInput, awayInput, homeUnavailable, awayUnavailable] = await Promise.all([
       loadTeamProjectionInput(game.homeTeamId, game.seasonId),
       loadTeamProjectionInput(game.awayTeamId, game.seasonId),
+      loadUnavailableScorers(game.homeTeamId, game.id, availabilityByGamePlayer),
+      loadUnavailableScorers(game.awayTeamId, game.id, availabilityByGamePlayer),
     ]);
+
+    const seasonRatings = seasonRatingsBySeasonId.get(game.seasonId) ?? new Map<number, TeamRating>();
+    const leagueAvgPoints = leagueAvgPointsBySeasonId.get(game.seasonId);
+    const ratingFor = (teamId: number) =>
+      leagueAvgPoints !== undefined
+        ? { recent: recentRatings.get(teamId) ?? null, season: seasonRatings.get(teamId) ?? null }
+        : undefined;
+
+    const home: TeamProjectionInput = {
+      ...homeInput,
+      unavailableScorers: homeUnavailable,
+      rating: ratingFor(game.homeTeamId),
+      leagueAvgPoints,
+    };
+    const away: TeamProjectionInput = {
+      ...awayInput,
+      unavailableScorers: awayUnavailable,
+      rating: ratingFor(game.awayTeamId),
+      leagueAvgPoints,
+    };
     const projection = projectGame(home, away);
     if (!projection) continue;
-
-    const marginStdev = combineStdev(
-      computeStdev(home.recentGames.map((g) => g.pointsFor - g.pointsAgainst)),
-      computeStdev(away.recentGames.map((g) => g.pointsFor - g.pointsAgainst)),
-    );
-    const totalStdev = combineStdev(
-      computeStdev(home.recentGames.map((g) => g.pointsFor + g.pointsAgainst)),
-      computeStdev(away.recentGames.map((g) => g.pointsFor + g.pointsAgainst)),
-    );
 
     const odds = await prisma.odds.findUnique({ where: { gameId: game.id }, select: { spread: true, overUnder: true } });
     // Odds.spread is home-team-relative favorite-negative, same convention
@@ -158,7 +369,7 @@ async function generateGameProjections() {
         totalBettable: isBettable(projectedTotal, marketTotal, totalStdev),
         marketMarginAtPick: marketMargin,
         marketTotalAtPick: marketTotal,
-        method: METHOD,
+        method: GAME_METHOD,
       },
     });
     created += 1;
@@ -223,7 +434,110 @@ async function loadPlayerGameLog(playerId: number): Promise<RawPlayerGameRow[]> 
   return rows;
 }
 
-async function generatePlayerPropProjections() {
+// A team's rostered player ids, cached — reused for both "who could absorb
+// an absent scorer's minutes" lookups below.
+const teamRosterIdsCache = new Map<number, number[]>();
+async function loadTeamRosterIds(teamId: number): Promise<number[]> {
+  const cached = teamRosterIdsCache.get(teamId);
+  if (cached) return cached;
+  const roster = await prisma.player.findMany({ where: { currentTeamId: teamId }, select: { id: true } });
+  const ids = roster.map((p) => p.id);
+  teamRosterIdsCache.set(teamId, ids);
+  return ids;
+}
+
+// gameIds a player has an actual box score for (i.e. he played) — any
+// other FINAL game he's associated with via the season log below counts as
+// a game he missed, the cold-start fallback for teammate-role-adjustment
+// before enough PlayerAvailability history exists (design.md "Teammate
+// role-bump").
+const playedGameIdsCache = new Map<number, Set<number>>();
+async function loadPlayedGameIds(playerId: number): Promise<Set<number>> {
+  const cached = playedGameIdsCache.get(playerId);
+  if (cached) return cached;
+  const rows = await prisma.playerGameStat.findMany({ where: { playerId, points: { not: null } }, select: { gameId: true } });
+  const ids = new Set(rows.map((r) => r.gameId));
+  playedGameIdsCache.set(playerId, ids);
+  return ids;
+}
+
+// gameIds a player was ever snapshotted OUT for — takes over from the
+// played-game-id fallback as PlayerAvailability history accumulates.
+const outSnapshotGameIdsCache = new Map<number, Set<number>>();
+async function loadOutSnapshotGameIds(playerId: number): Promise<Set<number>> {
+  const cached = outSnapshotGameIdsCache.get(playerId);
+  if (cached) return cached;
+  const rows = await prisma.playerAvailability.findMany({ where: { playerId, status: "OUT" }, select: { gameId: true } });
+  const ids = new Set(rows.map((r) => r.gameId));
+  outSnapshotGameIdsCache.set(playerId, ids);
+  return ids;
+}
+
+// A player's current-season game log with gameId attached, so it can be
+// paired against a specific teammate's played/OUT game ids above — scoped
+// to the current season only (design.md: last season's rotation isn't
+// trustworthy evidence for this season's).
+const playerSeasonGameLogCache = new Map<string, (RawPlayerGameRow & { gameId: number })[]>();
+async function loadPlayerSeasonGameLog(playerId: number, seasonId: number) {
+  const key = `${playerId}|${seasonId}`;
+  const cached = playerSeasonGameLogCache.get(key);
+  if (cached) return cached;
+  const rows = await prisma.playerGameStat.findMany({
+    where: { playerId, points: { not: null }, game: { status: "FINAL", seasonId } },
+    orderBy: { game: { date: "asc" } },
+    select: {
+      gameId: true,
+      points: true,
+      rebounds: true,
+      assists: true,
+      threeMade: true,
+      steals: true,
+      blocks: true,
+      minutes: true,
+    },
+  });
+  playerSeasonGameLogCache.set(key, rows);
+  return rows;
+}
+
+// Single multiplier reflecting how `playerId`'s production in this
+// season's games already changed across every game where *any* of
+// tonight's currently-absent teammates (`teammateIds`) already sat out,
+// compared to `baseline` (his pre-adjustment projection) — 1 (neutral)
+// below the qualifying sample size (see
+// lib/projections/teammate-role-adjustment.ts).
+//
+// Deliberately one combined multiplier, not one per teammate multiplied
+// together: several teammates are commonly out at once (an injury-
+// depleted roster), and each one's own qualifying-game set tends to
+// heavily overlap the others' — multiplying independently-clamped
+// per-teammate multipliers compounded without bound (e.g. six absences
+// each clamped to 1.3x still multiplied out to ~4.4x). Combining the
+// evidence into one "games resembling tonight's absences" set first keeps
+// the result inside the same single clamp the module already enforces.
+async function computeTeammateMultiplier(
+  playerId: number,
+  teammateIds: number[],
+  seasonId: number,
+  statType: PropStatType,
+  baseline: number,
+): Promise<number> {
+  const seasonLog = await loadPlayerSeasonGameLog(playerId, seasonId);
+  const [teammatePlayedSets, teammateOutSnapshotSets] = await Promise.all([
+    Promise.all(teammateIds.map((id) => loadPlayedGameIds(id))),
+    Promise.all(teammateIds.map((id) => loadOutSnapshotGameIds(id))),
+  ]);
+
+  const values = seasonLog.map((row) => extractStatValue(statType, row));
+  const teammateWasOut = seasonLog.map((row) =>
+    teammateIds.some(
+      (_, i) => teammateOutSnapshotSets[i].has(row.gameId) || !teammatePlayedSets[i].has(row.gameId),
+    ),
+  );
+  return computeTeammateRoleAdjustment({ values, teammateWasOut, baseline });
+}
+
+async function generatePlayerPropProjections(availabilityByGamePlayer: Map<string, AvailabilityStatus>) {
   const opponentFactorsByStat = await loadOpponentFactors();
 
   const propOddsRows = await prisma.playerPropOdds.findMany({
@@ -242,7 +556,7 @@ async function generatePlayerPropProjections() {
       statType: true,
       side: true,
       line: true,
-      game: { select: { homeTeamId: true, awayTeamId: true } },
+      game: { select: { homeTeamId: true, awayTeamId: true, seasonId: true } },
       player: { select: { currentTeamId: true } },
     },
   });
@@ -263,7 +577,18 @@ async function generatePlayerPropProjections() {
   let created = 0;
   for (const group of groups.values()) {
     const representative = group.find((r) => r.side === "OVER") ?? group[0];
+
+    // A player frozen OUT for this game never gets a projection — not just
+    // hidden in the UI (design.md "Prop projection: skip entirely on OUT").
+    const status = availabilityByGamePlayer.get(`${representative.gameId}|${representative.playerId}`);
+    if (status === "OUT") continue;
+
     const statType = representative.statType as PropStatType;
+    // loadPlayerGameLog only returns PlayerGameStat rows, which only exist
+    // for games the player actually appeared in — a missed game has no
+    // row, so it's already excluded from recentValues/recentMinutes below
+    // without any extra filtering (satisfies the "recent-form window
+    // excludes missed games" requirement as existing behavior).
     const gameLog = await loadPlayerGameLog(representative.playerId);
     const values = gameLog.map((row) => extractStatValue(statType, row));
     const minutes = gameLog.map((row) => row.minutes ?? 0);
@@ -281,8 +606,32 @@ async function generatePlayerPropProjections() {
     const projectedValue = projectPlayerStat({ seasonAverage, recentValues, recentMinutes, opponentFactor });
     if (projectedValue === null) continue;
 
+    // Teammate role-bump: teammates frozen OUT tonight who this player has
+    // historically shared minutes with bump (or dampen) this projection,
+    // based on what already happened in this season's games those
+    // teammates already missed (design.md "Teammate role-bump") — one
+    // combined multiplier across all of tonight's absences, not one per
+    // teammate multiplied together (see computeTeammateMultiplier).
+    let adjustedProjectedValue = projectedValue;
+    if (currentTeamId !== null) {
+      const rosterIds = await loadTeamRosterIds(currentTeamId);
+      const outTeammateIds = rosterIds.filter(
+        (id) => id !== representative.playerId && availabilityByGamePlayer.get(`${representative.gameId}|${id}`) === "OUT",
+      );
+      if (outTeammateIds.length > 0) {
+        const multiplier = await computeTeammateMultiplier(
+          representative.playerId,
+          outTeammateIds,
+          representative.game.seasonId,
+          statType,
+          projectedValue,
+        );
+        adjustedProjectedValue *= multiplier;
+      }
+    }
+
     const stdev = computeStdev(recentValues);
-    const bettable = isBettable(projectedValue, representative.line, stdev);
+    const bettable = isBettable(adjustedProjectedValue, representative.line, stdev);
 
     await prisma.playerPropProjection.create({
       data: {
@@ -291,10 +640,10 @@ async function generatePlayerPropProjections() {
         statType,
         propOddsId: representative.id,
         line: representative.line,
-        projectedValue,
+        projectedValue: adjustedProjectedValue,
         stdev,
         bettable,
-        method: METHOD,
+        method: PROP_METHOD,
       },
     });
     created += 1;
@@ -304,9 +653,10 @@ async function generatePlayerPropProjections() {
 
 async function main() {
   const start = Date.now();
-  const games = await generateGameProjections();
+  const availabilityByGamePlayer = await loadAvailabilityByGamePlayer();
+  const games = await generateGameProjections(availabilityByGamePlayer);
   const backfilled = await backfillMissingMarketLines();
-  const props = await generatePlayerPropProjections();
+  const props = await generatePlayerPropProjections(availabilityByGamePlayer);
   console.log(
     `generate-projections done in ${((Date.now() - start) / 1000).toFixed(1)}s: ` +
       `games ${games.created}/${games.checked} projected, props ${props.created}/${props.checked} projected ` +

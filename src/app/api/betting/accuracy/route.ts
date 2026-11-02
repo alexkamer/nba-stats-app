@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { computeAccuracy } from "@lib/accuracy/compute-accuracy";
+import { gradeMarketFavorite } from "@lib/accuracy/grade-game";
 import { BEST_BETS_PER_DAY, HIGH_CONFIDENCE_EDGE_RATIO, computeEdgeRatio } from "@lib/projections/confidence";
 import { NextResponse } from "next/server";
 
@@ -31,6 +32,12 @@ export async function GET() {
           gradedTotalCorrect: true,
           spreadBettable: true,
           totalBettable: true,
+          // Frozen at pick time (see betting-odds-ingest) — enough to grade
+          // "always pick the market favorite" live, alongside the game's
+          // own already-final score, with no new storage (design.md
+          // "Market-favorite accuracy baseline").
+          marketMarginAtPick: true,
+          game: { select: { homeScore: true, awayScore: true } },
         },
       }),
       prisma.predictorSnapshot.findMany({ where: { gradedAt: { not: null } }, select: { gradedCorrect: true } }),
@@ -101,6 +108,16 @@ export async function GET() {
     const overallAccuracy = computeAccuracy([...gameRows, ...propRows].map((r) => r.gradedCorrect));
     const predictorAccuracy = computeAccuracy(predictorRows.map((r) => r.gradedCorrect));
 
+    // Third baseline, computed live from data already frozen/final — no
+    // new grading pass or storage needed (design.md "Market-favorite
+    // accuracy baseline"). Distinct from gameAccuracy: this grades the
+    // market's own favorite, not our model's pick.
+    const marketFavoriteAccuracy = computeAccuracy(
+      gameRows
+        .filter((r) => r.game.homeScore !== null && r.game.awayScore !== null)
+        .map((r) => gradeMarketFavorite(r.marketMarginAtPick, r.game.homeScore!, r.game.awayScore!).correct),
+    );
+
     return NextResponse.json({
       ourModel: {
         game: gameAccuracy,
@@ -115,6 +132,7 @@ export async function GET() {
         overall: overallAccuracy,
       },
       espnPredictor: predictorAccuracy,
+      marketFavorite: marketFavoriteAccuracy,
     });
   } catch (error) {
     console.error("GET /api/betting/accuracy failed:", error);

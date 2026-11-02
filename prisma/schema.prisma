@@ -23,6 +23,19 @@ enum GameStatus {
   FINAL
 }
 
+// Mapped from ESPN's free-text injury report `status` field at ingest time
+// (see player-availability-tracking capability) — not ESPN's own enum,
+// since ESPN doesn't document one. An unrecognized status maps to
+// QUESTIONABLE, never AVAILABLE, so a mapping gap can't silently hide a
+// real absence.
+enum AvailabilityStatus {
+  OUT
+  DOUBTFUL
+  QUESTIONABLE
+  PROBABLE
+  AVAILABLE
+}
+
 // ---------- Reference / slow-changing ----------
 
 model Conference {
@@ -147,6 +160,7 @@ model Player {
 
   propOdds        PlayerPropOdds[]
   propProjections PlayerPropProjection[]
+  availabilities  PlayerAvailability[]
 
   @@map("player")
 }
@@ -197,6 +211,7 @@ model Game {
   predictorSnapshot     PredictorSnapshot?
   gameProjection        GameProjection?
   playerPropProjections PlayerPropProjection[]
+  playerAvailabilities  PlayerAvailability[]
 
   @@map("game")
 }
@@ -308,6 +323,27 @@ model PredictorSnapshot {
   gradedAt          DateTime? @map("graded_at")
 
   @@map("predictor_snapshot")
+}
+
+// Pre-game availability status per (game, player), sourced from ESPN's
+// injury report (see player-availability-tracking capability). Unlike
+// PredictorSnapshot's write-once pattern, this is refreshed on every sync
+// run while the game is still SCHEDULED — an injury status genuinely
+// changes pre-tip — and stops being touched once the game is no longer
+// SCHEDULED, so projections/grading never see a post-tip-off change.
+model PlayerAvailability {
+  id         Int                @id @default(autoincrement())
+  gameId     Int                @map("game_id")
+  game       Game               @relation(fields: [gameId], references: [id])
+  playerId   Int                @map("player_id")
+  player     Player             @relation(fields: [playerId], references: [id])
+  status     AvailabilityStatus
+  comment    String?
+  capturedAt DateTime           @map("captured_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  @@unique([gameId, playerId])
+  @@map("player_availability")
 }
 
 // Our own game-level projection, computed and frozen before tip-off (see

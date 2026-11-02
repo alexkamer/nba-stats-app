@@ -17,6 +17,10 @@ design (see `openspec/changes/add-betting-insights-page/design.md`).
   only, despite the field name `gameProjection`. Captured once per game,
   since ESPN doesn't retain it after the game goes final
   (`ingest/mappers/predictor.ts`).
+- **ESPN's team injury report**: the same live endpoint already used on team
+  pages (`src/lib/espn-team-injuries.ts`), mapped to a fixed status enum
+  (`lib/espn/injury-status-mapping.ts`) and persisted per (game, player) —
+  see "Player availability" below.
 - **Everything our own model uses** (season stats, recent game logs, box
   scores) is data already ingested for the rest of the app — no new source.
 
@@ -24,9 +28,13 @@ design (see `openspec/changes/add-betting-insights-page/design.md`).
 
 1. `sync-betting-odds.ts` — discovers upcoming games, upserts market odds
    and player prop odds, captures the one-time ESPN predictor snapshot.
-2. `generate-projections.ts` — computes and **freezes** our own projections
-   (below) for any scheduled game/prop that doesn't have one yet.
-3. `grade-predictions.ts` — for games that just went `FINAL`, grades every
+2. `sync-player-availability.ts` — fetches both teams' injury reports for
+   every scheduled game and upserts a `PlayerAvailability` row per rostered
+   player (see "Player availability" below).
+3. `generate-projections.ts` — computes and **freezes** our own projections
+   (below) for any scheduled game/prop that doesn't have one yet, using
+   whatever availability data step 2 has captured so far.
+4. `grade-predictions.ts` — for games that just went `FINAL`, grades every
    frozen projection against the actual result.
 
 Projections are written once and never recomputed — "frozen pre-game" is
@@ -48,6 +56,24 @@ Player prop projections don't have this gap: `generatePlayerPropProjections`
 is driven directly off existing `PlayerPropOdds` rows, so a prop projection
 is never created without a line in the first place.
 
+## Player availability (`lib/espn/injury-status-mapping.ts`,
+`ingest/sync-player-availability.ts`)
+
+A `PlayerAvailability` row per (game, player) — status is one of `OUT`,
+`DOUBTFUL`, `QUESTIONABLE`, `PROBABLE`, `AVAILABLE`, mapped from ESPN's
+free-text injury-report wording (an unrecognized string maps to
+`QUESTIONABLE`, logged, never silently to `AVAILABLE`). A rostered player
+with no injury-report entry is recorded `AVAILABLE` explicitly, so every
+downstream lookup is a plain map read rather than a found/not-found branch.
+
+Refreshed on every sync run while the game is still `SCHEDULED` — status
+genuinely changes pre-tip (a `QUESTIONABLE` resolves one way or the other,
+often hours before tip-off) — and never touched once the game is no longer
+`SCHEDULED`, so grading and projections never see a post-tip-off change.
+This feeds three things below: prop generation skips `OUT` players
+entirely, the game projection discounts a team missing a key scorer, and
+the teammate role-bump reacts to who's out tonight.
+
 ## Game projections (`lib/projections/game-projection.ts`)
 
 For each team: blend season points-per-game / opp-points-per-game with a
@@ -60,6 +86,17 @@ falling back to a flat +2.0 pts if there isn't enough of a split to compute.
 
 This is the only place opponent strength enters a game prediction — it's
 baked into "the opponent's blended defense" term, not a separate factor.
+
+**Unavailable-scorer adjustment**: if a rostered player is frozen `OUT` for
+the game, and his recent per-game scoring clears a minimum share of his
+team's own recent scoring (so a deep bench player going out doesn't trigger
+anything), his team's blended offense is reduced by his recent average
+times a flat 0.7 redistribution-loss factor — the team is assumed to
+recover 30% of his scoring through increased teammate usage, lose the rest.
+This constant is an unvalidated placeholder (consistent with the rest of
+this model's philosophy of simple clamped constants over a fitted one), not
+a per-team/per-player empirical figure — revisit once graded evidence
+with/without it exists.
 
 Returns `null` (no projection created) if either team has no season stat
 and no recent games — never fabricated.
@@ -82,6 +119,29 @@ applied in sequence:
    are per-player achievement flags, not a stat a team "allows" in the same
    sense.
 
+A player frozen `OUT` for the game gets **no projection at all** — not
+generated, not just hidden on the page (`ingest/generate-projections.ts`).
+A missed game never has a `PlayerGameStat` row, so it's already excluded
+from the recency window above with no extra filtering needed.
+
+**Teammate role-bump** (`lib/projections/teammate-role-adjustment.ts`):
+when one or more of a player's current teammates are frozen `OUT` tonight,
+this season's games where *any* of those same teammates already missed are
+pooled into one combined "games resembling tonight" sample; if there are
+≥2 such games, the player's average stat value in them vs. his own
+pre-adjustment baseline becomes one multiplier, clamped to 0.85×–1.3×,
+applied on top of the two adjustments above. Below 2 qualifying games,
+no adjustment (neutral 1×).
+
+This is deliberately **one combined multiplier across every absent
+teammate, not one multiplier per teammate chained together** — an early
+version multiplied each teammate's independently-clamped multiplier
+together, which compounds without bound when several teammates are out at
+once (a realistic case for an injury-depleted roster): six absences each
+clamped to ~1.3× still multiplied out to roughly 4.4×, turning a sane
+projection into nonsense. Pooling the evidence first keeps the result
+inside the same single clamp no matter how many teammates are out.
+
 Returns `null` (no projection created) if the player has no season average
 and no recent games for that stat.
 
@@ -92,12 +152,14 @@ points/rebounds/assists combos, and double-double/triple-double
 
 ## What isn't modeled
 
-No injury/availability data, no starting-lineup confirmation, no
-days-of-rest adjustment, and home/away is only a factor for game
-projections, not player props. These were deliberately deferred (see
-project discussion) as a second pass — adding them would mean a new ingest
-path (injuries/lineups) or a cheap but lower-impact signal (rest), not a
-change to the blending approach above.
+No starting-lineup confirmation (availability status is not the same as a
+confirmed starting five), no days-of-rest adjustment, no pace/possession
+adjustment, no paid lineup/minutes vendor (e.g. Rotowire — ESPN's free
+injury report is the only availability source, by design), and home/away
+is only a factor for game projections, not player props. These are
+deliberately deferred — adding them would mean a new ingest path (lineups,
+rest, a paid vendor) or a different model shape (pace-adjusted efficiency),
+not a change to the blending approach above.
 
 ## Confidence / "bettable" picks (`lib/projections/confidence.ts`)
 

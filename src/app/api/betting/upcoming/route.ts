@@ -1,14 +1,5 @@
 import { prisma } from "@/lib/db";
-import { getTeamInjuries } from "@/lib/espn-team-injuries";
 import { NextResponse } from "next/server";
-
-/** True for ESPN's "Out" status (and close variants) — the one injury
- * status that means a prop line from before the report is essentially
- * dead, unlike Questionable/Doubtful/Day-To-Day where the player can
- * still suit up. */
-function isRuledOut(status: string): boolean {
-  return status.toLowerCase().includes("out");
-}
 
 // Serves the betting-insights-page capability: a day's games with our own
 // pick (GameProjection), the market line (Odds — see betting-odds-ingest
@@ -54,6 +45,10 @@ export async function GET(request: Request) {
             player: { select: { id: true, espnId: true, displayName: true } },
           },
         },
+        // Frozen, refreshed-up-to-tip-off availability snapshot (see
+        // player-availability-tracking capability) — the source of truth
+        // for `ruledOut` below, instead of a live ESPN fetch at request time.
+        playerAvailabilities: { select: { playerId: true, status: true } },
         // Odds are per-side (OVER/UNDER each get their own American odds,
         // e.g. -121/-105) — PlayerPropProjection only links to one side via
         // propOddsId, so the side matching our actual lean has to be looked
@@ -62,94 +57,80 @@ export async function GET(request: Request) {
       },
     });
 
-    // Current injury report is only meaningful for games that haven't been
-    // played yet — for a FINAL game, the box score (gradedAt/gradedActualValue
-    // below) is the ground truth on who actually suited up. Best-effort: an
-    // ESPN hiccup here shouldn't take down the whole page.
-    const unplayedTeamEspnIds = [
-      ...new Set(
-        games
-          .filter((g) => g.status !== "FINAL")
-          .flatMap((g) => [g.homeTeam.espnId, g.awayTeam.espnId]),
-      ),
-    ];
-    const ruledOutAthleteEspnIds = new Set<string>();
-    if (unplayedTeamEspnIds.length > 0) {
-      const injuriesByTeam = await Promise.all(
-        unplayedTeamEspnIds.map((teamEspnId) => getTeamInjuries(teamEspnId).catch(() => [])),
-      );
-      for (const injuries of injuriesByTeam) {
-        for (const injury of injuries) {
-          if (isRuledOut(injury.status)) ruledOutAthleteEspnIds.add(injury.athleteEspnId);
-        }
-      }
-    }
-
-    const result = games.map((game) => ({
-      espnId: game.espnId,
-      date: game.date,
-      status: game.status,
-      homeTeam: game.homeTeam,
-      awayTeam: game.awayTeam,
-      homeScore: game.homeScore,
-      awayScore: game.awayScore,
-      projection: game.gameProjection
-        ? {
-            projectedHomeScore: game.gameProjection.projectedHomeScore,
-            projectedAwayScore: game.gameProjection.projectedAwayScore,
-            projectedMargin: game.gameProjection.projectedMargin,
-            spreadBettable: game.gameProjection.spreadBettable,
-            totalBettable: game.gameProjection.totalBettable,
-            marginStdev: game.gameProjection.marginStdev,
-            totalStdev: game.gameProjection.totalStdev,
-            gradedCorrect: game.gameProjection.gradedCorrect,
-            gradedSpreadCorrect: game.gameProjection.gradedSpreadCorrect,
-            gradedTotalCorrect: game.gameProjection.gradedTotalCorrect,
-          }
-        : null,
-      market: game.odds
-        ? {
-            provider: game.odds.provider,
-            spread: game.odds.spread,
-            overUnder: game.odds.overUnder,
-            homeMoneyline: game.odds.homeMoneyline,
-            awayMoneyline: game.odds.awayMoneyline,
-            homeSpreadOdds: game.odds.homeSpreadOdds,
-            awaySpreadOdds: game.odds.awaySpreadOdds,
-            overOdds: game.odds.overOdds,
-            underOdds: game.odds.underOdds,
-          }
-        : null,
-      predictor: game.predictorSnapshot
-        ? { homeWinPct: game.predictorSnapshot.homeWinPct, awayWinPct: game.predictorSnapshot.awayWinPct }
-        : null,
-      playerProps: game.playerPropProjections
-        .filter((p) => p.line != null)
-        .map((p) => {
-          const line = p.line!;
-          const lean = p.projectedValue > line ? "OVER" : p.projectedValue < line ? "UNDER" : "PUSH";
-          const oddsRow = game.playerPropOdds.find(
-            (o) => o.playerId === p.playerId && o.statType === p.statType && o.side === lean,
-          );
-          return {
-            playerId: p.player.id,
-            playerName: p.player.displayName,
-            statType: p.statType,
-            projectedValue: p.projectedValue,
-            line,
-            lean,
-            odds: oddsRow?.odds ?? null,
-            bettable: p.bettable,
-            stdev: p.stdev,
-            gradedCorrect: p.gradedCorrect,
-            gradedActualValue: p.gradedActualValue,
-            // Game went FINAL and grading ran, but there was no box score
-            // to grade against — the player never suited up.
-            dnp: game.status === "FINAL" && p.gradedAt !== null && p.gradedCorrect === null,
-            ruledOut: game.status !== "FINAL" && ruledOutAthleteEspnIds.has(p.player.espnId),
-          };
-        }),
-    }));
+    const result = games.map((game) => {
+      // Frozen availability is only meaningful for games that haven't been
+      // played yet — for a FINAL game, the box score (gradedAt/gradedActualValue
+      // below) is the ground truth on who actually suited up.
+      const outPlayerIds =
+        game.status !== "FINAL"
+          ? new Set(game.playerAvailabilities.filter((a) => a.status === "OUT").map((a) => a.playerId))
+          : null;
+      return {
+        espnId: game.espnId,
+        date: game.date,
+        status: game.status,
+        homeTeam: game.homeTeam,
+        awayTeam: game.awayTeam,
+        homeScore: game.homeScore,
+        awayScore: game.awayScore,
+        projection: game.gameProjection
+          ? {
+              projectedHomeScore: game.gameProjection.projectedHomeScore,
+              projectedAwayScore: game.gameProjection.projectedAwayScore,
+              projectedMargin: game.gameProjection.projectedMargin,
+              spreadBettable: game.gameProjection.spreadBettable,
+              totalBettable: game.gameProjection.totalBettable,
+              marginStdev: game.gameProjection.marginStdev,
+              totalStdev: game.gameProjection.totalStdev,
+              gradedCorrect: game.gameProjection.gradedCorrect,
+              gradedSpreadCorrect: game.gameProjection.gradedSpreadCorrect,
+              gradedTotalCorrect: game.gameProjection.gradedTotalCorrect,
+            }
+          : null,
+        market: game.odds
+          ? {
+              provider: game.odds.provider,
+              spread: game.odds.spread,
+              overUnder: game.odds.overUnder,
+              homeMoneyline: game.odds.homeMoneyline,
+              awayMoneyline: game.odds.awayMoneyline,
+              homeSpreadOdds: game.odds.homeSpreadOdds,
+              awaySpreadOdds: game.odds.awaySpreadOdds,
+              overOdds: game.odds.overOdds,
+              underOdds: game.odds.underOdds,
+            }
+          : null,
+        predictor: game.predictorSnapshot
+          ? { homeWinPct: game.predictorSnapshot.homeWinPct, awayWinPct: game.predictorSnapshot.awayWinPct }
+          : null,
+        playerProps: game.playerPropProjections
+          .filter((p) => p.line != null)
+          .map((p) => {
+            const line = p.line!;
+            const lean = p.projectedValue > line ? "OVER" : p.projectedValue < line ? "UNDER" : "PUSH";
+            const oddsRow = game.playerPropOdds.find(
+              (o) => o.playerId === p.playerId && o.statType === p.statType && o.side === lean,
+            );
+            return {
+              playerId: p.player.id,
+              playerName: p.player.displayName,
+              statType: p.statType,
+              projectedValue: p.projectedValue,
+              line,
+              lean,
+              odds: oddsRow?.odds ?? null,
+              bettable: p.bettable,
+              stdev: p.stdev,
+              gradedCorrect: p.gradedCorrect,
+              gradedActualValue: p.gradedActualValue,
+              // Game went FINAL and grading ran, but there was no box score
+              // to grade against — the player never suited up.
+              dnp: game.status === "FINAL" && p.gradedAt !== null && p.gradedCorrect === null,
+              ruledOut: outPlayerIds !== null && outPlayerIds.has(p.player.id),
+            };
+          }),
+      };
+    });
 
     return NextResponse.json({ games: result });
   } catch (error) {

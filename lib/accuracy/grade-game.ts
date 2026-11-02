@@ -59,6 +59,31 @@ export function gradeTotalCoverage(
   return { correct: pickedOver === wentOver };
 }
 
+export interface MarketFavoriteGradeResult {
+  /** `null` when there's no market line recorded at pick time, or the
+   * market had no favorite (a pick'em, `marketMarginAtPick === 0`) — no
+   * side to grade either way. */
+  correct: boolean | null;
+}
+
+/** Grades "always pick the market's favored side" (straight-up) against
+ * the actual winner — a baseline distinct from our own model and ESPN's
+ * predictor, since a sportsbook line is calibrated against the spread, not
+ * against who wins outright (see improve-game-rating-model design.md
+ * "Market-favorite accuracy baseline"). `marketMarginAtPick` is the
+ * frozen home-relative implied margin already stored on `GameProjection`
+ * (positive means home favored). */
+export function gradeMarketFavorite(
+  marketMarginAtPick: number | null,
+  actualHomeScore: number,
+  actualAwayScore: number,
+): MarketFavoriteGradeResult {
+  if (marketMarginAtPick === null || marketMarginAtPick === 0) return { correct: null };
+  const homeFavored = marketMarginAtPick > 0;
+  const homeWon = actualHomeScore > actualAwayScore;
+  return { correct: homeFavored === homeWon };
+}
+
 /** Grades a snapshotted ESPN `predictor` (win probabilities, not a score
  * margin — see ingest/mappers/predictor.ts). `marginError` is repurposed
  * here as a probability-error proxy: how far the actual winner's

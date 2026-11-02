@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gradeGameProjection, gradePredictorSnapshot, gradeSpreadCoverage, gradeTotalCoverage } from "./grade-game";
+import {
+  gradeGameProjection,
+  gradeMarketFavorite,
+  gradePredictorSnapshot,
+  gradeSpreadCoverage,
+  gradeTotalCoverage,
+} from "./grade-game";
 
 test("gradeGameProjection marks a correct pick when the predicted side matches the actual winner", () => {
   const result = gradeGameProjection(5, 110, 102);
@@ -17,6 +23,21 @@ test("gradeGameProjection treats an exact tie prediction as correct only if the 
   const result = gradeGameProjection(0, 100, 100);
   assert.equal(result.correct, true);
   assert.equal(result.marginError, 0);
+});
+
+test("gradeMarketFavorite marks correct when the market's favored side wins", () => {
+  const result = gradeMarketFavorite(5.5, 110, 102); // home favored by 5.5, home wins
+  assert.equal(result.correct, true);
+});
+
+test("gradeMarketFavorite marks incorrect when the market's underdog wins", () => {
+  const result = gradeMarketFavorite(5.5, 100, 108); // home favored, away wins
+  assert.equal(result.correct, false);
+});
+
+test("gradeMarketFavorite returns a neutral null with no market line or a pick'em", () => {
+  assert.equal(gradeMarketFavorite(null, 110, 102).correct, null);
+  assert.equal(gradeMarketFavorite(0, 110, 102).correct, null);
 });
 
 test("gradePredictorSnapshot marks correct when the favored side wins", () => {
