@@ -7,7 +7,7 @@ import { mapNewsArticle, type EspnNewsArticle } from "../../ingest/mappers/news"
 import { cachedEspn } from "./espn-cache";
 
 interface EspnNewsResponse {
-  articles: EspnNewsArticle[];
+  headlines: EspnNewsArticle[];
 }
 
 export interface LiveNewsArticle {
@@ -23,8 +23,8 @@ export interface LiveNewsArticle {
 }
 
 async function fetchNewsLive(limit: number): Promise<LiveNewsArticle[]> {
-  const { articles } = await fetchEspnJson<EspnNewsResponse>(espnEndpoints.news(limit));
-  return articles.map((article) => {
+  const { headlines } = await fetchEspnJson<EspnNewsResponse>(espnEndpoints.news(limit));
+  return headlines.map((article) => {
     const mapped = mapNewsArticle(article);
     return { ...mapped, id: mapped.espnId, teams: [], players: [] };
   });

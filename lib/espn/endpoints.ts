@@ -9,6 +9,13 @@
 const SITE = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba";
 const SITE_WEB = "https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba";
 const CORE = "https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba";
+// now.core's NBA-scoped feed (unlike `${SITE}/news`, which is a generic
+// cross-sport feed that happens to return NBA content) is what actually
+// backs espn.com's NBA headlines module — confirmed during the home page
+// "Top Headlines" work: `${SITE}/news` surfaced only ~5 HeadlineNews-typed
+// articles out of its last 50, this feed surfaced ~9 including stories
+// `${SITE}/news` didn't have at all (e.g. the Lakers ownership saga).
+const NOW_CORE_NBA_NEWS = "https://now.core.api.espn.com/v1/sports/basketball/nba/news";
 
 export const espnEndpoints = {
   scoreboard: (dates: string) => `${SITE}/scoreboard?dates=${dates}`,
@@ -18,7 +25,7 @@ export const espnEndpoints = {
   teamRoster: (teamId: string) => `${SITE}/teams/${teamId}/roster`,
   teamSchedule: (teamId: string, season: string) =>
     `${SITE}/teams/${teamId}/schedule?season=${season}`,
-  news: (limit = 50) => `${SITE}/news?limit=${limit}`,
+  news: (limit = 50) => `${NOW_CORE_NBA_NEWS}?limit=${limit}`,
   teamTransactions: (teamId: string, season: string, page = 1) =>
     `${SITE}/transactions?team=${teamId}&season=${season}&page=${page}`,
 

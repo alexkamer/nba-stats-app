@@ -16,7 +16,7 @@ import {
 } from "./mappers/news";
 
 interface EspnNewsResponse {
-  articles: EspnNewsArticle[];
+  headlines: EspnNewsArticle[];
 }
 
 async function main() {
@@ -27,10 +27,10 @@ async function main() {
   const teamIdByEspnId = new Map(teams.map((t) => [t.espnId, t.id]));
   const playerIdByEspnId = new Map(players.map((p) => [p.espnId, p.id]));
 
-  const { articles } = await fetchEspnJson<EspnNewsResponse>(espnEndpoints.news(50));
+  const { headlines } = await fetchEspnJson<EspnNewsResponse>(espnEndpoints.news(50));
 
   let synced = 0;
-  for (const article of articles) {
+  for (const article of headlines) {
     const input = mapNewsArticle(article);
     const row = await prisma.newsArticle.upsert({
       where: { espnId: input.espnId },
