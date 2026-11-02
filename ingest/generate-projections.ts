@@ -166,6 +166,45 @@ async function generateGameProjections() {
   return { checked: scheduledGames.length, created };
 }
 
+// A projection can be created before the sportsbook has posted a line for
+// that game (e.g. discovered a day+ out) — generateGameProjections freezes
+// whatever odds exist at that moment, so market*AtPick comes back null and
+// no spread/total pick is ever made. Backfilling the line here once it
+// shows up, as long as the game hasn't tipped off yet, isn't hindsight
+// (design.md's "frozen pre-game" constraint) — it just catches the pick up
+// to a line that was always going to arrive before game time.
+async function backfillMissingMarketLines() {
+  const pending = await prisma.gameProjection.findMany({
+    where: {
+      game: { status: "SCHEDULED" },
+      OR: [{ marketMarginAtPick: null }, { marketTotalAtPick: null }],
+    },
+    select: { id: true, gameId: true, projectedMargin: true, projectedHomeScore: true, projectedAwayScore: true, marginStdev: true, totalStdev: true },
+  });
+
+  let updated = 0;
+  for (const proj of pending) {
+    const odds = await prisma.odds.findUnique({ where: { gameId: proj.gameId }, select: { spread: true, overUnder: true } });
+    if (odds?.spread == null && odds?.overUnder == null) continue;
+
+    const marketMargin = odds?.spread != null ? -odds.spread : null;
+    const marketTotal = odds?.overUnder ?? null;
+    const projectedTotal = proj.projectedHomeScore + proj.projectedAwayScore;
+
+    await prisma.gameProjection.update({
+      where: { id: proj.id },
+      data: {
+        marketMarginAtPick: marketMargin,
+        marketTotalAtPick: marketTotal,
+        spreadBettable: isBettable(proj.projectedMargin, marketMargin, proj.marginStdev),
+        totalBettable: isBettable(projectedTotal, marketTotal, proj.totalStdev),
+      },
+    });
+    updated += 1;
+  }
+  return { checked: pending.length, updated };
+}
+
 // Caches a player's full game-log rows (ordered oldest -> newest, matching
 // lib/projections/player-prop-projection.ts's documented order) so
 // multiple prop stat types for the same player don't re-query it.
@@ -266,11 +305,13 @@ async function generatePlayerPropProjections() {
 async function main() {
   const start = Date.now();
   const games = await generateGameProjections();
+  const backfilled = await backfillMissingMarketLines();
   const props = await generatePlayerPropProjections();
   console.log(
     `generate-projections done in ${((Date.now() - start) / 1000).toFixed(1)}s: ` +
       `games ${games.created}/${games.checked} projected, props ${props.created}/${props.checked} projected ` +
-      `(remaining lacked qualifying history and were skipped, not fabricated).`,
+      `(remaining lacked qualifying history and were skipped, not fabricated), ` +
+      `market lines backfilled ${backfilled.updated}/${backfilled.checked}.`,
   );
   await prisma.$disconnect();
 }

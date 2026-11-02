@@ -96,6 +96,7 @@ DATA_SOURCE=espn npm run dev
 | `npm run build` | Production build. |
 | `npm run start` | Run the production build. |
 | `npm run lint` | Lint the codebase. |
+| `npx tsx scripts/sync-status.ts` | Check whether the hourly sync is current — last run time/result, any ungraded final games, any scheduled games still waiting on a market line. |
 
 ## License
 

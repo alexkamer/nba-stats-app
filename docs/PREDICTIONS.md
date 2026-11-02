@@ -34,6 +34,20 @@ load-bearing: it's what keeps grading honest (no hindsight) and what lets
 the market line move after we've made our pick without us quietly
 re-pricing it.
 
+**Game projections can be created before a market line exists** — a game
+gets discovered and projected as soon as it's `SCHEDULED`, which can be a
+day or more before DraftKings posts a spread/total for it. In that case
+`marketMarginAtPick`/`marketTotalAtPick` come back `null` and no spread/total
+pick is ever graded (there was nothing to pick against). `generate-projections.ts`
+also runs a `backfillMissingMarketLines()` pass every cycle that fills in
+the market line — and recomputes `spreadBettable`/`totalBettable` — for any
+still-`SCHEDULED` projection missing one, once the line is posted. This is
+still pre-game, so it doesn't violate the no-hindsight rule; it only ever
+catches a pick up to a line that was always going to arrive before tip-off.
+Player prop projections don't have this gap: `generatePlayerPropProjections`
+is driven directly off existing `PlayerPropOdds` rows, so a prop projection
+is never created without a line in the first place.
+
 ## Game projections (`lib/projections/game-projection.ts`)
 
 For each team: blend season points-per-game / opp-points-per-game with a
