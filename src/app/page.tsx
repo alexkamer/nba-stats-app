@@ -12,15 +12,15 @@ interface GameCard {
   statusDetail: string;
   period: number | null;
   clock: string | null;
-  home: { abbreviation: string; displayName: string; score: number | null; logoUrl: string | null };
-  away: { abbreviation: string; displayName: string; score: number | null; logoUrl: string | null };
+  home: { name: string; score: number | null; logoUrl: string | null };
+  away: { name: string; score: number | null; logoUrl: string | null };
 }
 
 interface Standing {
   conferenceRank: number | null;
   wins: number | null;
   losses: number | null;
-  team: { id: number; displayName: string; abbreviation: string; logoUrl?: string | null };
+  team: { id: number; name: string; abbreviation: string; logoUrl?: string | null };
 }
 
 interface StandingsResponse {
@@ -98,100 +98,114 @@ function HomeContent() {
         <p className="text-foreground/72">Scores, standings, and news in one place.</p>
       </div>
 
-      <SectionCard
-        title="Today's Games"
-        accentColor="var(--accent)"
-        action={
-          <Link href="/scoreboard" className="text-sm font-semibold text-accent hover:underline">
-            Full scoreboard
-          </Link>
-        }
-      >
-        {gamesLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
-        {!gamesLoading && (!games || games.length === 0) && (
-          <p className="text-foreground/72 text-sm">No games scheduled today.</p>
-        )}
-        <div className="grid gap-3 sm:grid-cols-2">
-          {games
-            ?.slice()
-            .sort(
-              (a, b) =>
-                Number(b.statusName === "STATUS_IN_PROGRESS") - Number(a.statusName === "STATUS_IN_PROGRESS"),
-            )
-            .slice(0, 6)
-            .map((game) => {
-              const isLive = game.statusName === "STATUS_IN_PROGRESS";
-              return (
-                <Link
-                  key={game.espnId}
-                  href={`/games/${game.espnId}`}
-                  className="flex flex-col gap-2 rounded-md border border-border p-3 transition-colors hover:bg-surface-muted"
-                >
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-foreground/60">
-                    {isLive && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
-                    {isLive ? `Q${game.period} ${game.clock ?? ""}` : game.statusDetail}
-                  </span>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 text-sm font-semibold">
-                      <CircularBadge src={game.away.logoUrl} alt="" size="sm" />
-                      {game.away.abbreviation}
-                    </span>
-                    <span className="font-display text-lg font-extrabold tabular-nums">{game.away.score ?? "-"}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 text-sm font-semibold">
-                      <CircularBadge src={game.home.logoUrl} alt="" size="sm" />
-                      {game.home.abbreviation}
-                    </span>
-                    <span className="font-display text-lg font-extrabold tabular-nums">{game.home.score ?? "-"}</span>
-                  </div>
-                </Link>
-              );
-            })}
-        </div>
-      </SectionCard>
+      <div className="grid items-start gap-6 lg:grid-cols-[1fr_2fr_1fr]">
+        <div />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <SectionCard
-          title="Standings"
-          accentColor="var(--accent)"
-          action={
-            <Link href="/standings" className="text-sm font-semibold text-accent hover:underline">
-              Full standings
-            </Link>
-          }
-        >
-          {standingsLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
-          <div className="grid gap-4 sm:grid-cols-2">
-            {standings?.conferences.map((conf) => (
-              <div key={conf.conferenceName} className="space-y-2">
-                <h3 className="text-xs font-bold uppercase tracking-wide text-foreground/60">{conf.conferenceName}</h3>
-                <div className="space-y-1.5">
-                  {conf.standings
-                    .slice()
-                    .sort((a, b) => (a.conferenceRank ?? 99) - (b.conferenceRank ?? 99))
-                    .slice(0, 5)
-                    .map((s) => (
-                      <Link
-                        key={s.team.id}
-                        href={`/teams/${s.team.id}`}
-                        className="flex items-center justify-between gap-2 text-sm hover:text-foreground"
-                      >
-                        <span className="flex items-center gap-2 truncate text-foreground/82">
-                          <span className="w-4 shrink-0 text-right text-xs text-foreground/50">{s.conferenceRank}</span>
-                          <CircularBadge src={s.team.logoUrl} alt="" size="xs" />
-                          <span className="truncate">{s.team.displayName}</span>
+        <div className="space-y-6">
+          <SectionCard
+            title="Today's Games"
+            accentColor="var(--accent)"
+            action={
+              <Link href="/scoreboard" className="text-sm font-semibold text-accent hover:underline">
+                Full scoreboard
+              </Link>
+            }
+          >
+            {gamesLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+            {!gamesLoading && (!games || games.length === 0) && (
+              <p className="text-foreground/72 text-sm">No games scheduled today.</p>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {games
+                ?.slice()
+                .sort(
+                  (a, b) =>
+                    Number(b.statusName === "STATUS_IN_PROGRESS") - Number(a.statusName === "STATUS_IN_PROGRESS"),
+                )
+                .slice(0, 6)
+                .map((game) => {
+                  const isLive = game.statusName === "STATUS_IN_PROGRESS";
+                  return (
+                    <Link
+                      key={game.espnId}
+                      href={`/games/${game.espnId}`}
+                      className="flex flex-col gap-2 rounded-md border border-border p-3 transition-colors hover:bg-surface-muted"
+                    >
+                      <span className="flex items-center gap-1.5 text-xs font-medium text-foreground/60">
+                        {isLive && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
+                        {isLive ? `Q${game.period} ${game.clock ?? ""}` : game.statusDetail}
+                      </span>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                          <CircularBadge src={game.away.logoUrl} alt="" size="sm" />
+                          <span className="truncate">{game.away.name}</span>
                         </span>
-                        <span className="shrink-0 tabular-nums text-foreground/60">
-                          {s.wins}-{s.losses}
+                        <span className="shrink-0 font-display text-lg font-extrabold tabular-nums">
+                          {game.away.score ?? "-"}
                         </span>
-                      </Link>
-                    ))}
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                          <CircularBadge src={game.home.logoUrl} alt="" size="sm" />
+                          <span className="truncate">{game.home.name}</span>
+                        </span>
+                        <span className="shrink-0 font-display text-lg font-extrabold tabular-nums">
+                          {game.home.score ?? "-"}
+                        </span>
+                      </div>
+                    </Link>
+                  );
+                })}
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            title="Standings"
+            accentColor="var(--accent)"
+            action={
+              <Link href="/standings" className="text-sm font-semibold text-accent hover:underline">
+                Full standings
+              </Link>
+            }
+          >
+            {standingsLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {standings?.conferences.map((conf) => (
+                <div key={conf.conferenceName} className="space-y-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-foreground/60">
+                    {conf.conferenceName}
+                  </h3>
+                  <div className="space-y-1.5">
+                    {conf.standings
+                      .slice()
+                      .sort((a, b) => (a.conferenceRank ?? 99) - (b.conferenceRank ?? 99))
+                      .slice(0, 10)
+                      .map((s, i) => (
+                        <div key={s.team.id}>
+                          {i === 6 && <div className="mb-1.5 border-t border-dashed border-border" />}
+                          <Link
+                            href={`/teams/${s.team.id}`}
+                            className="flex items-center justify-between gap-2 text-sm hover:text-foreground"
+                          >
+                            <span className="flex items-center gap-2 truncate text-foreground/82">
+                              <span className="w-4 shrink-0 text-right text-xs text-foreground/50">
+                                {s.conferenceRank}
+                              </span>
+                              <CircularBadge src={s.team.logoUrl} alt="" size="xs" />
+                              <span className="truncate">{s.team.name}</span>
+                            </span>
+                            <span className="shrink-0 tabular-nums text-foreground/60">
+                              {s.wins}-{s.losses}
+                            </span>
+                          </Link>
+                        </div>
+                      ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </SectionCard>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
 
         <SectionCard
           title="Latest News"

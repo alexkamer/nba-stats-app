@@ -47,7 +47,7 @@ export function CircularBadge({
     <img
       src={src}
       alt={alt}
-      className={`shrink-0 rounded-full bg-surface-muted object-cover ${sizeClass} ${className}`}
+      className={`shrink-0 rounded-full object-cover ${sizeClass} ${className}`}
       onError={() => setFailed(true)}
     />
   );

@@ -22,6 +22,7 @@ interface EspnScoreboardTeam {
   id: string;
   abbreviation: string;
   displayName: string;
+  name: string;
   color?: string;
   alternateColor?: string;
   logos?: { href: string }[];
@@ -461,8 +462,8 @@ export interface ScoreboardGameCard {
   statusDetail: string;
   period: number | null;
   clock: string | null;
-  home: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; moneyline: number | null; lineScore: string[]; overallRecord: string | null; splitRecord: string | null };
-  away: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; moneyline: number | null; lineScore: string[]; overallRecord: string | null; splitRecord: string | null };
+  home: { espnId: string; abbreviation: string; displayName: string; name: string; score: number | null; logoUrl: string | null; color: string | null; moneyline: number | null; lineScore: string[]; overallRecord: string | null; splitRecord: string | null };
+  away: { espnId: string; abbreviation: string; displayName: string; name: string; score: number | null; logoUrl: string | null; color: string | null; moneyline: number | null; lineScore: string[]; overallRecord: string | null; splitRecord: string | null };
 }
 
 function parseMoneyline(value: string | undefined): number | null {
@@ -505,6 +506,7 @@ export async function getScoreboard(date: string): Promise<ScoreboardGameCard[]>
         espnId: home!.team.id,
         abbreviation: home!.team.abbreviation,
         displayName: home!.team.displayName,
+        name: home!.team.name,
         score: !isScheduled && home!.score !== undefined ? Number(home!.score) : null,
         logoUrl: home!.team.logos?.[0]?.href ?? teamLogoUrl(home!.team.abbreviation),
         color: home!.team.color ? `#${home!.team.color}` : null,
@@ -517,6 +519,7 @@ export async function getScoreboard(date: string): Promise<ScoreboardGameCard[]>
         espnId: away!.team.id,
         abbreviation: away!.team.abbreviation,
         displayName: away!.team.displayName,
+        name: away!.team.name,
         score: !isScheduled && away!.score !== undefined ? Number(away!.score) : null,
         logoUrl: away!.team.logos?.[0]?.href ?? teamLogoUrl(away!.team.abbreviation),
         color: away!.team.color ? `#${away!.team.color}` : null,
