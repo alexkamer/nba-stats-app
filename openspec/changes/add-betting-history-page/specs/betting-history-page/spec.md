@@ -56,6 +56,17 @@ The page SHALL display the system's player-prop pick hit rate broken down by sta
 - **WHEN** graded player-prop projections exist for two or more `PropStatType` values
 - **THEN** the page shows a separate hit rate for each stat type that has at least one graded pick
 
+### Requirement: Today strip
+The page SHALL present a summary strip above the page's sections surfacing the most recent noteworthy item from each section — the most recent King of the Court day's leader(s), any team with a notably long current ATS or over/under streak, today's birthdays, and any triple-double from the most recent King of the Court day — so the page reads as "what happened" rather than only static season-to-date tables.
+
+#### Scenario: Recent highlights exist
+- **WHEN** at least one of the underlying sections has data to summarize
+- **THEN** the strip shows a highlight chip for each section that has one, omitting any section with nothing noteworthy
+
+#### Scenario: Nothing noteworthy yet
+- **WHEN** none of the underlying sections have data to summarize
+- **THEN** the strip does not render, rather than showing an empty bar
+
 ### Requirement: Navigation entry
 The page SHALL be reachable from the site's primary navigation.
 

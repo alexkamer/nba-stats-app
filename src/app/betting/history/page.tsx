@@ -542,6 +542,98 @@ function PropHitRateByStatTypeSection() {
   );
 }
 
+interface TodayHighlight {
+  icon: string;
+  text: string;
+  href?: string;
+}
+
+// How long a current streak has to be before it's worth calling out — a
+// 1-game streak is just "the last game," not a trend.
+const NOTABLE_STREAK_LENGTH = 3;
+
+/** Summary strip pulling the single most noteworthy item out of each
+ * section's already-fetched data (same query keys as the sections below,
+ * so this adds no extra network requests) — meant to make the page read
+ * as "what happened" rather than only static season-to-date tables. */
+function TodayStrip() {
+  const { data: teamData } = useQuery({
+    queryKey: ["betting", "history", "team-cover-records"],
+    queryFn: () => fetchJson<{ records: TeamCoverRecord[] }>("/api/betting/history/team-cover-records"),
+  });
+  const { data: leaderData } = useQuery({
+    queryKey: ["betting", "history", "daily-leaders"],
+    queryFn: () => fetchJson<{ days: DailyStatLeaderDay[]; crownTally: CrownTallyEntry[] }>("/api/betting/history/daily-leaders"),
+  });
+  const { data: birthdayData } = useQuery({
+    queryKey: ["betting", "history", "birthdays"],
+    queryFn: () => fetchJson<{ players: Birthday[] }>("/api/betting/history/birthdays"),
+  });
+
+  const highlights: TodayHighlight[] = [];
+
+  const latestDay = leaderData?.days[leaderData.days.length - 1];
+  if (latestDay && latestDay.entries.length > 0) {
+    const names = latestDay.entries.map((e) => shortName(e.player.displayName)).join(" & ");
+    const dateLabel = new Date(latestDay.date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    highlights.push({
+      icon: "👑",
+      text: `${names} led the court ${dateLabel} with ${latestDay.entries[0].pointsReboundsAssists} PRA`,
+      href: `/betting/history/king-of-the-court/${dayKey(new Date(latestDay.date))}`,
+    });
+
+    const tripleDoubles = latestDay.entries.filter((e) => e.hadTripleDouble);
+    if (tripleDoubles.length > 0) {
+      highlights.push({
+        icon: "💪",
+        text: `${tripleDoubles.map((e) => shortName(e.player.displayName)).join(" & ")} recorded a triple-double ${dateLabel}`,
+      });
+    }
+  }
+
+  let hottest: { team: TeamSummary; kind: "ATS" | "O/U"; streak: number } | null = null;
+  for (const r of teamData?.records ?? []) {
+    if (Math.abs(r.atsCurrentStreak) >= NOTABLE_STREAK_LENGTH && (!hottest || Math.abs(r.atsCurrentStreak) > Math.abs(hottest.streak))) {
+      hottest = { team: r.team, kind: "ATS", streak: r.atsCurrentStreak };
+    }
+    if (Math.abs(r.ouCurrentStreak) >= NOTABLE_STREAK_LENGTH && (!hottest || Math.abs(r.ouCurrentStreak) > Math.abs(hottest.streak))) {
+      hottest = { team: r.team, kind: "O/U", streak: r.ouCurrentStreak };
+    }
+  }
+  if (hottest) {
+    const verb =
+      hottest.kind === "ATS"
+        ? hottest.streak > 0 ? "covered" : "failed to cover"
+        : hottest.streak > 0 ? "gone over" : "gone under";
+    highlights.push({ icon: "🔥", text: `${hottest.team.abbreviation} has ${verb} ${Math.abs(hottest.streak)} straight (${hottest.kind})` });
+  }
+
+  if (birthdayData && birthdayData.players.length > 0) {
+    highlights.push({ icon: "🎂", text: `Happy birthday ${birthdayData.players.map((p) => p.displayName).join(", ")}!` });
+  }
+
+  if (highlights.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {highlights.map((h) => {
+        const chipClass =
+          "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-foreground/82" +
+          (h.href ? " hover:border-accent hover:text-foreground" : "");
+        return h.href ? (
+          <Link key={h.text} href={h.href} className={chipClass}>
+            <span>{h.icon}</span> {h.text}
+          </Link>
+        ) : (
+          <span key={h.text} className={chipClass}>
+            <span>{h.icon}</span> {h.text}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function SectionCard({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-3">
@@ -561,6 +653,8 @@ export default function CoverStoryPage() {
           and how our prop picks have graded out by stat type.
         </p>
       </div>
+
+      <TodayStrip />
 
       <SectionCard title="Team cover records">
         <TeamCoverRecordsSection />

@@ -47,3 +47,7 @@
 - [x] 8.3 Add `src/app/api/betting/history/daily-leaderboard/route.ts` (`date` query param) returning every player's points+rebounds+assists total and triple-double flag for that date's games, ranked highest to lowest, computed live from `PlayerGameStat` (no new storage — mirrors the birthdays route's live-query pattern); verify via manual request against a seeded date with multiple players
 - [ ] 8.4 Add `src/app/betting/history/king-of-the-court/[date]/page.tsx` rendering the full ranked leaderboard for that date from 8.3, with a no-games/no-data state; verify by loading it for a date with games and a date with none
 - [ ] 8.5 Make each calendar day cell with a recorded leader a link to `/betting/history/king-of-the-court/[date]`; verify clicking a day navigates to its leaderboard
+
+## 9. Today strip
+
+- [x] 9.1 Add a `TodayStrip` component above the page's sections that derives highlight chips from already-fetched data (no new API routes): the most recent King of the Court day's leader(s), the team with the longest current |ATS or O/U streak| above a notability threshold, today's birthdays, and any triple-double from the most recent King of the Court day; each chip omitted when its underlying data has nothing noteworthy; verify it renders the expected chips against seeded data and renders nothing when no section has anything noteworthy
