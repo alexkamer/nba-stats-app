@@ -112,35 +112,42 @@ function HomeContent() {
           <p className="text-foreground/72 text-sm">No games scheduled today.</p>
         )}
         <div className="grid gap-3 sm:grid-cols-2">
-          {games?.map((game) => {
-            const isLive = game.statusName === "STATUS_IN_PROGRESS";
-            return (
-              <Link
-                key={game.espnId}
-                href={`/games/${game.espnId}`}
-                className="flex flex-col gap-2 rounded-md border border-border p-3 transition-colors hover:bg-surface-muted"
-              >
-                <span className="flex items-center gap-1.5 text-xs font-medium text-foreground/60">
-                  {isLive && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
-                  {isLive ? `Q${game.period} ${game.clock ?? ""}` : game.statusDetail}
-                </span>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-2 text-sm font-semibold">
-                    <CircularBadge src={game.away.logoUrl} alt="" size="sm" />
-                    {game.away.abbreviation}
+          {games
+            ?.slice()
+            .sort(
+              (a, b) =>
+                Number(b.statusName === "STATUS_IN_PROGRESS") - Number(a.statusName === "STATUS_IN_PROGRESS"),
+            )
+            .slice(0, 6)
+            .map((game) => {
+              const isLive = game.statusName === "STATUS_IN_PROGRESS";
+              return (
+                <Link
+                  key={game.espnId}
+                  href={`/games/${game.espnId}`}
+                  className="flex flex-col gap-2 rounded-md border border-border p-3 transition-colors hover:bg-surface-muted"
+                >
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-foreground/60">
+                    {isLive && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
+                    {isLive ? `Q${game.period} ${game.clock ?? ""}` : game.statusDetail}
                   </span>
-                  <span className="font-display text-lg font-extrabold tabular-nums">{game.away.score ?? "-"}</span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-2 text-sm font-semibold">
-                    <CircularBadge src={game.home.logoUrl} alt="" size="sm" />
-                    {game.home.abbreviation}
-                  </span>
-                  <span className="font-display text-lg font-extrabold tabular-nums">{game.home.score ?? "-"}</span>
-                </div>
-              </Link>
-            );
-          })}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-sm font-semibold">
+                      <CircularBadge src={game.away.logoUrl} alt="" size="sm" />
+                      {game.away.abbreviation}
+                    </span>
+                    <span className="font-display text-lg font-extrabold tabular-nums">{game.away.score ?? "-"}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-sm font-semibold">
+                      <CircularBadge src={game.home.logoUrl} alt="" size="sm" />
+                      {game.home.abbreviation}
+                    </span>
+                    <span className="font-display text-lg font-extrabold tabular-nums">{game.home.score ?? "-"}</span>
+                  </div>
+                </Link>
+              );
+            })}
         </div>
       </SectionCard>
 
