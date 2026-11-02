@@ -68,6 +68,23 @@ interface Birthday extends PlayerSummary {
   birthDate: string;
 }
 
+interface OnThisDayPerformance {
+  player: PlayerSummary;
+  points: number;
+  rebounds: number;
+  assists: number;
+  pointsReboundsAssists: number;
+  hadTripleDouble: boolean;
+  gameEspnId: string;
+  date: string;
+  year: number;
+  team: TeamSummary | null;
+  opponent: TeamSummary | null;
+  teamScore: number;
+  opponentScore: number;
+  isHome: boolean;
+}
+
 interface AccuracyBucket {
   graded: number;
   correct: number;
@@ -542,6 +559,53 @@ function PropHitRateByStatTypeSection() {
   );
 }
 
+function onThisDayQueryOptions() {
+  return {
+    queryKey: ["betting", "history", "on-this-day"],
+    queryFn: () => fetchJson<{ monthDay: string; performances: OnThisDayPerformance[] }>("/api/betting/history/on-this-day"),
+  };
+}
+
+function OnThisDaySection() {
+  const { data, isLoading, error } = useQuery(onThisDayQueryOptions());
+
+  if (isLoading) return <p className="text-foreground/72">Loading on-this-day performances…</p>;
+  if (error) return <p className="text-red-600 dark:text-red-400">Failed to load on-this-day performances.</p>;
+  if (!data || data.performances.length === 0) {
+    return <p className="text-foreground/72">No historical performances recorded for this calendar date yet.</p>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-3">
+      {data.performances.map((perf) => (
+        <Link
+          key={`${perf.player.id}-${perf.year}`}
+          href={`/games/${perf.gameEspnId}`}
+          className="w-56 shrink-0 rounded-lg border border-border bg-surface p-3 hover:border-accent"
+        >
+          <div className="flex items-center gap-2">
+            <CircularBadge src={perf.player.headshotUrl} alt="" size="md" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-foreground">{perf.player.displayName}</p>
+              <p className="text-xs text-foreground/60">{perf.year}</p>
+            </div>
+            {perf.hadTripleDouble && <span title="Triple-double">💪</span>}
+          </div>
+          <p className="mt-2 text-2xl font-extrabold tabular-nums text-foreground">{perf.pointsReboundsAssists} PRA</p>
+          <p className="text-xs text-foreground/60 tabular-nums">
+            {perf.points} PTS · {perf.rebounds} REB · {perf.assists} AST
+          </p>
+          <p className="mt-1.5 flex items-center gap-1 text-xs text-foreground/72">
+            <CircularBadge src={perf.team?.logoUrl} alt="" size="xs" />
+            {perf.team?.abbreviation} {perf.teamScore} {perf.isHome ? "vs" : "@"} {perf.opponentScore} {perf.opponent?.abbreviation}
+            <CircularBadge src={perf.opponent?.logoUrl} alt="" size="xs" />
+          </p>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 interface TodayHighlight {
   icon: string;
   text: string;
@@ -569,6 +633,7 @@ function TodayStrip() {
     queryKey: ["betting", "history", "birthdays"],
     queryFn: () => fetchJson<{ players: Birthday[] }>("/api/betting/history/birthdays"),
   });
+  const { data: onThisDayData } = useQuery(onThisDayQueryOptions());
 
   const highlights: TodayHighlight[] = [];
 
@@ -610,6 +675,15 @@ function TodayStrip() {
 
   if (birthdayData && birthdayData.players.length > 0) {
     highlights.push({ icon: "🎂", text: `Happy birthday ${birthdayData.players.map((p) => p.displayName).join(", ")}!` });
+  }
+
+  const topOnThisDay = onThisDayData?.performances[0];
+  if (topOnThisDay) {
+    highlights.push({
+      icon: "📅",
+      text: `On this day in ${topOnThisDay.year}, ${shortName(topOnThisDay.player.displayName)} put up ${topOnThisDay.pointsReboundsAssists} PRA`,
+      href: `/games/${topOnThisDay.gameEspnId}`,
+    });
   }
 
   if (highlights.length === 0) return null;
@@ -670,6 +744,10 @@ export default function CoverStoryPage() {
 
       <SectionCard title="Prop hit rate by stat type">
         <PropHitRateByStatTypeSection />
+      </SectionCard>
+
+      <SectionCard title="On this day">
+        <OnThisDaySection />
       </SectionCard>
     </div>
   );

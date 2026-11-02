@@ -51,3 +51,8 @@
 ## 9. Today strip
 
 - [x] 9.1 Add a `TodayStrip` component above the page's sections that derives highlight chips from already-fetched data (no new API routes): the most recent King of the Court day's leader(s), the team with the longest current |ATS or O/U streak| above a notability threshold, today's birthdays, and any triple-double from the most recent King of the Court day; each chip omitted when its underlying data has nothing noteworthy; verify it renders the expected chips against seeded data and renders nothing when no section has anything noteworthy
+
+## 10. On this day
+
+- [x] 10.1 Add `src/app/api/betting/history/on-this-day/route.ts`: a raw SQLite query (`strftime('%m-%d', ...)`) over `PlayerGameStat`/`Game`, excluding the current year, ranking by points+rebounds+assists, limited to the top 5, with team/opponent info and triple-double flag (reusing `hasTripleDouble`); verify against real historical data for today's calendar date
+- [x] 10.2 Add an `OnThisDaySection` to the Cover Story page rendering those top performances with a no-data state, and surface the top result as a chip in the `TodayStrip` (reusing the same query, no extra request); verify against real data

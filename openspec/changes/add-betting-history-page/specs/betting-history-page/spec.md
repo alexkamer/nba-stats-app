@@ -57,7 +57,7 @@ The page SHALL display the system's player-prop pick hit rate broken down by sta
 - **THEN** the page shows a separate hit rate for each stat type that has at least one graded pick
 
 ### Requirement: Today strip
-The page SHALL present a summary strip above the page's sections surfacing the most recent noteworthy item from each section — the most recent King of the Court day's leader(s), any team with a notably long current ATS or over/under streak, today's birthdays, and any triple-double from the most recent King of the Court day — so the page reads as "what happened" rather than only static season-to-date tables.
+The page SHALL present a summary strip above the page's sections surfacing the most recent noteworthy item from each section — the most recent King of the Court day's leader(s), any team with a notably long current ATS or over/under streak, today's birthdays, any triple-double from the most recent King of the Court day, and the top on-this-day historical performance — so the page reads as "what happened" rather than only static season-to-date tables.
 
 #### Scenario: Recent highlights exist
 - **WHEN** at least one of the underlying sections has data to summarize
@@ -67,6 +67,17 @@ The page SHALL present a summary strip above the page's sections surfacing the m
 - **WHEN** none of the underlying sections have data to summarize
 - **THEN** the strip does not render, rather than showing an empty bar
 
+### Requirement: On this day
+The page SHALL show the top individual points+rebounds+assists performances recorded on today's calendar month/day across all past seasons, independent of the page's current-season scope for its other sections, and flag any that were triple-doubles.
+
+#### Scenario: Historical performances exist for today's calendar date
+- **WHEN** one or more players recorded a points+rebounds+assists total on today's month/day in a past season
+- **THEN** the page lists those performances ranked highest to lowest, each showing the player, season/year, final score, and triple-double status
+
+#### Scenario: No historical performances for this calendar date
+- **WHEN** no past-season game falls on today's calendar month/day
+- **THEN** the page shows an explicit no-data state for this section instead of an empty or broken view
+
 ### Requirement: Navigation entry
 The page SHALL be reachable from the site's primary navigation.
 
@@ -75,7 +86,7 @@ The page SHALL be reachable from the site's primary navigation.
 - **THEN** a link to the Cover Story page is present
 
 ### Requirement: No-data fallback
-The page SHALL communicate clearly when no cover records, daily leaders, birthdays, or prop hit-rate data are available for a section, rather than showing an empty or broken view.
+The page SHALL communicate clearly when no cover records, daily leaders, birthdays, prop hit-rate data, or on-this-day performances are available for a section, rather than showing an empty or broken view.
 
 #### Scenario: A section has no data yet
 - **WHEN** the current season has not yet produced data for one of the page's sections
