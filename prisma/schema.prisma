@@ -578,6 +578,7 @@ model NbaCupStanding {
 model NewsArticle {
   id          Int       @id @default(autoincrement())
   espnId      String    @unique @map("espn_id")
+  type        String?
   headline    String
   description String?
   url         String?

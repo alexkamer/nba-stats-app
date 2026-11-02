@@ -11,6 +11,7 @@ export interface EspnNewsCategory {
 
 export interface EspnNewsArticle {
   id: number;
+  type?: string;
   headline: string;
   description?: string;
   published?: string;
@@ -21,6 +22,7 @@ export interface EspnNewsArticle {
 
 export interface NewsArticleUpsertInput {
   espnId: string;
+  type: string | null;
   headline: string;
   description: string | null;
   url: string | null;
@@ -31,6 +33,7 @@ export interface NewsArticleUpsertInput {
 export function mapNewsArticle(article: EspnNewsArticle): NewsArticleUpsertInput {
   return {
     espnId: String(article.id),
+    type: article.type ?? null,
     headline: article.headline,
     description: article.description ?? null,
     url: article.links?.web?.href ?? null,

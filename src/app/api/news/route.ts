@@ -10,16 +10,20 @@ export async function GET(request: NextRequest) {
     const playerId = playerIdParam ? Number(playerIdParam) : null;
     const limitParam = searchParams.get("limit");
     const take = limitParam ? Number(limitParam) : 50;
+    const type = searchParams.get("type");
 
     if (isEspnOnly()) {
       // playerId filtering requires a local join we don't have live —
       // return the general feed regardless (see docs/DATA_SOURCES.md).
-      const articles = await getNewsLive(take);
+      const articles = (await getNewsLive(take)).filter((a) => !type || a.type === type);
       return NextResponse.json({ articles });
     }
 
     const articles = await prisma.newsArticle.findMany({
-      where: playerId ? { players: { some: { playerId } } } : undefined,
+      where: {
+        ...(playerId ? { players: { some: { playerId } } } : {}),
+        ...(type ? { type } : {}),
+      },
       orderBy: { publishedAt: "desc" },
       take,
       include: {

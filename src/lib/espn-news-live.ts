@@ -12,6 +12,7 @@ interface EspnNewsResponse {
 
 export interface LiveNewsArticle {
   id: string;
+  type: string | null;
   headline: string;
   description: string | null;
   url: string | null;

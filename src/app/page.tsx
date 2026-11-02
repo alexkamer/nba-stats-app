@@ -37,8 +37,6 @@ interface NewsArticle {
   id: number;
   headline: string;
   url: string | null;
-  imageUrl: string | null;
-  publishedAt: string | null;
 }
 
 function todayYyyymmdd(): string {
@@ -62,9 +60,9 @@ async function fetchStandings(): Promise<StandingsResponse> {
   return res.json();
 }
 
-async function fetchNews(): Promise<NewsArticle[]> {
-  const res = await fetch("/api/news?limit=4");
-  if (!res.ok) throw new Error("Failed to load news");
+async function fetchHeadlines(): Promise<NewsArticle[]> {
+  const res = await fetch("/api/news?limit=6&type=HeadlineNews");
+  if (!res.ok) throw new Error("Failed to load headlines");
   const data = await res.json();
   return data.articles;
 }
@@ -90,9 +88,9 @@ function HomeContent() {
     queryKey: ["standings"],
     queryFn: fetchStandings,
   });
-  const { data: news, isLoading: newsLoading } = useQuery({
-    queryKey: ["news", "home"],
-    queryFn: fetchNews,
+  const { data: headlines, isLoading: headlinesLoading } = useQuery({
+    queryKey: ["news", "headlines"],
+    queryFn: fetchHeadlines,
   });
 
   return (
@@ -240,7 +238,7 @@ function HomeContent() {
         </div>
 
         <SectionCard
-          title="Latest News"
+          title="Top Headlines"
           accentColor="var(--accent)"
           action={
             <Link href="/news" className="text-sm font-semibold text-accent hover:underline">
@@ -248,29 +246,20 @@ function HomeContent() {
             </Link>
           }
         >
-          {newsLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
-          {!newsLoading && (!news || news.length === 0) && (
-            <p className="text-foreground/72 text-sm">No news available.</p>
+          {headlinesLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+          {!headlinesLoading && (!headlines || headlines.length === 0) && (
+            <p className="text-foreground/72 text-sm">No headlines available.</p>
           )}
-          <div className="space-y-3">
-            {news?.map((article) => (
+          <div className="divide-y divide-dashed divide-border">
+            {headlines?.map((article) => (
               <a
                 key={article.id}
                 href={article.url ?? "#"}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex gap-3 group"
+                className="block py-2.5 text-xs font-medium leading-snug line-clamp-2 hover:text-foreground/92"
               >
-                {article.imageUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element -- external ESPN CDN images
-                  <img src={article.imageUrl} alt="" className="h-12 w-16 shrink-0 rounded-md object-cover" />
-                )}
-                <div className="space-y-0.5">
-                  <p className="text-sm font-medium leading-snug group-hover:text-foreground/92">{article.headline}</p>
-                  {article.publishedAt && (
-                    <p className="text-xs text-foreground/60">{new Date(article.publishedAt).toLocaleDateString()}</p>
-                  )}
-                </div>
+                {article.headline}
               </a>
             ))}
           </div>
