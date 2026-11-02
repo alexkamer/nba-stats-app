@@ -44,7 +44,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                   <SiteNav />
                 </header>
                 <main className="flex-1 px-6 py-6">
-                  <div className="max-w-6xl w-full mx-auto">
+                  <div className="max-w-6xl w-full mx-auto xl:max-w-7xl 2xl:max-w-[1600px]">
                     <Suspense fallback={<div className="h-5" aria-hidden="true" />}>
                       <Breadcrumb />
                     </Suspense>
