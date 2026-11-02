@@ -51,6 +51,7 @@ export const espnEndpoints = {
     `${CORE}/seasons/${year}/types/${seasonType}/teams/${teamId}/statistics`,
   teamLeaders: (year: string, seasonType: string, teamId: string) =>
     `${CORE}/seasons/${year}/types/${seasonType}/teams/${teamId}/leaders`,
+  leagueLeaders: (year: string, seasonType: string) => `${CORE}/seasons/${year}/types/${seasonType}/leaders`,
   teamDepthChart: (year: string, teamId: string) =>
     `${CORE}/seasons/${year}/teams/${teamId}/depthcharts`,
   // No `seasons/{year}` segment — unlike most other team-scoped CORE

@@ -18,6 +18,12 @@ interface GameCard {
   away: { name: string; score: number | null; logoUrl: string | null; overallRecord: string | null };
 }
 
+function shortenName(displayName: string): string {
+  const parts = displayName.trim().split(" ");
+  if (parts.length < 2) return displayName;
+  return `${parts[0][0]}. ${parts.slice(1).join(" ")}`;
+}
+
 function formatGameTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 }
@@ -37,6 +43,21 @@ interface NewsArticle {
   id: number;
   headline: string;
   url: string | null;
+}
+
+interface LeagueLeader {
+  displayName: string;
+  headshotUrl: string | null;
+  teamAbbreviation: string | null;
+  teamLogoUrl: string | null;
+  displayValue: string;
+}
+
+interface LeagueLeaderCategory {
+  key: string;
+  label: string;
+  abbreviation: string;
+  leaders: LeagueLeader[];
 }
 
 function todayYyyymmdd(): string {
@@ -67,6 +88,13 @@ async function fetchHeadlines(): Promise<NewsArticle[]> {
   return data.articles;
 }
 
+async function fetchLeagueLeaders(): Promise<LeagueLeaderCategory[]> {
+  const res = await fetch("/api/league-leaders");
+  if (!res.ok) throw new Error("Failed to load league leaders");
+  const data = await res.json();
+  return data.categories;
+}
+
 export default function HomePage() {
   // Reading today's date would be evaluated during the server prerender
   // instead of per-visit (Next.js breaking change) unless deferred behind
@@ -92,6 +120,10 @@ function HomeContent() {
     queryKey: ["news", "headlines"],
     queryFn: fetchHeadlines,
   });
+  const { data: leaderCategories, isLoading: leadersLoading } = useQuery({
+    queryKey: ["league-leaders"],
+    queryFn: fetchLeagueLeaders,
+  });
 
   return (
     <div className="space-y-8">
@@ -103,7 +135,37 @@ function HomeContent() {
       </div>
 
       <div className="grid items-start gap-6 lg:grid-cols-[1fr_2fr_1fr]">
-        <div />
+        <SectionCard title="League Leaders" accentColor="var(--accent)">
+          {leadersLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+          <div className="space-y-5">
+            {leaderCategories?.map((category) => (
+              <div key={category.key}>
+                <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-foreground/60">
+                  {category.label} ({category.abbreviation})
+                </h3>
+                <div className="space-y-2">
+                  {category.leaders.map((leader, i) => (
+                    <div key={leader.displayName} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="flex min-w-0 items-center gap-2 truncate">
+                        <span className="w-4 shrink-0 text-right text-xs text-foreground/50">{i + 1}</span>
+                        <CircularBadge src={leader.headshotUrl} alt="" size="xs" />
+                        <span className="truncate font-semibold text-foreground">{shortenName(leader.displayName)}</span>
+                        {leader.teamAbbreviation && (
+                          <span className="shrink-0 text-xs font-medium text-foreground/60">
+                            {leader.teamAbbreviation}
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0 tabular-nums font-semibold text-foreground">
+                        {leader.displayValue}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
 
         <div className="space-y-6">
           <SectionCard
