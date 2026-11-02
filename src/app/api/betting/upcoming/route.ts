@@ -1,5 +1,14 @@
 import { prisma } from "@/lib/db";
+import { getTeamInjuries } from "@/lib/espn-team-injuries";
 import { NextResponse } from "next/server";
+
+/** True for ESPN's "Out" status (and close variants) — the one injury
+ * status that means a prop line from before the report is essentially
+ * dead, unlike Questionable/Doubtful/Day-To-Day where the player can
+ * still suit up. */
+function isRuledOut(status: string): boolean {
+  return status.toLowerCase().includes("out");
+}
 
 // Serves the betting-insights-page capability: a day's games with our own
 // pick (GameProjection), the market line (Odds — see betting-odds-ingest
@@ -35,14 +44,14 @@ export async function GET(request: Request) {
       where: { date: { gte: startOfDay, lt: endOfDay } },
       orderBy: { date: "asc" },
       include: {
-        homeTeam: { select: { id: true, abbreviation: true, name: true, logoUrl: true } },
-        awayTeam: { select: { id: true, abbreviation: true, name: true, logoUrl: true } },
+        homeTeam: { select: { id: true, espnId: true, abbreviation: true, name: true, logoUrl: true } },
+        awayTeam: { select: { id: true, espnId: true, abbreviation: true, name: true, logoUrl: true } },
         gameProjection: true,
         odds: true,
         predictorSnapshot: true,
         playerPropProjections: {
           include: {
-            player: { select: { id: true, displayName: true } },
+            player: { select: { id: true, espnId: true, displayName: true } },
           },
         },
         // Odds are per-side (OVER/UNDER each get their own American odds,
@@ -52,6 +61,29 @@ export async function GET(request: Request) {
         playerPropOdds: { select: { playerId: true, statType: true, side: true, odds: true } },
       },
     });
+
+    // Current injury report is only meaningful for games that haven't been
+    // played yet — for a FINAL game, the box score (gradedAt/gradedActualValue
+    // below) is the ground truth on who actually suited up. Best-effort: an
+    // ESPN hiccup here shouldn't take down the whole page.
+    const unplayedTeamEspnIds = [
+      ...new Set(
+        games
+          .filter((g) => g.status !== "FINAL")
+          .flatMap((g) => [g.homeTeam.espnId, g.awayTeam.espnId]),
+      ),
+    ];
+    const ruledOutAthleteEspnIds = new Set<string>();
+    if (unplayedTeamEspnIds.length > 0) {
+      const injuriesByTeam = await Promise.all(
+        unplayedTeamEspnIds.map((teamEspnId) => getTeamInjuries(teamEspnId).catch(() => [])),
+      );
+      for (const injuries of injuriesByTeam) {
+        for (const injury of injuries) {
+          if (isRuledOut(injury.status)) ruledOutAthleteEspnIds.add(injury.athleteEspnId);
+        }
+      }
+    }
 
     const result = games.map((game) => ({
       espnId: game.espnId,
@@ -111,6 +143,10 @@ export async function GET(request: Request) {
             stdev: p.stdev,
             gradedCorrect: p.gradedCorrect,
             gradedActualValue: p.gradedActualValue,
+            // Game went FINAL and grading ran, but there was no box score
+            // to grade against — the player never suited up.
+            dnp: game.status === "FINAL" && p.gradedAt !== null && p.gradedCorrect === null,
+            ruledOut: game.status !== "FINAL" && ruledOutAthleteEspnIds.has(p.player.espnId),
           };
         }),
     }));

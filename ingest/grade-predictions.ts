@@ -108,7 +108,19 @@ async function gradePlayerPropProjections() {
       where: { gameId_playerId: { gameId: row.gameId, playerId: row.playerId } },
       select: { points: true, rebounds: true, assists: true, threeMade: true, steals: true, blocks: true },
     });
-    if (!gameStat || gameStat.points === null) continue; // player didn't play / no box score yet
+    if (!gameStat || gameStat.points === null) {
+      // Player never suited up (injury scratch, DNP-CD, etc.) — there's no
+      // box score to grade against, and never will be for this game. Mark
+      // it graded-with-no-verdict now rather than leaving gradedAt null,
+      // which would otherwise make this row look like grading just hasn't
+      // run yet (and re-query it on every future run) instead of a prop
+      // that can never resolve.
+      await prisma.playerPropProjection.update({
+        where: { id: row.id },
+        data: { gradedAt: new Date() },
+      });
+      continue;
+    }
 
     const actualValue = extractStatValue(row.statType as PropStatType, { ...gameStat, minutes: null });
     const result = gradePlayerProp(row.projectedValue, line, actualValue);

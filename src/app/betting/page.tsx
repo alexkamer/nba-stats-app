@@ -35,6 +35,12 @@ interface PlayerPropLean {
   // actual grading of the pick as it was made, not hindsight.
   gradedCorrect: boolean | null;
   gradedActualValue: number | null;
+  // Game went FINAL but there's no box score for this player — they never
+  // suited up, so this prop can never be graded.
+  dnp: boolean;
+  // Player is on the current injury report as "Out" — only ever set for a
+  // game that hasn't been played yet (see /api/betting/upcoming).
+  ruledOut: boolean;
 }
 
 interface UpcomingGame {
@@ -185,6 +191,16 @@ function spreadValueSide(ourMargin: number, marketMargin: number): "home" | "awa
   return ourMargin > marketMargin ? "home" : "away";
 }
 
+/** A prop worth recommending — clears the confidence bar AND is still a
+ * live pick: not a no-show from a completed game (`dnp`), not a player
+ * who's since been ruled out for one that hasn't been played yet
+ * (`ruledOut`). Shared by every "recommended"-scoped view on this page
+ * (best bets strip, picks count, a game's own recommended filter) so none
+ * of them can disagree about which props actually count. */
+function isRecommendedProp(p: PlayerPropLean): boolean {
+  return p.bettable && !p.dnp && !p.ruledOut;
+}
+
 /** How many recommendations a game has to offer — spread, total, and
  * bettable player props combined. Shared by the game card's own "N picks"
  * badge and the page-level "Most picks" sort, so the two never disagree. */
@@ -193,7 +209,7 @@ function recommendedCount(game: UpcomingGame): number {
   const spreadValue =
     game.projection && marketMarginValue !== null ? spreadValueSide(game.projection.projectedMargin, marketMarginValue) : null;
   const showSpreadPick = Boolean(game.projection?.spreadBettable && spreadValue !== null);
-  return (showSpreadPick ? 1 : 0) + (game.projection?.totalBettable ? 1 : 0) + game.playerProps.filter((p) => p.bettable).length;
+  return (showSpreadPick ? 1 : 0) + (game.projection?.totalBettable ? 1 : 0) + game.playerProps.filter(isRecommendedProp).length;
 }
 
 function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
@@ -369,7 +385,7 @@ function BestBetsStrip({ games, isToday }: { games: UpcomingGame[]; isToday: boo
   const picks = games
     .flatMap((game) =>
       game.playerProps
-        .filter((p) => p.bettable)
+        .filter(isRecommendedProp)
         .map((p) => ({ ...p, matchup: `${game.awayTeam.abbreviation} @ ${game.homeTeam.abbreviation}` })),
     )
     .map((p) => ({ ...p, edgeRatio: computeEdgeRatio(p.projectedValue, p.line, p.stdev) ?? 0 }))
@@ -395,7 +411,14 @@ function BestBetsStrip({ games, isToday }: { games: UpcomingGame[]; isToday: boo
             </p>
             <div className="mt-1.5 flex items-center justify-between">
               <span className="text-xs text-foreground/60 tabular-nums">{formatOdds(p.odds)}</span>
-              <span className="text-xs font-medium text-accent tabular-nums">{p.edgeRatio.toFixed(1)}σ</span>
+              {p.gradedCorrect !== null ? (
+                <span className="flex items-center gap-1 text-xs text-foreground/60 tabular-nums">
+                  {p.gradedActualValue}
+                  <ResultMark correct={p.gradedCorrect} />
+                </span>
+              ) : (
+                <span className="text-xs font-medium text-accent tabular-nums">{p.edgeRatio.toFixed(1)}σ</span>
+              )}
             </div>
           </Link>
         ))}
@@ -492,7 +515,7 @@ function GameCard({ game }: { game: UpcomingGame }) {
   );
 
   const visibleProps = game.playerProps
-    .filter((p) => propsView === "all" || p.bettable)
+    .filter((p) => propsView === "all" || isRecommendedProp(p))
     .filter((p) => statFilter === "all" || p.statType === statFilter)
     .filter((p) => playerFilter === "all" || String(p.playerId) === playerFilter)
     .sort((a, b) => {
@@ -655,30 +678,42 @@ function GameCard({ game }: { game: UpcomingGame }) {
                 {visibleProps.map((prop) => (
                   <tr
                     key={`${prop.playerId}-${prop.statType}`}
-                    className={`border-t border-border/60 ${propsView === "all" && prop.bettable ? "bg-accent/10" : ""}`}
+                    className={`border-t border-border/60 ${propsView === "all" && isRecommendedProp(prop) ? "bg-accent/10" : ""} ${
+                      prop.dnp || prop.ruledOut ? "opacity-50" : ""
+                    }`}
                   >
                     <td className="py-1.5 text-foreground/82">
                       <Link href={`/betting/research/${prop.playerId}?stat=${prop.statType}`} className="hover:text-accent">
                         {prop.playerName}
                       </Link>
+                      {prop.ruledOut && (
+                        <span className="ml-1.5 rounded bg-red-600/10 px-1 py-0.5 text-[10px] font-semibold text-red-600 dark:text-red-400">
+                          OUT
+                        </span>
+                      )}
                     </td>
                     <td className="py-1.5 text-foreground/72">
                       <span className="sm:hidden">{STAT_LABELS[prop.statType]}</span>
                       <span className="hidden sm:inline">{STAT_LABELS_FULL[prop.statType]}</span>
                     </td>
                     <td className="py-1.5 text-right">
-                      <span className={prop.bettable ? "font-semibold text-foreground" : ""}>
+                      <span className={isRecommendedProp(prop) ? "font-semibold text-foreground" : ""}>
                         {formatLine(prop.lean, prop.line)}
                       </span>
-                      {prop.bettable && <BettableMark />}
+                      {isRecommendedProp(prop) && <BettableMark />}
                     </td>
                     <td className="py-1.5 text-right text-foreground/72">{formatOdds(prop.odds)}</td>
                     <td className="py-1.5 text-right text-foreground/72">{prop.projectedValue.toFixed(1)}</td>
                     <td className="py-1.5 text-right">
-                      <ConfidenceMeter edgeRatio={computeEdgeRatio(prop.projectedValue, prop.line, prop.stdev)} bettable={prop.bettable} />
+                      <ConfidenceMeter
+                        edgeRatio={computeEdgeRatio(prop.projectedValue, prop.line, prop.stdev)}
+                        bettable={isRecommendedProp(prop)}
+                      />
                     </td>
                     <td className="py-1.5 text-right text-foreground/72">
-                      {prop.gradedCorrect !== null ? (
+                      {prop.dnp ? (
+                        <span className="text-xs">DNP</span>
+                      ) : prop.gradedCorrect !== null ? (
                         <>
                           <ResultMark correct={prop.gradedCorrect} />
                           <span className="text-xs"> {prop.gradedActualValue}</span>
