@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { SECTIONS } from "@/components/Sidebar";
+import { TeamsNavMenu } from "@/components/TeamsNavMenu";
 
 /** Desktop top bar (`lg` and above), always visible regardless of the
  * sidebar's collapsed state. Mirrors Sidebar's section links. Sidebar
@@ -27,11 +28,15 @@ export function TopBar({ collapsed, onToggleSidebar }: { collapsed: boolean; onT
         NBA Stats
       </Link>
       <nav className="flex items-center gap-5 text-sm font-semibold">
-        {SECTIONS.map((section) => (
-          <Link key={section.href} href={section.href} className="text-foreground/70 hover:text-foreground">
-            {section.label}
-          </Link>
-        ))}
+        {SECTIONS.map((section) =>
+          section.href === "/teams" ? (
+            <TeamsNavMenu key={section.href} />
+          ) : (
+            <Link key={section.href} href={section.href} className="text-foreground/70 hover:text-foreground">
+              {section.label}
+            </Link>
+          ),
+        )}
       </nav>
     </header>
   );
