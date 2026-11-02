@@ -1,6 +1,18 @@
 import { prisma } from "@/lib/db";
 import { computeAccuracy } from "@lib/accuracy/compute-accuracy";
+import { BEST_BETS_PER_DAY, HIGH_CONFIDENCE_EDGE_RATIO, computeEdgeRatio } from "@lib/projections/confidence";
 import { NextResponse } from "next/server";
+
+/** Local (not UTC) YYYY-MM-DD for a game's date — approximate day bucket
+ * used only to group props the same way the best-bets strip groups a
+ * day's games; a game landing in the "wrong" day at a timezone boundary
+ * wouldn't change which group it's ranked within meaningfully. */
+function dayKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 // Serves the prediction-accuracy-tracking capability's running accuracy
 // record. Graded rows only come from games that have reached FINAL (see
@@ -24,7 +36,14 @@ export async function GET() {
       prisma.predictorSnapshot.findMany({ where: { gradedAt: { not: null } }, select: { gradedCorrect: true } }),
       prisma.playerPropProjection.findMany({
         where: { gradedAt: { not: null } },
-        select: { gradedCorrect: true, bettable: true },
+        select: {
+          gradedCorrect: true,
+          bettable: true,
+          projectedValue: true,
+          line: true,
+          stdev: true,
+          game: { select: { date: true } },
+        },
       }),
     ]);
 
@@ -47,6 +66,38 @@ export async function GET() {
     // shouldn't drag down the number that actually represents our
     // recommendations.
     const bettablePropAccuracy = computeAccuracy(propRows.filter((r) => r.bettable).map((r) => r.gradedCorrect));
+
+    // DNP props never get a gradedCorrect (see ingest/grade-predictions.ts),
+    // so "decided" here already excludes them — same subset the live best-
+    // bets strip and "Recommended" filter mean by a prop actually counting.
+    const decidedProps = propRows
+      .filter((r) => r.gradedCorrect !== null)
+      .map((r) => ({ ...r, edgeRatio: computeEdgeRatio(r.projectedValue, r.line, r.stdev) }));
+
+    // Replicates BestBetsStrip's own selection (src/app/betting/page.tsx):
+    // per day, the bettable props ranked by edge ratio, top BEST_BETS_PER_DAY
+    // — pooled across every day that's been graded, rather than just the
+    // single day currently on screen.
+    const byDay = new Map<string, typeof decidedProps>();
+    for (const row of decidedProps.filter((r) => r.bettable)) {
+      const key = dayKey(row.game.date);
+      const group = byDay.get(key);
+      if (group) group.push(row);
+      else byDay.set(key, [row]);
+    }
+    const bestBetsGradedValues: Array<boolean | null> = [];
+    for (const dayProps of byDay.values()) {
+      dayProps.sort((a, b) => (b.edgeRatio ?? -Infinity) - (a.edgeRatio ?? -Infinity));
+      for (const row of dayProps.slice(0, BEST_BETS_PER_DAY)) bestBetsGradedValues.push(row.gradedCorrect);
+    }
+    const bestBetsAccuracy = computeAccuracy(bestBetsGradedValues);
+
+    // Stricter than the bettable floor — picks whose edge was at least a
+    // full standard deviation of the player's own recent variance.
+    const highConfidenceAccuracy = computeAccuracy(
+      decidedProps.filter((r) => (r.edgeRatio ?? 0) >= HIGH_CONFIDENCE_EDGE_RATIO).map((r) => r.gradedCorrect),
+    );
+
     const overallAccuracy = computeAccuracy([...gameRows, ...propRows].map((r) => r.gradedCorrect));
     const predictorAccuracy = computeAccuracy(predictorRows.map((r) => r.gradedCorrect));
 
@@ -59,6 +110,8 @@ export async function GET() {
         bettableTotal: bettableTotalAccuracy,
         props: propAccuracy,
         bettableProps: bettablePropAccuracy,
+        highConfidenceProps: highConfidenceAccuracy,
+        bestBets: bestBetsAccuracy,
         overall: overallAccuracy,
       },
       espnPredictor: predictorAccuracy,

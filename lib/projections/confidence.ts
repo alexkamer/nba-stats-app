@@ -12,6 +12,17 @@
 // within the player's normal game-to-game noise.
 export const BETTABLE_EDGE_STDEV_MULTIPLIER = 0.75;
 
+// The bar for a pick to count toward the "high-confidence" accuracy
+// bucket — stricter than BETTABLE_EDGE_STDEV_MULTIPLIER, which is the
+// floor for a pick to be surfaced as a recommendation at all.
+export const HIGH_CONFIDENCE_EDGE_RATIO = 1.0;
+
+// How many picks the best-bets strip shows per day — shared with the
+// accuracy route so its "Best Bets" track record replicates the same
+// per-day top-N selection the strip itself makes, rather than drifting
+// out of sync with a second hardcoded number.
+export const BEST_BETS_PER_DAY = 8;
+
 /** Population standard deviation of a player's recent per-game values for a
  * stat. `null` below 2 games — too little sample to say anything about
  * variance. */

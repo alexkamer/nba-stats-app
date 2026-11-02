@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { computeEdgeRatio } from "@lib/projections/confidence";
+import { BEST_BETS_PER_DAY, HIGH_CONFIDENCE_EDGE_RATIO, computeEdgeRatio } from "@lib/projections/confidence";
 import { StatBlock, ComparisonBar } from "@/components/StatBlock";
 import { CircularBadge } from "@/components/CircularBadge";
 
@@ -85,7 +85,14 @@ interface AccuracyBucket {
 }
 
 interface AccuracySummary {
-  ourModel: { game: AccuracyBucket; props: AccuracyBucket; bettableProps: AccuracyBucket; overall: AccuracyBucket };
+  ourModel: {
+    game: AccuracyBucket;
+    props: AccuracyBucket;
+    bettableProps: AccuracyBucket;
+    highConfidenceProps: AccuracyBucket;
+    bestBets: AccuracyBucket;
+    overall: AccuracyBucket;
+  };
   espnPredictor: AccuracyBucket;
 }
 
@@ -235,11 +242,29 @@ function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
       />
       {accuracy.ourModel.bettableProps.graded > 0 && (
         <StatBlock
-          label="Our high-confidence props"
+          label="Our recommended props"
           value={
             accuracy.ourModel.bettableProps.hitRate !== null ? `${(accuracy.ourModel.bettableProps.hitRate * 100).toFixed(0)}%` : null
           }
           caption={`${accuracy.ourModel.bettableProps.correct}/${accuracy.ourModel.bettableProps.graded}`}
+        />
+      )}
+      {accuracy.ourModel.highConfidenceProps.graded > 0 && (
+        <StatBlock
+          label={`High-confidence props (≥${HIGH_CONFIDENCE_EDGE_RATIO.toFixed(1)}σ)`}
+          value={
+            accuracy.ourModel.highConfidenceProps.hitRate !== null
+              ? `${(accuracy.ourModel.highConfidenceProps.hitRate * 100).toFixed(0)}%`
+              : null
+          }
+          caption={`${accuracy.ourModel.highConfidenceProps.correct}/${accuracy.ourModel.highConfidenceProps.graded}`}
+        />
+      )}
+      {accuracy.ourModel.bestBets.graded > 0 && (
+        <StatBlock
+          label="Best bets"
+          value={accuracy.ourModel.bestBets.hitRate !== null ? `${(accuracy.ourModel.bestBets.hitRate * 100).toFixed(0)}%` : null}
+          caption={`${accuracy.ourModel.bestBets.correct}/${accuracy.ourModel.bestBets.graded}`}
         />
       )}
     </div>
@@ -390,7 +415,7 @@ function BestBetsStrip({ games, isToday }: { games: UpcomingGame[]; isToday: boo
     )
     .map((p) => ({ ...p, edgeRatio: computeEdgeRatio(p.projectedValue, p.line, p.stdev) ?? 0 }))
     .sort((a, b) => b.edgeRatio - a.edgeRatio)
-    .slice(0, 8);
+    .slice(0, BEST_BETS_PER_DAY);
 
   if (picks.length === 0) return null;
 
