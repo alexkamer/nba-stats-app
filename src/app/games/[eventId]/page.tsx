@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 import { Suspense, useId, useState, type ReactNode } from "react";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
 import { FullBleed } from "@/components/FullBleed";
+import { useBreadcrumbLabel } from "@/components/Breadcrumb";
 import { getTeamAccent } from "@/lib/team-accent";
 
 // The API returns one of two shapes depending on whether the game has been
@@ -311,6 +312,14 @@ function GameDetailContent() {
   const [activeTab, setActiveTab] = useTabQueryParam<TabKey>("boxscore");
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === "dark" ? "dark" : "light";
+
+  useBreadcrumbLabel(
+    data
+      ? data.source === "db"
+        ? `${(data.game as DbGame).awayTeam.abbreviation} @ ${(data.game as DbGame).homeTeam.abbreviation}`
+        : `${(data.game as LiveGame).away.abbreviation} @ ${(data.game as LiveGame).home.abbreviation}`
+      : null,
+  );
 
   if (isLoading) return <p className="text-foreground/82">Loading…</p>;
   if (error || !data) return <p className="text-red-600 dark:text-red-400">Game not found.</p>;
