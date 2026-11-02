@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { computeAccuracy } from "@lib/accuracy/compute-accuracy";
+import { computeAccuracy, accuracyByMethod } from "@lib/accuracy/compute-accuracy";
 import { gradeMarketFavorite } from "@lib/accuracy/grade-game";
 import { BEST_BETS_PER_DAY, HIGH_CONFIDENCE_EDGE_RATIO, computeEdgeRatio } from "@lib/projections/confidence";
 import { NextResponse } from "next/server";
@@ -27,6 +27,7 @@ export async function GET() {
       prisma.gameProjection.findMany({
         where: { gradedAt: { not: null } },
         select: {
+          method: true,
           gradedCorrect: true,
           gradedSpreadCorrect: true,
           gradedTotalCorrect: true,
@@ -44,6 +45,7 @@ export async function GET() {
       prisma.playerPropProjection.findMany({
         where: { gradedAt: { not: null } },
         select: {
+          method: true,
           gradedCorrect: true,
           bettable: true,
           projectedValue: true,
@@ -118,6 +120,19 @@ export async function GET() {
         .map((r) => gradeMarketFavorite(r.marketMarginAtPick, r.game.homeScore!, r.game.awayScore!).correct),
     );
 
+    // Per-methodology-version breakdown — each table's `method` tag is
+    // frozen at creation time and bumped independently of the other table
+    // whenever that table's own methodology actually changes (see
+    // ingest/generate-projections.ts), so grouping by it here is what
+    // actually lets a new version be judged against its predecessor.
+    const byMethod = {
+      game: accuracyByMethod(gameRows, (r) => r.gradedCorrect),
+      spread: accuracyByMethod(gameRows, (r) => r.gradedSpreadCorrect),
+      total: accuracyByMethod(gameRows, (r) => r.gradedTotalCorrect),
+      props: accuracyByMethod(propRows, (r) => r.gradedCorrect),
+      bettableProps: accuracyByMethod(propRows.filter((r) => r.bettable), (r) => r.gradedCorrect),
+    };
+
     return NextResponse.json({
       ourModel: {
         game: gameAccuracy,
@@ -133,6 +148,7 @@ export async function GET() {
       },
       espnPredictor: predictorAccuracy,
       marketFavorite: marketFavoriteAccuracy,
+      byMethod,
     });
   } catch (error) {
     console.error("GET /api/betting/accuracy failed:", error);
