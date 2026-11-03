@@ -38,15 +38,15 @@
 
 ## 7. Integration verification
 
-- [ ] 7.1 Run `npx tsx ingest/run-all-sync.ts` end to end against the dev database and confirm `compute-cover-records.ts` and `compute-daily-stat-leaders.ts` both run without error in their wired positions, then load `/betting/history` and confirm all four sections render real data (or their no-data state) with no console/server errors
+- [x] 7.1 Run `npx tsx ingest/run-all-sync.ts` end to end against the dev database and confirm `compute-cover-records.ts` and `compute-daily-stat-leaders.ts` both run without error in their wired positions, then load `/betting/history` and confirm all four sections render real data (or their no-data state) with no console/server errors
 
 ## 8. King of the Court day detail leaderboard
 
 - [x] 8.1 Fix the calendar cell's player label to use a true last-name extraction (strip trailing suffixes like Jr./Sr./II/III/IV) instead of naively splitting on the last space; verify a player like "Jaren Jackson Jr." renders "Jackson", not "Jr."
 - [x] 8.2 Add a visible legend for the 🔥 triple-double marker near the calendar (not just a hover title); verify it renders and the marker's meaning is visible without hovering
 - [x] 8.3 Add `src/app/api/betting/history/daily-leaderboard/route.ts` (`date` query param) returning every player's points+rebounds+assists total and triple-double flag for that date's games, ranked highest to lowest, computed live from `PlayerGameStat` (no new storage — mirrors the birthdays route's live-query pattern); verify via manual request against a seeded date with multiple players
-- [ ] 8.4 Add `src/app/betting/history/king-of-the-court/[date]/page.tsx` rendering the full ranked leaderboard for that date from 8.3, with a no-games/no-data state; verify by loading it for a date with games and a date with none
-- [ ] 8.5 Make each calendar day cell with a recorded leader a link to `/betting/history/king-of-the-court/[date]`; verify clicking a day navigates to its leaderboard
+- [x] 8.4 Add `src/app/betting/history/king-of-the-court/[date]/page.tsx` rendering the full ranked leaderboard for that date from 8.3, with a no-games/no-data state; verify by loading it for a date with games and a date with none
+- [x] 8.5 Make each calendar day cell with a recorded leader a link to `/betting/history/king-of-the-court/[date]`; verify clicking a day navigates to its leaderboard
 
 ## 9. Today strip
 
