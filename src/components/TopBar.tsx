@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { SECTIONS } from "@/components/Sidebar";
 import { TeamsNavMenu } from "@/components/TeamsNavMenu";
+import { PlayerSearch } from "@/components/PlayerSearch";
 
 /** Desktop top bar (`lg` and above), always visible regardless of the
  * sidebar's collapsed state. Mirrors Sidebar's section links. Sidebar
@@ -38,6 +39,9 @@ export function TopBar({ collapsed, onToggleSidebar }: { collapsed: boolean; onT
           ),
         )}
       </nav>
+      <div className="ml-auto">
+        <PlayerSearch />
+      </div>
     </header>
   );
 }

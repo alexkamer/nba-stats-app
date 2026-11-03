@@ -5,7 +5,6 @@ export const SECTIONS = [
   { href: "/scoreboard", label: "Scoreboard" },
   { href: "/standings", label: "Standings" },
   { href: "/teams", label: "Teams" },
-  { href: "/players", label: "Players" },
   { href: "/news", label: "News" },
   { href: "/betting", label: "Betting" },
   { href: "/betting/history", label: "Cover Story" },
