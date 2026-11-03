@@ -57,6 +57,7 @@ interface HeaderExtras {
 // renders raw HTML.
 interface RecapArticle {
   headline: string;
+  description: string | null;
   source: string | null;
   publishedAt: string | null;
   paragraphs: string[];
@@ -90,6 +91,47 @@ interface SeasonSeries {
     away: { abbreviation: string; score: number | null; winner: boolean };
     broadcasts: string[];
   }[];
+}
+
+// Pre-game-only data (see openspec/changes/add-pregame-preview) — attached
+// to the live-sourced game shape only while the game is still scheduled
+// (the DB-backed shape never carries it, since only FINAL games are served
+// from the DB). Lineups are depth-chart-derived (ESPN's summary carries no
+// confirmed-starters field pre-tipoff), always labeled "Projected".
+interface ProjectedStarter {
+  espnId: string;
+  displayName: string;
+  position: string | null;
+}
+
+interface AvailabilityEntry {
+  playerId: number;
+  displayName: string;
+  status: "OUT" | "DOUBTFUL" | "QUESTIONABLE" | "PROBABLE" | "AVAILABLE";
+  comment: string | null;
+}
+
+interface PlayerPropPreview {
+  playerId: number;
+  playerName: string;
+  statType: string;
+  projectedValue: number;
+  line: number;
+  lean: "OVER" | "UNDER" | "PUSH";
+  odds: number | null;
+}
+
+interface GamePreview {
+  projection: { projectedHomeScore: number; projectedAwayScore: number; homeWinPct: number | null; awayWinPct: number | null } | null;
+  availability: { home: AvailabilityEntry[]; away: AvailabilityEntry[] } | null;
+  lineups: { home: ProjectedStarter[] | null; away: ProjectedStarter[] | null };
+  playerProps: PlayerPropPreview[];
+  article: RecapArticle | null;
+  // ESPN's own win-probability model, shown separately from our
+  // GameProjection-derived win% above — the two are independent and can
+  // disagree, so they must never be visually conflated (see
+  // openspec/changes/add-pregame-preview/design.md).
+  espnPredictor: { homeWinPct: number; awayWinPct: number } | null;
 }
 
 interface DbGame {
@@ -140,6 +182,7 @@ interface LiveGame {
   shots: Shot[];
   recap: RecapArticle | null;
   teamStatsBreakdown: TeamStatCategory[] | null;
+  preview?: GamePreview;
 }
 
 interface TeamStatFields {
@@ -225,7 +268,7 @@ interface Shot {
   playerName: string | null;
 }
 
-type TabKey = "gamecast" | "recap" | "boxscore" | "playbyplay" | "teamstats";
+type TabKey = "gamecast" | "recap" | "boxscore" | "playbyplay" | "teamstats" | "preview" | "odds";
 
 const GAME_TABS: { value: TabKey; label: string }[] = [
   { value: "gamecast", label: "Gamecast" },
@@ -233,6 +276,17 @@ const GAME_TABS: { value: TabKey; label: string }[] = [
   { value: "boxscore", label: "Box Score" },
   { value: "playbyplay", label: "Play-by-Play" },
   { value: "teamstats", label: "Team Stats" },
+];
+
+// Shown instead of GAME_TABS while a game is still scheduled — recap/box
+// score/play-by-play/team stats have nothing to show before tip-off (see
+// game-pregame-preview spec's tab-visibility requirement). The "gamecast"
+// key is shared with GAME_TABS (its content differs by game state); the
+// "preview"/"odds" keys only ever appear in this set.
+const PREGAME_TABS: { value: TabKey; label: string }[] = [
+  { value: "gamecast", label: "Gamecast" },
+  { value: "preview", label: "Preview" },
+  { value: "odds", label: "Odds" },
 ];
 
 function formatSigned(value: number | null): string {
@@ -449,6 +503,19 @@ function GameDetailContent() {
   const awayTeamStats = teamRows.find((r) => r.abbreviation === away.abbreviation) ?? null;
   const homeTeamStats = teamRows.find((r) => r.abbreviation === home.abbreviation) ?? null;
 
+  // The Preview tab's data only exists on the live-sourced shape, and only
+  // while the game is scheduled (route.ts only attaches it in that case).
+  // Its presence, not a separate status flag, is what the UI keys off of.
+  const preview = source === "live" ? (game as LiveGame).preview ?? null : null;
+  const isScheduled = preview !== null;
+  const visibleTabs = isScheduled ? PREGAME_TABS : GAME_TABS;
+  // `activeTab` reflects the URL's `?tab=` (or its static default) with no
+  // knowledge of which tabs apply to this game — fall back to this game's
+  // first visible tab whenever the requested one isn't actually shown
+  // (e.g. a bookmarked `?tab=boxscore` for a game that's since gone final,
+  // or simply loading a scheduled game with no `?tab=` at all).
+  const displayTab = visibleTabs.some((t) => t.value === activeTab) ? activeTab : visibleTabs[0].value;
+
   return (
     <div className="space-y-8">
       <ScoreboardHeader
@@ -456,75 +523,68 @@ function GameDetailContent() {
         home={home}
         statusDetail={statusDetail}
         linescores={headerExtras}
-        tabs={GAME_TABS}
-        activeTab={activeTab}
+        tabs={visibleTabs}
+        activeTab={displayTab}
         onTabChange={setActiveTab}
       />
 
-      {activeTab === "gamecast" && (
-        // Full-bleed, same trick as ScoreboardHeader: this grid needs the
-        // whole content area's width for its 3-column layout, not just
-        // <main>'s centered max-w-6xl column.
-        <FullBleed className="px-6">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr_340px]">
-            <div className="space-y-6">
-              <GameLeaders away={away} home={home} awayPlayerRows={awayPlayerRows} homePlayerRows={homePlayerRows} />
-              <TeamStatsCard away={away} home={home} awayStats={awayTeamStats} homeStats={homeTeamStats} />
-              {headerExtras?.gameInfo && <GameInformationCard date={game.date} gameInfo={headerExtras.gameInfo} />}
+      {displayTab === "gamecast" &&
+        (isScheduled && preview ? (
+          <PregameGamecastTab
+            away={away}
+            home={home}
+            preview={preview}
+            odds={odds}
+            gameInfo={headerExtras?.gameInfo ?? null}
+            gameDate={game.date}
+            seasonSeries={headerExtras?.seasonSeries ?? null}
+            awayRecord={headerExtras?.away.record ?? null}
+            homeRecord={headerExtras?.home.record ?? null}
+          />
+        ) : (
+          // Full-bleed, same trick as ScoreboardHeader: this grid needs the
+          // whole content area's width for its 3-column layout, not just
+          // <main>'s centered max-w-6xl column.
+          <FullBleed className="px-6">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr_340px]">
+              <div className="space-y-6">
+                <GameLeaders away={away} home={home} awayPlayerRows={awayPlayerRows} homePlayerRows={homePlayerRows} />
+                <TeamStatsCard away={away} home={home} awayStats={awayTeamStats} homeStats={homeTeamStats} />
+                {headerExtras?.gameInfo && <GameInformationCard date={game.date} gameInfo={headerExtras.gameInfo} />}
+              </div>
+              <div className="space-y-6">
+                <ProbabilityGameFlowCard away={away} home={home} plays={plays} winProbability={winProbability} />
+                <ShotChartCard away={away} home={home} awayEspnId={awayEspnId} homeEspnId={homeEspnId} shots={shots} />
+              </div>
+              <div className="space-y-6">
+                <OddsPanel away={away} home={home} odds={odds} />
+                {headerExtras?.seasonSeries && (
+                  <MatchupsCard
+                    away={away}
+                    home={home}
+                    awayRecord={headerExtras.away.record}
+                    homeRecord={headerExtras.home.record}
+                    seasonSeries={headerExtras.seasonSeries}
+                  />
+                )}
+              </div>
             </div>
-            <div className="space-y-6">
-              <ProbabilityGameFlowCard away={away} home={home} plays={plays} winProbability={winProbability} />
-              <ShotChartCard away={away} home={home} awayEspnId={awayEspnId} homeEspnId={homeEspnId} shots={shots} />
-            </div>
-            <div className="space-y-6">
-              <OddsPanel away={away} home={home} odds={odds} />
-              {headerExtras?.seasonSeries && (
-                <MatchupsCard
-                  away={away}
-                  home={home}
-                  awayRecord={headerExtras.away.record}
-                  homeRecord={headerExtras.home.record}
-                  seasonSeries={headerExtras.seasonSeries}
-                />
-              )}
-            </div>
-          </div>
-        </FullBleed>
-      )}
-      {activeTab === "recap" && <RecapTab away={away} home={home} recap={recap} />}
-      {activeTab === "teamstats" && <TeamStatsTab away={away} home={home} teamStatsBreakdown={teamStatsBreakdown} />}
+          </FullBleed>
+        ))}
 
-      {activeTab === "boxscore" && (
+      {displayTab === "preview" && preview && (
+        <PreviewArticleTab away={away} home={home} article={preview.article} gameDate={game.date} />
+      )}
+      {displayTab === "recap" && <RecapTab away={away} home={home} recap={recap} />}
+      {displayTab === "teamstats" && <TeamStatsTab away={away} home={home} teamStatsBreakdown={teamStatsBreakdown} />}
+
+      {displayTab === "odds" && preview && (
+        <OddsAndPropsTab away={away} home={home} odds={odds} playerProps={preview.playerProps} />
+      )}
+
+      {displayTab === "boxscore" && (
         <>
-          {odds && (
-            <section>
-              <h2 className="text-lg font-medium text-foreground/92 mb-3">
-                Odds <span className="text-foreground/72 text-sm font-normal">({odds.provider})</span>
-              </h2>
-              <table className="w-full text-sm max-w-md border-collapse">
-                <thead>
-                  <tr className="text-left text-foreground/72">
-                    <th className="py-2 pr-2 border-b border-border">Team</th>
-                    <th className="py-2 pr-2 text-right border-b border-border">Spread</th>
-                    <th className="py-2 text-right border-b border-border">Moneyline</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className={`border-b border-border/60 ${!odds.homeIsFavorite ? "font-semibold" : ""}`}>
-                    <td className="py-2 pr-2">{away.abbreviation}</td>
-                    <td className="py-2 pr-2 text-right">{formatSigned(odds.awaySpread)}</td>
-                    <td className="py-2 text-right">{formatSigned(odds.awayMoneyline)}</td>
-                  </tr>
-                  <tr className={odds.homeIsFavorite ? "font-semibold" : ""}>
-                    <td className="py-2 pr-2">{home.abbreviation}</td>
-                    <td className="py-2 pr-2 text-right">{formatSigned(odds.homeSpread)}</td>
-                    <td className="py-2 text-right">{formatSigned(odds.homeMoneyline)}</td>
-                  </tr>
-                </tbody>
-              </table>
-              {odds.overUnder !== null && <p className="text-foreground/72 text-sm mt-2">O/U {odds.overUnder}</p>}
-            </section>
-          )}
+          {odds && <OddsTable away={away} home={home} odds={odds} />}
 
           {teamRows.every((s) => s.points === null) ? (
             <p className="text-foreground/72 text-sm">
@@ -541,7 +601,7 @@ function GameDetailContent() {
         </>
       )}
 
-      {activeTab === "playbyplay" && <PlayByPlayTab away={away} home={home} plays={plays} />}
+      {displayTab === "playbyplay" && <PlayByPlayTab away={away} home={home} plays={plays} />}
     </div>
   );
 }
@@ -559,10 +619,26 @@ interface ScoreboardTeam {
 // cross-promotional thumbnails, frequently unrelated to the actual game
 // (design.md). A team-colored score banner stands in for the hero image
 // instead of leaving the tab bare text.
-function RecapTab({ away, home, recap }: { away: ScoreboardTeam; home: ScoreboardTeam; recap: RecapArticle | null }) {
-  if (!recap) return <p className="text-foreground/72 text-sm">No recap available for this game.</p>;
+// Shared by RecapTab (post-game) and PreviewArticleTab (pregame) — same
+// ESPN `article` shape either way, just a different `type` filter upstream
+// (see extractRecap/extractPreviewArticle) and a different banner/empty
+// message for each tab's own context.
+function ArticleTab({
+  away,
+  home,
+  article,
+  emptyMessage,
+  banner,
+}: {
+  away: ScoreboardTeam;
+  home: ScoreboardTeam;
+  article: RecapArticle | null;
+  emptyMessage: string;
+  banner: ReactNode;
+}) {
+  if (!article) return <p className="text-foreground/72 text-sm">{emptyMessage}</p>;
 
-  const byline = [recap.source, recap.publishedAt ? formatGameDateTime(recap.publishedAt) : null]
+  const byline = [article.source, article.publishedAt ? formatGameDateTime(article.publishedAt) : null]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
 
@@ -580,12 +656,7 @@ function RecapTab({ away, home, recap }: { away: ScoreboardTeam; home: Scoreboar
             {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-12 w-12 object-contain" />}
             <span className="text-sm font-semibold text-foreground">{away.abbreviation}</span>
           </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold tabular-nums text-foreground">
-              {away.score} – {home.score}
-            </div>
-            <div className="text-xs text-foreground/72">Final</div>
-          </div>
+          {banner}
           <div className="flex flex-col items-center gap-1">
             {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-12 w-12 object-contain" />}
             <span className="text-sm font-semibold text-foreground">{home.abbreviation}</span>
@@ -594,12 +665,12 @@ function RecapTab({ away, home, recap }: { away: ScoreboardTeam; home: Scoreboar
       </div>
 
       <div>
-        <h2 className="text-2xl font-bold leading-tight text-foreground">{recap.headline}</h2>
+        <h2 className="text-2xl font-bold leading-tight text-foreground">{article.headline}</h2>
         {byline && <p className="mt-2 text-sm text-foreground/72">{byline}</p>}
       </div>
 
       <div className="space-y-4 text-[15px] leading-relaxed text-foreground/92">
-        {recap.paragraphs.map((paragraph, i) => (
+        {article.paragraphs.map((paragraph, i) => (
           <p
             key={i}
             className={
@@ -613,6 +684,52 @@ function RecapTab({ away, home, recap }: { away: ScoreboardTeam; home: Scoreboar
         ))}
       </div>
     </section>
+  );
+}
+
+function RecapTab({ away, home, recap }: { away: ScoreboardTeam; home: ScoreboardTeam; recap: RecapArticle | null }) {
+  return (
+    <ArticleTab
+      away={away}
+      home={home}
+      article={recap}
+      emptyMessage="No recap available for this game."
+      banner={
+        <div className="text-center">
+          <div className="text-2xl font-bold tabular-nums text-foreground">
+            {away.score} – {home.score}
+          </div>
+          <div className="text-xs text-foreground/72">Final</div>
+        </div>
+      }
+    />
+  );
+}
+
+function PreviewArticleTab({
+  away,
+  home,
+  article,
+  gameDate,
+}: {
+  away: ScoreboardTeam;
+  home: ScoreboardTeam;
+  article: RecapArticle | null;
+  gameDate: string;
+}) {
+  return (
+    <ArticleTab
+      away={away}
+      home={home}
+      article={article}
+      emptyMessage="No preview available for this game."
+      banner={
+        <div className="text-center">
+          <div className="text-sm font-semibold tabular-nums text-foreground">{formatGameDateTime(gameDate)}</div>
+          <div className="text-xs text-foreground/72">Preview</div>
+        </div>
+      }
+    />
   );
 }
 
@@ -661,6 +778,417 @@ function TeamStatsTab({
         </tbody>
       </table>
     </section>
+  );
+}
+
+const AVAILABILITY_STATUS_LABEL: Record<AvailabilityEntry["status"], string> = {
+  OUT: "Out",
+  DOUBTFUL: "Doubtful",
+  QUESTIONABLE: "Questionable",
+  PROBABLE: "Probable",
+  AVAILABLE: "Available",
+};
+
+function ProjectionSummaryCard({
+  away,
+  home,
+  projection,
+  odds,
+}: {
+  away: ScoreboardTeam;
+  home: ScoreboardTeam;
+  projection: NonNullable<GamePreview["projection"]>;
+  odds: NormalizedOdds | null;
+}) {
+  const side = (team: ScoreboardTeam, score: number, winPct: number | null) => (
+    <div className="flex flex-col items-center gap-1">
+      {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-10 w-10 object-contain" />}
+      <span className="text-sm font-semibold text-foreground">{team.abbreviation}</span>
+      <span className="text-xl font-bold tabular-nums text-foreground">{score.toFixed(1)}</span>
+      {winPct !== null && <span className="text-xs text-foreground/72">{winPct.toFixed(0)}% to win</span>}
+    </div>
+  );
+
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <h2 className="text-sm font-semibold text-foreground/92 mb-3">Projection</h2>
+      <div className="flex items-center justify-around gap-4">
+        {side(away, projection.projectedAwayScore, projection.awayWinPct)}
+        <span className="text-xs text-foreground/72">PROJECTED</span>
+        {side(home, projection.projectedHomeScore, projection.homeWinPct)}
+      </div>
+      {odds && (
+        <p className="mt-3 text-center text-xs text-foreground/72">
+          Market: {odds.homeIsFavorite ? home.abbreviation : away.abbreviation}{" "}
+          {formatSigned(odds.homeIsFavorite ? odds.homeSpread : odds.awaySpread)}
+          {odds.overUnder !== null && ` · O/U ${odds.overUnder}`}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ESPN's own "Matchup Predictor" win%, shown as its own container below
+// ProjectionSummaryCard rather than merged into it - the two are
+// independent models (ours is score-margin-derived, ESPN's is their own)
+// and can disagree, so they stay visually and structurally separate.
+// A short blurb pulled from the pregame preview article's own headline and
+// description (distinct from its full body, which lives on the Preview
+// tab) — not a card of its own, just context sitting above the
+// projection/predictor cards in the Gamecast dashboard's middle column.
+function PreviewBlurb({ article }: { article: RecapArticle | null }) {
+  if (!article) return null;
+  const byline = [article.publishedAt ? formatGameDateTime(article.publishedAt) : null, article.source]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <h2 className="text-sm font-semibold text-foreground mb-1">{article.headline}</h2>
+      {article.description && <p className="text-sm text-foreground/82 mb-2">{article.description}</p>}
+      {byline && <p className="text-xs text-foreground/72">{byline}</p>}
+    </div>
+  );
+}
+
+function EspnPredictorCard({
+  away,
+  home,
+  predictor,
+}: {
+  away: ScoreboardTeam;
+  home: ScoreboardTeam;
+  predictor: NonNullable<GamePreview["espnPredictor"]>;
+}) {
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <h2 className="text-sm font-semibold text-foreground/92 mb-3">ESPN Predictor</h2>
+      <div className="flex items-center justify-around gap-4">
+        <div className="flex flex-col items-center gap-1">
+          {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-8 w-8 object-contain" />}
+          <span className="text-sm font-semibold text-foreground">{away.abbreviation}</span>
+          <span className="text-lg font-bold tabular-nums text-foreground">{predictor.awayWinPct.toFixed(1)}%</span>
+        </div>
+        <span className="text-xs text-foreground/72">TO WIN</span>
+        <div className="flex flex-col items-center gap-1">
+          {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-8 w-8 object-contain" />}
+          <span className="text-sm font-semibold text-foreground">{home.abbreviation}</span>
+          <span className="text-lg font-bold tabular-nums text-foreground">{predictor.homeWinPct.toFixed(1)}%</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LineupPanel({ team, starters }: { team: ScoreboardTeam; starters: ProjectedStarter[] | null }) {
+  if (!starters) return null;
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <div className="flex items-center gap-2 mb-3">
+        {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-5 w-5 object-contain" />}
+        <h3 className="text-sm font-semibold text-foreground/92">{team.abbreviation} Projected Starters</h3>
+      </div>
+      <ul className="space-y-1.5 text-sm text-foreground/92">
+        {starters.map((starter) => (
+          <li key={starter.espnId} className="flex items-center justify-between">
+            <span>{starter.displayName}</span>
+            {starter.position && <span className="text-xs text-foreground/72">{starter.position}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AvailabilityPanel({ team, entries }: { team: ScoreboardTeam; entries: AvailabilityEntry[] }) {
+  const flagged = entries.filter((entry) => entry.status !== "AVAILABLE");
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <div className="flex items-center gap-2 mb-3">
+        {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-5 w-5 object-contain" />}
+        <h3 className="text-sm font-semibold text-foreground/92">{team.abbreviation} Availability</h3>
+      </div>
+      {flagged.length === 0 ? (
+        <p className="text-sm text-foreground/72">No reported availability concerns.</p>
+      ) : (
+        <ul className="space-y-2 text-sm">
+          {flagged.map((entry) => (
+            <li key={entry.playerId}>
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-foreground/92">{entry.displayName}</span>
+                <span className="text-xs font-semibold text-foreground/72">{AVAILABILITY_STATUS_LABEL[entry.status]}</span>
+              </div>
+              {entry.comment && <p className="mt-0.5 text-xs text-foreground/72">{entry.comment}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Pregame counterpart to the live Gamecast tab's 3-column FullBleed grid —
+// same layout, with cards that have pregame data in place of the
+// live-only ones (game leaders, this-game team stats, win-probability
+// flow, shot chart) that have nothing to show before tip-off.
+function PregameGamecastTab({
+  away,
+  home,
+  preview,
+  odds,
+  gameInfo,
+  gameDate,
+  seasonSeries,
+  awayRecord,
+  homeRecord,
+}: {
+  away: ScoreboardTeam;
+  home: ScoreboardTeam;
+  preview: GamePreview;
+  odds: NormalizedOdds | null;
+  gameInfo: GameInfo | null;
+  gameDate: string;
+  seasonSeries: SeasonSeries | null;
+  awayRecord: string | null;
+  homeRecord: string | null;
+}) {
+  return (
+    <FullBleed className="px-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr_340px]">
+        <div className="space-y-6">
+          <LineupPanel team={away} starters={preview.lineups.away} />
+          <LineupPanel team={home} starters={preview.lineups.home} />
+        </div>
+        <div className="space-y-6">
+          <PreviewBlurb article={preview.article} />
+          {preview.projection && (
+            <ProjectionSummaryCard away={away} home={home} projection={preview.projection} odds={odds} />
+          )}
+          {preview.espnPredictor && (
+            <EspnPredictorCard away={away} home={home} predictor={preview.espnPredictor} />
+          )}
+          {preview.availability && (
+            <>
+              <AvailabilityPanel team={away} entries={preview.availability.away} />
+              <AvailabilityPanel team={home} entries={preview.availability.home} />
+            </>
+          )}
+        </div>
+        <div className="space-y-6">
+          {gameInfo && <GameInformationCard date={gameDate} gameInfo={gameInfo} />}
+          {seasonSeries && (
+            <MatchupsCard
+              away={away}
+              home={home}
+              awayRecord={awayRecord}
+              homeRecord={homeRecord}
+              seasonSeries={seasonSeries}
+            />
+          )}
+        </div>
+      </div>
+    </FullBleed>
+  );
+}
+
+function OddsTable({ away, home, odds }: { away: ScoreboardTeam; home: ScoreboardTeam; odds: NormalizedOdds }) {
+  const rows = [
+    { team: away, spread: odds.awaySpread, moneyline: odds.awayMoneyline, isFavorite: !odds.homeIsFavorite },
+    { team: home, spread: odds.homeSpread, moneyline: odds.homeMoneyline, isFavorite: odds.homeIsFavorite },
+  ];
+  return (
+    <section className="max-w-md rounded-lg border border-border p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-foreground/92">Odds</h2>
+        <span className="text-xs text-foreground/60">{odds.provider}</span>
+      </div>
+      <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b border-border pb-1.5 text-xs font-medium text-foreground/60">
+        <span>Team</span>
+        <span className="text-right">Spread</span>
+        <span className="text-right">Moneyline</span>
+      </div>
+      {rows.map(({ team, spread, moneyline, isFavorite }) => (
+        <div
+          key={team.abbreviation}
+          className="-mx-2 grid grid-cols-[1fr_auto_auto] items-center gap-x-4 rounded-md px-2 py-2"
+          style={isFavorite ? { backgroundColor: `${team.accent}14` } : undefined}
+        >
+          <span className="flex items-center gap-2">
+            {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-5 w-5 object-contain" />}
+            {team.linkId ? (
+              <Link
+                href={`/teams/${team.linkId}`}
+                className={`text-sm hover:text-accent ${isFavorite ? "font-semibold text-foreground" : "text-foreground/85"}`}
+              >
+                {team.abbreviation}
+              </Link>
+            ) : (
+              <span className={`text-sm ${isFavorite ? "font-semibold text-foreground" : "text-foreground/85"}`}>
+                {team.abbreviation}
+              </span>
+            )}
+            {isFavorite && (
+              <span className="rounded border border-border bg-foreground/5 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/72">
+                Favorite
+              </span>
+            )}
+          </span>
+          <span className="text-right text-sm tabular-nums text-foreground/92">{formatSigned(spread) || "—"}</span>
+          <span className="text-right text-sm tabular-nums text-foreground/92">{formatSigned(moneyline) || "—"}</span>
+        </div>
+      ))}
+      {odds.overUnder !== null && (
+        <div className="mt-3 flex items-center justify-between rounded-md bg-foreground/5 px-3 py-2">
+          <span className="text-xs font-medium text-foreground/72">Total (O/U)</span>
+          <span className="text-sm font-semibold tabular-nums text-foreground/92">{odds.overUnder}</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const PROP_STAT_LABEL: Record<string, string> = {
+  POINTS: "Points",
+  REBOUNDS: "Rebounds",
+  ASSISTS: "Assists",
+  THREE_POINTERS_MADE: "3PT Made",
+  STEALS: "Steals",
+  BLOCKS: "Blocks",
+  POINTS_ASSISTS: "Pts + Ast",
+  POINTS_REBOUNDS: "Pts + Reb",
+  REBOUNDS_ASSISTS: "Reb + Ast",
+  POINTS_REBOUNDS_ASSISTS: "Pts + Reb + Ast",
+};
+
+const LEAN_BADGE_CLASSES: Record<PlayerPropPreview["lean"], string> = {
+  OVER: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  UNDER: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
+  PUSH: "bg-foreground/10 text-foreground/72",
+};
+
+function OddsAndPropsTab({
+  away,
+  home,
+  odds,
+  playerProps,
+}: {
+  away: ScoreboardTeam;
+  home: ScoreboardTeam;
+  odds: NormalizedOdds | null;
+  playerProps: PlayerPropPreview[];
+}) {
+  if (!odds && playerProps.length === 0) {
+    return <p className="text-foreground/72 text-sm">No odds or player props available for this game.</p>;
+  }
+
+  return (
+    <section className="mx-auto max-w-4xl space-y-6">
+      {odds && <OddsTable away={away} home={home} odds={odds} />}
+      {playerProps.length > 0 && <PlayerPropsTable playerProps={playerProps} />}
+    </section>
+  );
+}
+
+function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+        active ? "bg-accent text-accent-foreground" : "border border-border text-foreground/72 hover:text-foreground/92"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function PlayerPropsTable({ playerProps }: { playerProps: PlayerPropPreview[] }) {
+  const [filter, setFilter] = useState<string>("ALL");
+
+  const statTypes = Array.from(new Set(playerProps.map((prop) => prop.statType)));
+  const filtered = filter === "ALL" ? playerProps : playerProps.filter((prop) => prop.statType === filter);
+  const sorted = [...filtered].sort(
+    (a, b) => Math.abs(b.projectedValue - b.line) - Math.abs(a.projectedValue - a.line),
+  );
+
+  return (
+    <div>
+      <h2 className="mb-3 text-lg font-medium text-foreground/92">Player Props</h2>
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        <FilterChip label="All" active={filter === "ALL"} onClick={() => setFilter("ALL")} />
+        {statTypes.map((statType) => (
+          <FilterChip
+            key={statType}
+            label={PROP_STAT_LABEL[statType] ?? statType}
+            active={filter === statType}
+            onClick={() => setFilter(statType)}
+          />
+        ))}
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full min-w-[480px] border-collapse text-sm">
+          <thead>
+            <tr className="text-left text-xs text-foreground/60">
+              <th className="border-b border-border py-2 pl-3 pr-2 font-medium">Player</th>
+              <th className="border-b border-border py-2 pr-2 font-medium">Stat</th>
+              <th className="border-b border-border py-2 pr-2 text-right font-medium">Line</th>
+              <th className="border-b border-border py-2 pr-2 text-right font-medium">Proj</th>
+              <th className="border-b border-border py-2 pr-2 text-right font-medium">Edge</th>
+              <th className="border-b border-border py-2 pr-3 text-right font-medium">Lean</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((prop) => {
+              const edge = prop.projectedValue - prop.line;
+              return (
+                <tr
+                  key={`${prop.playerId}-${prop.statType}`}
+                  className="border-b border-border/60 last:border-0 hover:bg-foreground/[0.03]"
+                >
+                  <td className="py-2 pl-3 pr-2 text-foreground/92">
+                    <Link href={`/players/${prop.playerId}`} className="hover:text-accent">
+                      {prop.playerName}
+                    </Link>
+                  </td>
+                  <td className="py-2 pr-2 text-foreground/72">
+                    <Link
+                      href={`/betting/research/${prop.playerId}?stat=${prop.statType}`}
+                      className="hover:text-accent"
+                    >
+                      {PROP_STAT_LABEL[prop.statType] ?? prop.statType}
+                    </Link>
+                  </td>
+                  <td className="py-2 pr-2 text-right tabular-nums text-foreground/92">{prop.line}</td>
+                  <td className="py-2 pr-2 text-right tabular-nums text-foreground/92">
+                    {prop.projectedValue.toFixed(1)}
+                  </td>
+                  <td
+                    className={`py-2 pr-2 text-right font-medium tabular-nums ${
+                      edge > 0
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : edge < 0
+                          ? "text-rose-600 dark:text-rose-400"
+                          : "text-foreground/60"
+                    }`}
+                  >
+                    {edge > 0 ? "+" : ""}
+                    {edge.toFixed(1)}
+                  </td>
+                  <td className="py-2 pr-3 text-right">
+                    <span
+                      className={`inline-block rounded px-2 py-1 text-xs font-semibold tabular-nums ${LEAN_BADGE_CLASSES[prop.lean]}`}
+                    >
+                      {prop.lean}
+                      {prop.odds !== null ? ` ${formatSigned(prop.odds)}` : ""}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
