@@ -56,3 +56,9 @@
 
 - [x] 10.1 Add `src/app/api/betting/history/on-this-day/route.ts`: a raw SQLite query (`strftime('%m-%d', ...)`) over `PlayerGameStat`/`Game`, excluding the current year, ranking by points+rebounds+assists, limited to the top 5, with team/opponent info and triple-double flag (reusing `hasTripleDouble`); verify against real historical data for today's calendar date
 - [x] 10.2 Add an `OnThisDaySection` to the Cover Story page rendering those top performances with a no-data state, and surface the top result as a chip in the `TodayStrip` (reusing the same query, no extra request); verify against real data
+
+## 11. Favorite/underdog splits and table sort
+
+- [x] 11.1 Add `favWins`/`favLosses`/`dogWins`/`dogLosses` and `favAtsWins`/`favAtsLosses`/`favAtsPushes`/`dogAtsWins`/`dogAtsLosses`/`dogAtsPushes` to `TeamCoverRecord`; run `prisma migrate dev` and verify the migration applies cleanly
+- [x] 11.2 Update `ingest/compute-cover-records.ts` to credit favorite/underdog straight-up and ATS results using `Odds.favoriteTeamId` (skipping games with no recorded favorite); reset existing `TeamCoverRecord` rows and `Odds.coverRecordComputedAt` and re-run the script to backfill the new columns; verify league-wide totals are symmetric (favWins == dogLosses, favAtsWins == dogAtsLosses) and a second run is a no-op
+- [x] 11.3 Add favorite/underdog (straight-up and ATS) columns to the team cover records table, and sort the table by ATS win percentage descending (teams with no graded games sort last); change the ATS streak label from "Cover"/"Non-cover" to "W"/"L"; verify against real data and add team name/logo hyperlinks to `/teams/[id]`

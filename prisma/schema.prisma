@@ -595,6 +595,21 @@ model TeamCoverRecord {
   ouAwayPushes    Int @default(0) @map("ou_away_pushes")
   ouCurrentStreak Int @default(0) @map("ou_current_streak")
 
+  // Straight-up and ATS splits by market role (favorite vs. underdog per
+  // ESPN's own `favorite` flag on the odds entry, not inferred from the
+  // spread's sign) — only counted when a game actually has a recorded
+  // favorite; a pick'em (no favorite) contributes to neither split.
+  favWins       Int @default(0) @map("fav_wins")
+  favLosses     Int @default(0) @map("fav_losses")
+  dogWins       Int @default(0) @map("dog_wins")
+  dogLosses     Int @default(0) @map("dog_losses")
+  favAtsWins    Int @default(0) @map("fav_ats_wins")
+  favAtsLosses  Int @default(0) @map("fav_ats_losses")
+  favAtsPushes  Int @default(0) @map("fav_ats_pushes")
+  dogAtsWins    Int @default(0) @map("dog_ats_wins")
+  dogAtsLosses  Int @default(0) @map("dog_ats_losses")
+  dogAtsPushes  Int @default(0) @map("dog_ats_pushes")
+
   @@unique([teamId, seasonId])
   @@map("team_cover_record")
 }

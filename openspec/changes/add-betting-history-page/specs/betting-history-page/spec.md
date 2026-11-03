@@ -7,11 +7,11 @@ Presents a single retrospective page — Cover Story — summarizing this season
 ## ADDED Requirements
 
 ### Requirement: Team cover records section
-The page SHALL display, for every team, the current season's ATS record and over/under record as produced by the team-cover-record-tracking capability.
+The page SHALL display, for every team, the current season's ATS record, over/under record, and favorite/underdog splits (straight-up and ATS) as produced by the team-cover-record-tracking capability, ranked by ATS win percentage.
 
 #### Scenario: Records available
 - **WHEN** a user opens the page and cover records exist for the current season
-- **THEN** the page lists each team's ATS record and over/under record, including each team's current streak
+- **THEN** the page lists each team's ATS record, over/under record, and favorite/underdog splits, including each team's current streak, ordered from highest to lowest ATS win percentage
 
 ### Requirement: King of the Court calendar
 The page SHALL present a calendar for the current season where each day shows the player with that day's highest combined points+rebounds+assists total, as produced by the daily-stat-leader-tracking capability, and flags whether a triple-double occurred that day.

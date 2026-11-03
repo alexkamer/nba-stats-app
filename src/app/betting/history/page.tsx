@@ -37,6 +37,16 @@ interface TeamCoverRecord {
   ouAwayLosses: number;
   ouAwayPushes: number;
   ouCurrentStreak: number;
+  favWins: number;
+  favLosses: number;
+  dogWins: number;
+  dogLosses: number;
+  favAtsWins: number;
+  favAtsLosses: number;
+  favAtsPushes: number;
+  dogAtsWins: number;
+  dogAtsLosses: number;
+  dogAtsPushes: number;
 }
 
 interface PlayerSummary {
@@ -119,6 +129,14 @@ function streakLabel(streak: number, winLabel: string, lossLabel: string): strin
   return streak > 0 ? `${winLabel} ${streak}` : `${lossLabel} ${Math.abs(streak)}`;
 }
 
+/** ATS win percentage, used to rank the team cover-records table — a team
+ * with no graded games yet sorts last rather than tying with a 0-win team
+ * that's actually played (both would otherwise read as 0%). */
+function atsWinPct(r: TeamCoverRecord): number {
+  const decided = r.atsWins + r.atsLosses;
+  return decided === 0 ? -1 : r.atsWins / decided;
+}
+
 function TeamCoverRecordsSection() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["betting", "history", "team-cover-records"],
@@ -145,16 +163,20 @@ function TeamCoverRecordsSection() {
             <th className="pb-2 text-right font-normal">Home</th>
             <th className="pb-2 text-right font-normal">Away</th>
             <th className="pb-2 text-right font-normal">Streak</th>
+            <th className="pb-2 text-right font-normal">As Favorite</th>
+            <th className="pb-2 text-right font-normal">Fav ATS</th>
+            <th className="pb-2 text-right font-normal">As Underdog</th>
+            <th className="pb-2 text-right font-normal">Dog ATS</th>
           </tr>
         </thead>
         <tbody>
-          {data.records.map((r) => (
+          {[...data.records].sort((a, b) => atsWinPct(b) - atsWinPct(a)).map((r) => (
             <tr key={r.id} className="border-t border-border/60">
               <td className="py-1.5">
-                <span className="inline-flex items-center gap-1.5 font-semibold">
+                <Link href={`/teams/${r.team.id}`} className="inline-flex items-center gap-1.5 font-semibold hover:text-accent">
                   <CircularBadge src={r.team.logoUrl} alt="" size="sm" />
                   {r.team.abbreviation}
-                </span>
+                </Link>
               </td>
               <td className="py-1.5 text-right tabular-nums">{record(r.atsWins, r.atsLosses, r.atsPushes)}</td>
               <td className="py-1.5 text-right tabular-nums text-foreground/72">
@@ -164,7 +186,7 @@ function TeamCoverRecordsSection() {
                 {record(r.atsAwayWins, r.atsAwayLosses, r.atsAwayPushes)}
               </td>
               <td className="py-1.5 text-right tabular-nums text-foreground/72">
-                {streakLabel(r.atsCurrentStreak, "Cover", "Non-cover")}
+                {streakLabel(r.atsCurrentStreak, "W", "L")}
               </td>
               <td className="py-1.5 text-right tabular-nums">{record(r.ouWins, r.ouLosses, r.ouPushes)}</td>
               <td className="py-1.5 text-right tabular-nums text-foreground/72">
@@ -175,6 +197,14 @@ function TeamCoverRecordsSection() {
               </td>
               <td className="py-1.5 text-right tabular-nums text-foreground/72">
                 {streakLabel(r.ouCurrentStreak, "Over", "Under")}
+              </td>
+              <td className="py-1.5 text-right tabular-nums text-foreground/72">{record(r.favWins, r.favLosses, 0)}</td>
+              <td className="py-1.5 text-right tabular-nums text-foreground/72">
+                {record(r.favAtsWins, r.favAtsLosses, r.favAtsPushes)}
+              </td>
+              <td className="py-1.5 text-right tabular-nums text-foreground/72">{record(r.dogWins, r.dogLosses, 0)}</td>
+              <td className="py-1.5 text-right tabular-nums text-foreground/72">
+                {record(r.dogAtsWins, r.dogAtsLosses, r.dogAtsPushes)}
               </td>
             </tr>
           ))}

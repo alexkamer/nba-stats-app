@@ -20,6 +20,7 @@ interface PendingRow {
   oddsId: number;
   spread: number | null;
   overUnder: number | null;
+  favoriteTeamId: number | null;
   gameDate: Date;
   seasonId: number;
   homeTeamId: number;
@@ -35,6 +36,7 @@ async function loadPendingRows(): Promise<PendingRow[]> {
       id: true,
       spread: true,
       overUnder: true,
+      favoriteTeamId: true,
       game: {
         select: { date: true, seasonId: true, homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true },
       },
@@ -49,6 +51,7 @@ async function loadPendingRows(): Promise<PendingRow[]> {
       oddsId: row.id,
       spread: row.spread,
       overUnder: row.overUnder,
+      favoriteTeamId: row.favoriteTeamId,
       gameDate: row.game.date,
       seasonId: row.game.seasonId,
       homeTeamId: row.game.homeTeamId,
@@ -113,18 +116,58 @@ async function applyOverUnderResult(teamId: number, seasonId: number, isHome: bo
   await prisma.teamCoverRecord.update({ where: { id: record.id }, data });
 }
 
+/** Straight-up and ATS splits by market role — only called when the game
+ * has a recorded favorite (ESPN's own `favorite` flag), so a pick'em
+ * contributes to neither team's favorite/underdog counters. */
+async function applyFavoriteDogResult(
+  teamId: number,
+  seasonId: number,
+  isFavorite: boolean,
+  won: boolean,
+  atsResult: "COVER" | "NO_COVER" | "PUSH",
+) {
+  const record = await getOrCreateRecord(teamId, seasonId);
+  const data: Record<string, number> = {};
+
+  if (isFavorite) {
+    data[won ? "favWins" : "favLosses"] = (won ? record.favWins : record.favLosses) + 1;
+    if (atsResult === "COVER") data.favAtsWins = record.favAtsWins + 1;
+    else if (atsResult === "NO_COVER") data.favAtsLosses = record.favAtsLosses + 1;
+    else data.favAtsPushes = record.favAtsPushes + 1;
+  } else {
+    data[won ? "dogWins" : "dogLosses"] = (won ? record.dogWins : record.dogLosses) + 1;
+    if (atsResult === "COVER") data.dogAtsWins = record.dogAtsWins + 1;
+    else if (atsResult === "NO_COVER") data.dogAtsLosses = record.dogAtsLosses + 1;
+    else data.dogAtsPushes = record.dogAtsPushes + 1;
+  }
+
+  await prisma.teamCoverRecord.update({ where: { id: record.id }, data });
+}
+
 async function main() {
   const start = Date.now();
   const pending = await loadPendingRows();
 
   let atsGraded = 0;
   let ouGraded = 0;
+  let favDogGraded = 0;
   for (const row of pending) {
     if (row.spread !== null) {
       const result = gradeAtsCover(row.spread, row.homeScore, row.awayScore);
       await applyAtsResult(row.homeTeamId, row.seasonId, true, result.home);
       await applyAtsResult(row.awayTeamId, row.seasonId, false, result.away);
       atsGraded += 1;
+
+      if (row.favoriteTeamId !== null) {
+        const homeWon = row.homeScore > row.awayScore;
+        const homeIsFavorite = row.favoriteTeamId === row.homeTeamId;
+        const awayIsFavorite = row.favoriteTeamId === row.awayTeamId;
+        if (homeIsFavorite || awayIsFavorite) {
+          await applyFavoriteDogResult(row.homeTeamId, row.seasonId, homeIsFavorite, homeWon, result.home);
+          await applyFavoriteDogResult(row.awayTeamId, row.seasonId, awayIsFavorite, !homeWon, result.away);
+          favDogGraded += 1;
+        }
+      }
     }
     if (row.overUnder !== null) {
       const result = gradeOverUnder(row.overUnder, row.homeScore, row.awayScore);
@@ -137,7 +180,7 @@ async function main() {
 
   console.log(
     `compute-cover-records done in ${((Date.now() - start) / 1000).toFixed(1)}s: ` +
-      `${pending.length} game(s) checked, ${atsGraded} ATS graded, ${ouGraded} O/U graded.`,
+      `${pending.length} game(s) checked, ${atsGraded} ATS graded, ${ouGraded} O/U graded, ${favDogGraded} favorite/underdog graded.`,
   );
   await prisma.$disconnect();
 }

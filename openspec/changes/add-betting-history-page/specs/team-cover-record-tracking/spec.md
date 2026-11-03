@@ -45,3 +45,14 @@ The system SHALL maintain, per team, the current consecutive-game ATS streak and
 #### Scenario: Streak is broken
 - **WHEN** a team's most recently graded game is a non-cover (or non-push result opposite the prior streak direction)
 - **THEN** the system resets that team's current ATS streak to start from that game
+
+### Requirement: Favorite and underdog splits
+The system SHALL maintain, per team per season, straight-up win/loss counts and ATS win/loss/push counts split by whether that team was the recorded market favorite or underdog for the game, using the odds provider's own favorite designation rather than inferring it from the spread.
+
+#### Scenario: Game has a recorded favorite
+- **WHEN** a completed game's `Odds` row identifies a favorite team and has a recorded spread
+- **THEN** the system credits the favorite team's favorite-role straight-up and ATS counts, and the other team's underdog-role straight-up and ATS counts, for that game
+
+#### Scenario: Game has no recorded favorite
+- **WHEN** a completed game's `Odds` row has no recorded favorite
+- **THEN** the system excludes that game from both teams' favorite/underdog splits
