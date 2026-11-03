@@ -101,6 +101,14 @@ interface AccuracyBucket {
   hitRate: number | null;
 }
 
+interface PlayerStreakEntry {
+  player: PlayerSummary & { currentTeam: { id: number; abbreviation: string; logoUrl: string | null; color: string | null } | null };
+  statType: "POINTS" | "REBOUNDS" | "ASSISTS";
+  floor: number;
+  streak: number;
+  hitRate: number | null;
+}
+
 const STAT_LABELS: Record<string, string> = {
   POINTS: "Points",
   REBOUNDS: "Rebounds",
@@ -589,6 +597,52 @@ function PropHitRateByStatTypeSection() {
   );
 }
 
+function playerStreaksQueryOptions() {
+  return {
+    queryKey: ["betting", "history", "player-streaks"],
+    queryFn: () => fetchJson<{ date: string | null; entries: PlayerStreakEntry[] }>("/api/betting/history/player-streaks"),
+  };
+}
+
+function PlayerStreaksSection() {
+  const { data, isLoading, error } = useQuery(playerStreaksQueryOptions());
+
+  if (isLoading) return <p className="text-foreground/72">Loading player streaks…</p>;
+  if (error) return <p className="text-red-600 dark:text-red-400">Failed to load player streaks.</p>;
+  if (!data || data.entries.length === 0) {
+    return <p className="text-foreground/72">No notable Over streaks right now — check back once more player props are posted.</p>;
+  }
+
+  const dateLabel = data.date ? new Date(data.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : null;
+
+  return (
+    <div className="space-y-3">
+      {dateLabel && <p className="text-xs text-foreground/60">For Over props on {dateLabel}</p>}
+      <div className="flex flex-wrap gap-3">
+        {data.entries.map((entry) => (
+          <div key={`${entry.player.id}-${entry.statType}`} className="w-56 shrink-0 rounded-lg border border-border bg-surface p-3">
+            <div className="flex items-center gap-2">
+              <CircularBadge src={entry.player.headshotUrl} alt="" size="md" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-foreground">{entry.player.displayName}</p>
+                <p className="text-xs text-foreground/60">
+                  {entry.player.currentTeam?.abbreviation} · {STAT_LABELS[entry.statType]} {entry.floor}+
+                </p>
+              </div>
+            </div>
+            <p className="mt-2 text-2xl font-extrabold tabular-nums text-foreground">
+              {entry.streak > 0 ? `${entry.streak} straight` : "Hot L10"}
+            </p>
+            {entry.hitRate !== null && (
+              <p className="text-xs text-foreground/60 tabular-nums">{(entry.hitRate * 100).toFixed(0)}% over last 10</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function onThisDayQueryOptions() {
   return {
     queryKey: ["betting", "history", "on-this-day"],
@@ -774,6 +828,10 @@ export default function CoverStoryPage() {
 
       <SectionCard title="Prop hit rate by stat type">
         <PropHitRateByStatTypeSection />
+      </SectionCard>
+
+      <SectionCard title="Player streaks">
+        <PlayerStreaksSection />
       </SectionCard>
 
       <SectionCard title="On this day">
