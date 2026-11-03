@@ -10,6 +10,7 @@ import { FullBleed } from "@/components/FullBleed";
 import { useBreadcrumbLabel } from "@/components/Breadcrumb";
 import { getTeamAccent } from "@/lib/team-accent";
 import { GamePerformanceCard, type TeamPerformanceSummary } from "@/components/GamePerformanceCard";
+import { SkeletonDetailPage } from "@/components/Skeleton";
 
 // The API returns one of two shapes depending on whether the game has been
 // ingested as `final` (SPEC.md Sec 4): a DB-backed shape with real internal
@@ -354,7 +355,7 @@ async function fetchGame(eventId: string): Promise<ApiResponse> {
 
 export default function GameDetailPage() {
   return (
-    <Suspense fallback={<p className="text-foreground/82">Loading…</p>}>
+    <Suspense fallback={<SkeletonDetailPage />}>
       <GameDetailContent />
     </Suspense>
   );
@@ -378,7 +379,7 @@ function GameDetailContent() {
       : null,
   );
 
-  if (isLoading) return <p className="text-foreground/82">Loading…</p>;
+  if (isLoading) return <SkeletonDetailPage />;
   if (error || !data) return <p className="text-red-600 dark:text-red-400">Game not found.</p>;
 
   const { game, source } = data;

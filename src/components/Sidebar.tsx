@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { CalendarDays, ChevronLeft, LayoutList, Newspaper, ShieldHalf, Dices, Crown, type LucideIcon } from "lucide-react";
 
-export const SECTIONS = [
-  { href: "/scoreboard", label: "Scoreboard" },
-  { href: "/standings", label: "Standings" },
-  { href: "/teams", label: "Teams" },
-  { href: "/news", label: "News" },
-  { href: "/betting", label: "Betting" },
-  { href: "/betting/history", label: "Cover Story" },
+export const SECTIONS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: "/scoreboard", label: "Scoreboard", icon: CalendarDays },
+  { href: "/standings", label: "Standings", icon: LayoutList },
+  { href: "/teams", label: "Teams", icon: ShieldHalf },
+  { href: "/news", label: "News", icon: Newspaper },
+  { href: "/betting", label: "Betting", icon: Dices },
+  { href: "/betting/history", label: "Cover Story", icon: Crown },
 ];
 
 /** Persistent section nav at `lg` and above. Below `lg` the same sections
@@ -28,9 +29,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           aria-label="Hide sidebar"
           className="rounded-md p-1.5 text-foreground/60 hover:bg-surface-muted hover:text-foreground"
         >
-          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.5}>
-            <path d="M12.5 5l-5 5 5 5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
         </button>
       </div>
       <nav className="flex flex-col gap-1 text-sm font-semibold">
@@ -38,8 +37,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           <Link
             key={section.href}
             href={section.href}
-            className="rounded-md px-2.5 py-2 text-foreground/70 hover:bg-surface-muted hover:text-foreground"
+            className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-foreground/70 hover:bg-surface-muted hover:text-foreground"
           >
+            <section.icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
             {section.label}
           </Link>
         ))}

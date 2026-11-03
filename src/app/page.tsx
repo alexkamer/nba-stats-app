@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Fragment, Suspense, useState } from "react";
 import { CircularBadge } from "@/components/CircularBadge";
 import { SectionCard } from "@/components/SectionCard";
+import { Skeleton, SkeletonRow, SkeletonGameCard } from "@/components/Skeleton";
 
 interface GameCard {
   espnId: string;
@@ -100,9 +101,46 @@ export default function HomePage() {
   // instead of per-visit (Next.js breaking change) unless deferred behind
   // Suspense — same pattern as the scoreboard page.
   return (
-    <Suspense fallback={<p className="text-foreground/82">Loading…</p>}>
+    <Suspense fallback={<HomeSkeleton />}>
       <HomeContent />
     </Suspense>
+  );
+}
+
+/** Mirrors HomeContent's grid shape so the initial Suspense fallback doesn't
+ * cause a layout jump once data-driven content mounts in its place. */
+function HomeSkeleton() {
+  return (
+    <div className="space-y-8">
+      <div className="space-y-2">
+        <Skeleton className="h-9 w-56" />
+        <Skeleton className="h-4 w-72" />
+      </div>
+      <div className="grid items-start gap-6 lg:grid-cols-[1fr_2fr_1fr]">
+        <div className="space-y-2 rounded-md border border-border bg-surface p-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <SkeletonRow key={i} />
+          ))}
+        </div>
+        <div className="space-y-6">
+          <div className="grid gap-3 rounded-md border border-border bg-surface p-4 sm:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonGameCard key={i} />
+            ))}
+          </div>
+          <div className="space-y-2 rounded-md border border-border bg-surface p-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <SkeletonRow key={i} />
+            ))}
+          </div>
+        </div>
+        <div className="space-y-3 rounded-md border border-border bg-surface p-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-3.5 w-full" />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -136,7 +174,13 @@ function HomeContent() {
 
       <div className="grid items-start gap-6 lg:grid-cols-[1fr_2fr_1fr]">
         <SectionCard title="League Leaders" accentColor="var(--accent)">
-          {leadersLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+          {leadersLoading && (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <SkeletonRow key={i} />
+              ))}
+            </div>
+          )}
           <div className="space-y-5">
             {leaderCategories?.map((category) => (
               <div key={category.key}>
@@ -177,7 +221,13 @@ function HomeContent() {
               </Link>
             }
           >
-            {gamesLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+            {gamesLoading && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <SkeletonGameCard key={i} />
+                ))}
+              </div>
+            )}
             {!gamesLoading && (!games || games.length === 0) && (
               <p className="text-foreground/72 text-sm">No games scheduled today.</p>
             )}
@@ -260,7 +310,17 @@ function HomeContent() {
               </Link>
             }
           >
-            {standingsLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+            {standingsLoading && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {[0, 1].map((col) => (
+                  <div key={col} className="space-y-2">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <SkeletonRow key={i} />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               {standings?.conferences.map((conf) => (
                 <div key={conf.conferenceName} className="space-y-2">
@@ -308,7 +368,13 @@ function HomeContent() {
             </Link>
           }
         >
-          {headlinesLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+          {headlinesLoading && (
+            <div className="space-y-2.5 py-1">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-3.5 w-full" />
+              ))}
+            </div>
+          )}
           {!headlinesLoading && (!headlines || headlines.length === 0) && (
             <p className="text-foreground/72 text-sm">No headlines available.</p>
           )}

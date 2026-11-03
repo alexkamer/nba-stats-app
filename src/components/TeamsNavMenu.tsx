@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { ShieldHalf } from "lucide-react";
 import { CircularBadge } from "@/components/CircularBadge";
 
 interface Team {
@@ -45,7 +46,8 @@ export function TeamsNavMenu() {
 
   return (
     <div className="group relative">
-      <Link href="/teams" className="text-foreground/70 hover:text-foreground">
+      <Link href="/teams" className="flex items-center gap-1.5 text-foreground/70 hover:text-foreground">
+        <ShieldHalf className="h-4 w-4" strokeWidth={1.75} />
         Teams
       </Link>
       <div

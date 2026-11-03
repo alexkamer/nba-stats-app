@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Search } from "lucide-react";
 import { CircularBadge } from "@/components/CircularBadge";
 
 interface Player {
@@ -154,6 +155,7 @@ export function SiteSearch() {
 
   return (
     <div ref={containerRef} className="relative w-full max-w-56">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground/40" strokeWidth={2} />
       <input
         type="text"
         placeholder="Search players, teams…"
@@ -164,7 +166,7 @@ export function SiteSearch() {
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        className="w-full rounded-md border border-border bg-surface-muted px-3 py-1.5 text-sm outline-none focus:border-accent"
+        className="w-full rounded-md border border-border bg-surface-muted px-3 py-1.5 pl-8 text-sm outline-none focus:border-accent"
       />
 
       {open && query.trim() && (

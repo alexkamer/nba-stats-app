@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { Check, X } from "lucide-react";
 import { BEST_BETS_PER_DAY, HIGH_CONFIDENCE_EDGE_RATIO, computeEdgeRatio } from "@lib/projections/confidence";
 import { StatBlock, ComparisonBar } from "@/components/StatBlock";
 import { CircularBadge } from "@/components/CircularBadge";
@@ -300,7 +301,7 @@ function ResultMark({ correct }: { correct: boolean | null }) {
             correct ? "bg-emerald-600 dark:bg-emerald-500" : "bg-red-600 dark:bg-red-500"
           }`}
         >
-          {correct ? "✓" : "✗"}
+          {correct ? <Check className="h-2.5 w-2.5" strokeWidth={3} /> : <X className="h-2.5 w-2.5" strokeWidth={3} />}
         </span>
       }
     />

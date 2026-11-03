@@ -4,8 +4,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
+import { Crown, Dumbbell, Flame, Cake, CalendarDays, AlertCircle, type LucideIcon } from "lucide-react";
 import { CircularBadge } from "@/components/CircularBadge";
 import { getTeamAccent } from "@/lib/team-accent";
+import { Skeleton, SkeletonRow } from "@/components/Skeleton";
 
 interface TeamSummary {
   id: number;
@@ -151,8 +153,20 @@ function TeamCoverRecordsSection() {
     queryFn: () => fetchJson<{ records: TeamCoverRecord[] }>("/api/betting/history/team-cover-records"),
   });
 
-  if (isLoading) return <p className="text-foreground/72">Loading team records…</p>;
-  if (error) return <p className="text-red-600 dark:text-red-400">Failed to load team cover records.</p>;
+  if (isLoading)
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-6 w-full" />
+        ))}
+      </div>
+    );
+  if (error)
+    return (
+      <p className="flex items-center gap-2 text-red-600 dark:text-red-400">
+        <AlertCircle className="h-4 w-4" /> Failed to load team cover records.
+      </p>
+    );
   if (!data || data.records.length === 0) {
     return <p className="text-foreground/72">No team cover records yet this season — check back once games have been graded.</p>;
   }
@@ -410,7 +424,11 @@ function MonthGrid({ month, daysByKey }: { month: Date; daysByKey: Map<string, D
               <div className="relative z-10">
                 <p className="flex items-center justify-between">
                   <span className={`text-xs ${isToday ? "font-bold text-accent" : "text-foreground/50"}`}>{date.getDate()}</span>
-                  {isBestDay && <span title="This month's best performance">👑</span>}
+                  {isBestDay && (
+                    <span title="This month's best performance">
+                      <Crown className="h-3.5 w-3.5 text-amber-500" />
+                    </span>
+                  )}
                 </p>
                 {soloLeader ? (
                   <div className="mt-1 flex flex-col items-center gap-1 text-center">
@@ -487,8 +505,20 @@ function KingOfTheCourtSection() {
     setLatestMonth(new Date(now.getFullYear(), now.getMonth(), 1));
   }, []);
 
-  if (isLoading || !latestMonth) return <p className="text-foreground/72">Loading King of the Court…</p>;
-  if (error) return <p className="text-red-600 dark:text-red-400">Failed to load daily leaders.</p>;
+  if (isLoading || !latestMonth)
+    return (
+      <div className="grid grid-cols-7 gap-1.5">
+        {Array.from({ length: 35 }).map((_, i) => (
+          <Skeleton key={i} className="aspect-square w-full" />
+        ))}
+      </div>
+    );
+  if (error)
+    return (
+      <p className="flex items-center gap-2 text-red-600 dark:text-red-400">
+        <AlertCircle className="h-4 w-4" /> Failed to load daily leaders.
+      </p>
+    );
   if (!data || data.days.length === 0) {
     return <p className="text-foreground/72">No daily leaders yet this season — check back once a full day&apos;s games have finished.</p>;
   }
@@ -544,8 +574,20 @@ function BirthdaysSection() {
     queryFn: () => fetchJson<{ players: Birthday[] }>("/api/betting/history/birthdays"),
   });
 
-  if (isLoading) return <p className="text-foreground/72">Loading birthdays…</p>;
-  if (error) return <p className="text-red-600 dark:text-red-400">Failed to load today&apos;s birthdays.</p>;
+  if (isLoading)
+    return (
+      <div className="flex flex-wrap gap-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-32 rounded-full" />
+        ))}
+      </div>
+    );
+  if (error)
+    return (
+      <p className="flex items-center gap-2 text-red-600 dark:text-red-400">
+        <AlertCircle className="h-4 w-4" /> Failed to load today&apos;s birthdays.
+      </p>
+    );
   if (!data || data.players.length === 0) {
     return <p className="text-foreground/72">No active players have a birthday today.</p>;
   }
@@ -568,8 +610,20 @@ function PropHitRateByStatTypeSection() {
     queryFn: () => fetchJson<{ propsByStatType: Record<string, AccuracyBucket> }>("/api/betting/accuracy"),
   });
 
-  if (isLoading) return <p className="text-foreground/72">Loading prop hit rates…</p>;
-  if (error) return <p className="text-red-600 dark:text-red-400">Failed to load prop hit rates.</p>;
+  if (isLoading)
+    return (
+      <div className="flex flex-wrap gap-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-20 w-28 rounded-lg" />
+        ))}
+      </div>
+    );
+  if (error)
+    return (
+      <p className="flex items-center gap-2 text-red-600 dark:text-red-400">
+        <AlertCircle className="h-4 w-4" /> Failed to load prop hit rates.
+      </p>
+    );
 
   const entries = data ? Object.entries(data.propsByStatType) : [];
   if (entries.length === 0) {
@@ -607,8 +661,20 @@ function playerStreaksQueryOptions() {
 function PlayerStreaksSection() {
   const { data, isLoading, error } = useQuery(playerStreaksQueryOptions());
 
-  if (isLoading) return <p className="text-foreground/72">Loading player streaks…</p>;
-  if (error) return <p className="text-red-600 dark:text-red-400">Failed to load player streaks.</p>;
+  if (isLoading)
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <SkeletonRow key={i} />
+        ))}
+      </div>
+    );
+  if (error)
+    return (
+      <p className="flex items-center gap-2 text-red-600 dark:text-red-400">
+        <AlertCircle className="h-4 w-4" /> Failed to load player streaks.
+      </p>
+    );
   if (!data || data.entries.length === 0) {
     return <p className="text-foreground/72">No notable Over streaks right now — check back once more player props are posted.</p>;
   }
@@ -653,8 +719,20 @@ function onThisDayQueryOptions() {
 function OnThisDaySection() {
   const { data, isLoading, error } = useQuery(onThisDayQueryOptions());
 
-  if (isLoading) return <p className="text-foreground/72">Loading on-this-day performances…</p>;
-  if (error) return <p className="text-red-600 dark:text-red-400">Failed to load on-this-day performances.</p>;
+  if (isLoading)
+    return (
+      <div className="flex gap-3 overflow-x-hidden">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-32 w-56 shrink-0 rounded-lg" />
+        ))}
+      </div>
+    );
+  if (error)
+    return (
+      <p className="flex items-center gap-2 text-red-600 dark:text-red-400">
+        <AlertCircle className="h-4 w-4" /> Failed to load on-this-day performances.
+      </p>
+    );
   if (!data || data.performances.length === 0) {
     return <p className="text-foreground/72">No historical performances recorded for this calendar date yet.</p>;
   }
@@ -673,7 +751,11 @@ function OnThisDaySection() {
               <p className="truncate text-sm font-semibold text-foreground">{perf.player.displayName}</p>
               <p className="text-xs text-foreground/60">{perf.year}</p>
             </div>
-            {perf.hadTripleDouble && <span title="Triple-double">💪</span>}
+            {perf.hadTripleDouble && (
+              <span title="Triple-double">
+                <Dumbbell className="h-3.5 w-3.5 text-foreground/70" />
+              </span>
+            )}
           </div>
           <p className="mt-2 text-2xl font-extrabold tabular-nums text-foreground">{perf.pointsReboundsAssists} PRA</p>
           <p className="text-xs text-foreground/60 tabular-nums">
@@ -691,7 +773,7 @@ function OnThisDaySection() {
 }
 
 interface TodayHighlight {
-  icon: string;
+  icon: LucideIcon;
   text: string;
   href?: string;
 }
@@ -726,7 +808,7 @@ function TodayStrip() {
     const names = latestDay.entries.map((e) => shortName(e.player.displayName)).join(" & ");
     const dateLabel = new Date(latestDay.date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
     highlights.push({
-      icon: "👑",
+      icon: Crown,
       text: `${names} led the court ${dateLabel} with ${latestDay.entries[0].pointsReboundsAssists} PRA`,
       href: `/betting/history/king-of-the-court/${dayKey(new Date(latestDay.date))}`,
     });
@@ -734,7 +816,7 @@ function TodayStrip() {
     const tripleDoubles = latestDay.entries.filter((e) => e.hadTripleDouble);
     if (tripleDoubles.length > 0) {
       highlights.push({
-        icon: "💪",
+        icon: Dumbbell,
         text: `${tripleDoubles.map((e) => shortName(e.player.displayName)).join(" & ")} recorded a triple-double ${dateLabel}`,
       });
     }
@@ -754,17 +836,17 @@ function TodayStrip() {
       hottest.kind === "ATS"
         ? hottest.streak > 0 ? "covered" : "failed to cover"
         : hottest.streak > 0 ? "gone over" : "gone under";
-    highlights.push({ icon: "🔥", text: `${hottest.team.abbreviation} has ${verb} ${Math.abs(hottest.streak)} straight (${hottest.kind})` });
+    highlights.push({ icon: Flame, text: `${hottest.team.abbreviation} has ${verb} ${Math.abs(hottest.streak)} straight (${hottest.kind})` });
   }
 
   if (birthdayData && birthdayData.players.length > 0) {
-    highlights.push({ icon: "🎂", text: `Happy birthday ${birthdayData.players.map((p) => p.displayName).join(", ")}!` });
+    highlights.push({ icon: Cake, text: `Happy birthday ${birthdayData.players.map((p) => p.displayName).join(", ")}!` });
   }
 
   const topOnThisDay = onThisDayData?.performances[0];
   if (topOnThisDay) {
     highlights.push({
-      icon: "📅",
+      icon: CalendarDays,
       text: `On this day in ${topOnThisDay.year}, ${shortName(topOnThisDay.player.displayName)} put up ${topOnThisDay.pointsReboundsAssists} PRA`,
       href: `/games/${topOnThisDay.gameEspnId}`,
     });
@@ -780,11 +862,11 @@ function TodayStrip() {
           (h.href ? " hover:border-accent hover:text-foreground" : "");
         return h.href ? (
           <Link key={h.text} href={h.href} className={chipClass}>
-            <span>{h.icon}</span> {h.text}
+            <h.icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} /> {h.text}
           </Link>
         ) : (
           <span key={h.text} className={chipClass}>
-            <span>{h.icon}</span> {h.text}
+            <h.icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} /> {h.text}
           </span>
         );
       })}

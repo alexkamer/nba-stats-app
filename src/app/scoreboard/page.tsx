@@ -3,8 +3,12 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useTheme } from "next-themes";
 import { Suspense, useState } from "react";
+import { ChevronLeft, ChevronRight, AlertCircle, CalendarX } from "lucide-react";
 import { CircularBadge } from "@/components/CircularBadge";
+import { getTeamAccent } from "@/lib/team-accent";
+import { Skeleton } from "@/components/Skeleton";
 
 interface GameCard {
   espnId: string;
@@ -68,6 +72,8 @@ function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
   // browser, not guessed server-side — unless a deep link requested a
   // specific date (see ScoreboardGate).
   const [date, setDate] = useState(() => initialDate ?? toYyyymmdd(new Date()));
+  const { resolvedTheme } = useTheme();
+  const theme = resolvedTheme === "dark" ? "dark" : "light";
   const { data: games, isLoading, error } = useQuery({
     queryKey: ["scoreboard", date],
     queryFn: () => fetchScoreboard(date),
@@ -92,9 +98,7 @@ function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
               aria-label="Previous day"
               className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-surface hover:text-foreground"
             >
-              <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M15 18l-6-6 6-6" />
-              </svg>
+              <ChevronLeft className="h-4 w-4" strokeWidth={2.5} />
             </button>
             <span className="min-w-36 text-center font-display text-base font-bold tabular-nums">
               {fromYyyymmdd(date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
@@ -104,9 +108,7 @@ function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
               aria-label="Next day"
               className="flex h-8 w-8 items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-surface hover:text-foreground"
             >
-              <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 6l6 6-6 6" />
-              </svg>
+              <ChevronRight className="h-4 w-4" strokeWidth={2.5} />
             </button>
           </div>
           <button
@@ -118,9 +120,33 @@ function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
         </div>
       </div>
 
-      {isLoading && <p className="text-foreground/82">Loading…</p>}
-      {error && <p className="text-red-600 dark:text-red-400">Failed to load scoreboard.</p>}
-      {games && games.length === 0 && <p className="text-foreground/72">No games on this date.</p>}
+      {isLoading && (
+        <div className="divide-y divide-border">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 border-l-[3px] border-l-border px-2 py-4">
+              <div className="flex flex-1 flex-col gap-2">
+                {[0, 1].map((row) => (
+                  <div key={row} className="flex items-center gap-2">
+                    <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="ml-auto h-6 w-8" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {error && (
+        <p className="flex items-center gap-2 text-red-600 dark:text-red-400">
+          <AlertCircle className="h-4 w-4" /> Failed to load scoreboard.
+        </p>
+      )}
+      {games && games.length === 0 && (
+        <p className="flex items-center gap-2 text-foreground/72">
+          <CalendarX className="h-4 w-4" /> No games on this date.
+        </p>
+      )}
 
       <div className="divide-y divide-border">
         {games?.map((game) => {
@@ -135,9 +161,14 @@ function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
           const homeRecord = formatRecord(game.home.overallRecord, game.home.splitRecord, "Home");
           const periods = isScheduled ? 0 : Math.max(4, game.away.lineScore.length, game.home.lineScore.length);
           const periodLabels = Array.from({ length: periods }, (_, i) => (i < 4 ? `${i + 1}` : `OT${i - 3 > 1 ? i - 3 : ""}`));
-          const gridTemplateColumns = periods > 0 ? `1fr ${"1.25rem ".repeat(periods)}1rem 2.5rem` : "1fr 2.5rem";
+          const gridTemplateColumns = periods > 0 ? `1fr ${"1.25rem ".repeat(periods)}1rem 3rem` : "1fr 3rem";
+          const homeAccent = getTeamAccent(game.home.color, theme).accent;
           return (
-            <div key={game.espnId} className="group flex items-center gap-4 px-2 py-4 transition-colors hover:bg-surface-muted">
+            <div
+              key={game.espnId}
+              className="group flex items-center gap-4 border-l-[3px] px-2 py-4 transition-colors hover:bg-surface-muted"
+              style={{ borderLeftColor: homeAccent }}
+            >
               <Link href={`/games/${game.espnId}`} className="flex flex-1 flex-col gap-1.5">
                 <span className="flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-foreground/60">
                   {isLive && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
@@ -173,7 +204,7 @@ function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
                     </span>
                   ))}
                   {periods > 0 && <span />}
-                  <span className={`text-right font-display text-xl tabular-nums font-extrabold ${isFinal && !awayWon ? "text-foreground/40" : "text-foreground"}`}>
+                  <span className={`text-right font-display text-2xl tabular-nums font-extrabold ${isFinal && !awayWon ? "text-foreground/40" : "text-foreground"}`}>
                     {game.away.score ?? "-"}
                   </span>
                   <span className="flex min-w-0 flex-col gap-0.5">
@@ -193,7 +224,7 @@ function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
                     </span>
                   ))}
                   {periods > 0 && <span />}
-                  <span className={`text-right font-display text-xl tabular-nums font-extrabold ${isFinal && !homeWon ? "text-foreground/40" : "text-foreground"}`}>
+                  <span className={`text-right font-display text-2xl tabular-nums font-extrabold ${isFinal && !homeWon ? "text-foreground/40" : "text-foreground"}`}>
                     {game.home.score ?? "-"}
                   </span>
                 </div>

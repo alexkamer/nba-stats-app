@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { Clock, AlertCircle, Newspaper, Loader2 } from "lucide-react";
 
 interface NewsArticle {
   id: number;
@@ -49,9 +50,24 @@ export default function NewsPage() {
     return sortOrder === "newest" ? data : [...data].reverse();
   }, [data, sortOrder]);
 
-  if (isLoading) return <p className="text-foreground/82">Loading news…</p>;
-  if (error) return <p className="text-red-600 dark:text-red-400">Failed to load news.</p>;
-  if (!articles || articles.length === 0) return <p className="text-foreground/72">No news available.</p>;
+  if (isLoading)
+    return (
+      <p className="flex items-center gap-2 text-foreground/82">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading news…
+      </p>
+    );
+  if (error)
+    return (
+      <p className="flex items-center gap-2 text-red-600 dark:text-red-400">
+        <AlertCircle className="h-4 w-4" /> Failed to load news.
+      </p>
+    );
+  if (!articles || articles.length === 0)
+    return (
+      <p className="flex items-center gap-2 text-foreground/72">
+        <Newspaper className="h-4 w-4" /> No news available.
+      </p>
+    );
 
   const [lead, ...rest] = articles;
 
@@ -97,7 +113,8 @@ export default function NewsPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 space-y-1.5 p-5">
           {lead.publishedAt && (
-            <span className="text-xs font-medium uppercase tracking-wide text-white/70">
+            <span className="flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-white/70">
+              <Clock className="h-3 w-3" strokeWidth={2} />
               {timeAgo(lead.publishedAt)}
             </span>
           )}
@@ -131,7 +148,12 @@ export default function NewsPage() {
                 <p className="line-clamp-2 text-sm text-foreground/72">{article.description}</p>
               )}
               <div className="mt-auto flex flex-wrap items-center gap-2 pt-2 text-xs text-foreground/60">
-                {article.publishedAt && <span>{timeAgo(article.publishedAt)}</span>}
+                {article.publishedAt && (
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" strokeWidth={2} />
+                    {timeAgo(article.publishedAt)}
+                  </span>
+                )}
                 {article.teams.map((t) => (
                   <span key={t.id} className="rounded-full bg-surface-muted px-2 py-0.5 font-medium">
                     {t.abbreviation}

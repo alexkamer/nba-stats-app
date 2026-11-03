@@ -10,6 +10,7 @@ import { FullBleed } from "@/components/FullBleed";
 import { useBreadcrumbLabel } from "@/components/Breadcrumb";
 import { getTeamAccent } from "@/lib/team-accent";
 import { TeamPerformanceTab } from "@/components/TeamPerformanceTab";
+import { SkeletonDetailPage, Skeleton } from "@/components/Skeleton";
 
 interface SeasonInfo {
   id: number;
@@ -334,7 +335,7 @@ const TEAM_TABS: { value: TeamTab; label: string }[] = [
 
 export default function TeamDetailPage() {
   return (
-    <Suspense fallback={<p className="text-foreground/82">Loading…</p>}>
+    <Suspense fallback={<SkeletonDetailPage />}>
       <TeamDetailContent />
     </Suspense>
   );
@@ -357,7 +358,7 @@ function TeamDetailContent() {
   const { resolvedTheme } = useTheme();
   useBreadcrumbLabel(data?.team.displayName);
 
-  if (isLoading) return <p className="text-foreground/82">Loading…</p>;
+  if (isLoading) return <SkeletonDetailPage />;
   if (error || !data) return <p className="text-red-600 dark:text-red-400">Failed to load team.</p>;
 
   const {
@@ -1039,7 +1040,13 @@ function TransactionsTab({
         </select>
       </div>
 
-      {isLoading && <p className="text-foreground/72 text-sm">Loading…</p>}
+      {isLoading && (
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-5 w-full" />
+          ))}
+        </div>
+      )}
       {!isLoading && transactions?.length === 0 && <p className="text-foreground/72 text-sm">No transactions found.</p>}
 
       {grouped.map(([label, rows]) => (

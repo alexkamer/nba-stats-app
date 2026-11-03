@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ChevronRight, Home } from "lucide-react";
 
 const BreadcrumbLabelContext = createContext<{
   label: string | null;
@@ -50,7 +51,8 @@ export function Breadcrumb() {
 
   if (segments.length === 0) {
     return (
-      <nav aria-label="Breadcrumb" className="text-sm font-medium text-foreground">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+        <Home className="h-3.5 w-3.5" strokeWidth={2} />
         Home
       </nav>
     );
@@ -65,12 +67,13 @@ export function Breadcrumb() {
 
   return (
     <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-sm text-foreground/72">
-      <Link href="/" className="hover:text-foreground">
+      <Link href="/" className="flex items-center gap-1.5 hover:text-foreground">
+        <Home className="h-3.5 w-3.5" strokeWidth={2} />
         Home
       </Link>
       {crumbs.map((crumb) => (
         <span key={crumb.href} className="flex items-center gap-1.5">
-          <span aria-hidden="true">/</span>
+          <ChevronRight className="h-3.5 w-3.5 text-foreground/40" aria-hidden="true" strokeWidth={2} />
           {crumb.isLast ? (
             <span className="font-medium text-foreground">{crumb.label}</span>
           ) : (

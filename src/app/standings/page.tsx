@@ -3,6 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
+import { TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
+import { Skeleton, SkeletonRow } from "@/components/Skeleton";
 
 interface Standing {
   id: number;
@@ -96,10 +98,16 @@ function seasonLabel(year: number): string {
   return `${year - 1}-${String(year).slice(-2)}`;
 }
 
-function formatStreak(streak: string | null): string {
+function formatStreak(streak: string | null): ReactNode {
   if (streak === null) return "";
-  if (streak.startsWith("-")) return `L${streak.slice(1)}`;
-  return `W${streak}`;
+  const isLoss = streak.startsWith("-");
+  const Icon = isLoss ? TrendingDown : TrendingUp;
+  return (
+    <span className={`inline-flex items-center gap-1 ${isLoss ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+      <Icon className="h-3.5 w-3.5" strokeWidth={2} />
+      {isLoss ? `L${streak.slice(1)}` : `W${streak}`}
+    </span>
+  );
 }
 
 function formatDiff(ppg: number | null, oppPpg: number | null): string {
@@ -170,12 +178,18 @@ async function fetchNbaCupStandings(year: number | null): Promise<NbaCupResponse
   return res.json();
 }
 
-function formatCupStreak(streak: string | null): string {
+function formatCupStreak(streak: string | null): ReactNode {
   if (streak === null) return "";
   const n = Number(streak);
-  if (n < 0) return `L${-n}`;
-  if (n > 0) return `W${n}`;
-  return "";
+  if (n === 0) return "";
+  const isLoss = n < 0;
+  const Icon = isLoss ? TrendingDown : TrendingUp;
+  return (
+    <span className={`inline-flex items-center gap-1 ${isLoss ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+      <Icon className="h-3.5 w-3.5" strokeWidth={2} />
+      {isLoss ? `L${-n}` : `W${n}`}
+    </span>
+  );
 }
 
 export default function StandingsPage() {
@@ -251,8 +265,20 @@ export default function StandingsPage() {
   );
 
   if (pageMode === "nba-cup") {
-    if (cupIsLoading) return <p className="text-foreground/82">Loading NBA Cup standings…</p>;
-    if (cupError || !cupData) return <p className="text-red-600 dark:text-red-400">Failed to load NBA Cup standings.</p>;
+    if (cupIsLoading)
+      return (
+        <div className="space-y-2">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <SkeletonRow key={i} />
+          ))}
+        </div>
+      );
+    if (cupError || !cupData)
+      return (
+        <p className="flex items-center gap-2 text-red-600 dark:text-red-400">
+          <AlertCircle className="h-4 w-4" /> Failed to load NBA Cup standings.
+        </p>
+      );
 
     return (
       <div className="space-y-8">
@@ -344,8 +370,25 @@ export default function StandingsPage() {
     );
   }
 
-  if (isLoading) return <p className="text-foreground/82">Loading standings…</p>;
-  if (error || !data) return <p className="text-red-600 dark:text-red-400">Failed to load standings.</p>;
+  if (isLoading)
+    return (
+      <div className="grid gap-6 lg:grid-cols-2">
+        {[0, 1].map((col) => (
+          <div key={col} className="space-y-2">
+            <Skeleton className="h-5 w-40" />
+            {Array.from({ length: 8 }).map((_, i) => (
+              <SkeletonRow key={i} />
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  if (error || !data)
+    return (
+      <p className="flex items-center gap-2 text-red-600 dark:text-red-400">
+        <AlertCircle className="h-4 w-4" /> Failed to load standings.
+      </p>
+    );
 
   const groups =
     viewMode === "league"

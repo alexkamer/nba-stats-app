@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { Menu, X } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SECTIONS } from "@/components/Sidebar";
 import { SiteSearch } from "@/components/SiteSearch";
@@ -35,13 +36,7 @@ export function SiteNav() {
           aria-label={open ? "Close menu" : "Open menu"}
           className="rounded-md border border-border p-2"
         >
-          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.5}>
-            {open ? (
-              <path d="M5 5l10 10M15 5L5 15" strokeLinecap="round" />
-            ) : (
-              <path d="M3 5h14M3 10h14M3 15h14" strokeLinecap="round" />
-            )}
-          </svg>
+          {open ? <X className="h-4 w-4" strokeWidth={1.5} /> : <Menu className="h-4 w-4" strokeWidth={1.5} />}
         </button>
       </div>
 
@@ -56,8 +51,9 @@ export function SiteNav() {
               key={section.href}
               href={section.href}
               onClick={() => setOpen(false)}
-              className="text-foreground/82 hover:text-foreground"
+              className="flex items-center gap-2 text-foreground/82 hover:text-foreground"
             >
+              <section.icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
               {section.label}
             </Link>
           ))}

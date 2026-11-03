@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Menu } from "lucide-react";
 import { SECTIONS } from "@/components/Sidebar";
 import { TeamsNavMenu } from "@/components/TeamsNavMenu";
 import { SiteSearch } from "@/components/SiteSearch";
@@ -20,9 +21,7 @@ export function TopBar({ collapsed, onToggleSidebar }: { collapsed: boolean; onT
           aria-label="Show sidebar"
           className="rounded-md p-1.5 text-foreground/60 hover:bg-surface-muted hover:text-foreground"
         >
-          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.5}>
-            <path d="M3 5h14M3 10h14M3 15h14" strokeLinecap="round" />
-          </svg>
+          <Menu className="h-4 w-4" strokeWidth={1.5} />
         </button>
       )}
       <Link href="/" className="font-display text-lg font-extrabold uppercase tracking-tight text-foreground">
@@ -33,7 +32,12 @@ export function TopBar({ collapsed, onToggleSidebar }: { collapsed: boolean; onT
           section.href === "/teams" ? (
             <TeamsNavMenu key={section.href} />
           ) : (
-            <Link key={section.href} href={section.href} className="text-foreground/70 hover:text-foreground">
+            <Link
+              key={section.href}
+              href={section.href}
+              className="flex items-center gap-1.5 text-foreground/70 hover:text-foreground"
+            >
+              <section.icon className="h-4 w-4" strokeWidth={1.75} />
               {section.label}
             </Link>
           ),

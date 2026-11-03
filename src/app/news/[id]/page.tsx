@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Suspense } from "react";
+import { SkeletonArticle } from "@/components/Skeleton";
 
 interface ArticleDetail {
   id: number;
@@ -27,7 +28,7 @@ async function fetchArticle(id: string): Promise<ArticleDetail> {
 
 export default function NewsArticlePage() {
   return (
-    <Suspense fallback={<p className="text-foreground/82">Loading article…</p>}>
+    <Suspense fallback={<SkeletonArticle />}>
       <NewsArticleContent />
     </Suspense>
   );
@@ -40,7 +41,7 @@ function NewsArticleContent() {
     queryFn: () => fetchArticle(id),
   });
 
-  if (isLoading) return <p className="text-foreground/82">Loading article…</p>;
+  if (isLoading) return <SkeletonArticle />;
   if (error || !article) return <p className="text-red-600 dark:text-red-400">Failed to load article.</p>;
 
   return (

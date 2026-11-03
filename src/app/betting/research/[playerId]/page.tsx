@@ -8,6 +8,7 @@ import { useTheme } from "next-themes";
 import { getTeamAccent } from "@/lib/team-accent";
 import { computeEdgeRatio } from "@lib/projections/confidence";
 import { SectionCard } from "@/components/SectionCard";
+import { SkeletonDetailPage } from "@/components/Skeleton";
 
 interface TeamSummary {
   id: number;
@@ -513,7 +514,7 @@ function HitRateChip({ label, summary, accentColor }: { label: string; summary: 
 // prerendered up to it (see Next's "blocking-prerender-client-hook" guidance).
 export default function PlayerPropResearchPage() {
   return (
-    <Suspense fallback={<p className="text-foreground/82">Loading…</p>}>
+    <Suspense fallback={<SkeletonDetailPage />}>
       <PlayerPropResearchContent />
     </Suspense>
   );
@@ -537,7 +538,7 @@ function PlayerPropResearchContent() {
     queryFn: () => fetchResearch(playerId, stat, filter, seasonId),
   });
 
-  if (isLoading) return <p className="text-foreground/82">Loading…</p>;
+  if (isLoading) return <SkeletonDetailPage />;
   if (error) return <p className="text-red-600 dark:text-red-400">Failed to load player prop research.</p>;
   if (!data) return null;
 

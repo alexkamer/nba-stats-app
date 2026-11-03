@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Suspense, useState, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
 import { SectionCard } from "@/components/SectionCard";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
 import { FullBleed } from "@/components/FullBleed";
 import { getTeamAccent } from "@/lib/team-accent";
+import { Skeleton, SkeletonDetailPage } from "@/components/Skeleton";
 
 interface PlayerDetail {
   player: {
@@ -327,7 +329,7 @@ const PLAYER_TABS: { value: PlayerTab; label: string }[] = [
 
 export default function PlayerDetailPage() {
   return (
-    <Suspense fallback={<p className="text-foreground/82">Loading…</p>}>
+    <Suspense fallback={<SkeletonDetailPage />}>
       <PlayerDetailContent />
     </Suspense>
   );
@@ -342,7 +344,7 @@ function PlayerDetailContent() {
     queryFn: () => fetchPlayer(athleteId),
   });
 
-  if (isLoading) return <p className="text-foreground/82">Loading…</p>;
+  if (isLoading) return <SkeletonDetailPage />;
   if (error || !data) return <p className="text-red-600 dark:text-red-400">Failed to load player.</p>;
 
   const { player, recentGames, seasonRanks, nextGame } = data;
@@ -733,7 +735,11 @@ function NewsRow({ athleteId, accentColor }: { athleteId: string; accentColor: s
   return (
     <SectionCard title="Latest news" accentColor={accentColor}>
       {isLoading ? (
-        <p className="text-foreground/72 text-sm">Loading…</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-lg" />
+          ))}
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {articles.map((article) => (
@@ -893,7 +899,11 @@ function BioTab({
 
       <SectionCard title="Career Highlights" accentColor={accentColor}>
         {isLoading ? (
-          <p className="text-foreground/72">Loading…</p>
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-4 w-full" />
+            ))}
+          </div>
         ) : awards.length === 0 ? (
           <p className="text-foreground/72">No career highlights available.</p>
         ) : (
@@ -940,7 +950,14 @@ function SplitsTab({ athleteId }: { athleteId: string }) {
     queryFn: () => fetchPlayerSplits(athleteId, season ?? undefined, category ?? undefined),
   });
 
-  if (isLoading && !data) return <p className="text-foreground/72">Loading…</p>;
+  if (isLoading && !data)
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="h-6 w-full" />
+        ))}
+      </div>
+    );
   if (error || !data || data.splitCategories.length === 0) {
     return <p className="text-foreground/72">No splits available.</p>;
   }
@@ -1000,14 +1017,11 @@ function SplitsFilterSelect({
           ))}
         </select>
         {!disabled && (
-          <svg
-            viewBox="0 0 20 20"
-            fill="none"
+          <ChevronDown
             aria-hidden="true"
             className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-foreground/82"
-          >
-            <path d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+            strokeWidth={1.75}
+          />
         )}
       </span>
     </label>
@@ -1059,7 +1073,14 @@ function GameLogTab({ athleteId, accentColor }: { athleteId: string; accentColor
     queryFn: () => fetchPlayerGamelog(athleteId, season ?? undefined),
   });
 
-  if (isLoading && !data) return <p className="text-foreground/72">Loading…</p>;
+  if (isLoading && !data)
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="h-6 w-full" />
+        ))}
+      </div>
+    );
   if (error || !data || data.seasonTypes.length === 0) {
     return <p className="text-foreground/72">No game log available.</p>;
   }
@@ -1206,7 +1227,14 @@ function AdvancedStatsTab({ athleteId, accentColor }: { athleteId: string; accen
     queryFn: () => fetchPlayerAdvancedStats(athleteId),
   });
 
-  if (isLoading && !data) return <p className="text-foreground/72">Loading…</p>;
+  if (isLoading && !data)
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="h-6 w-full" />
+        ))}
+      </div>
+    );
   if (error || !data) return <p className="text-foreground/72">No advanced stats available.</p>;
 
   const seasons = data.rows.filter((r) => r.seasonType === "REGULAR" && r.gamesPlayed);
@@ -1612,14 +1640,11 @@ function StatsTab({ seasons, accentColor }: { seasons: SeasonStatRow[]; accentCo
                 </option>
               ))}
             </select>
-            <svg
-              viewBox="0 0 20 20"
-              fill="none"
+            <ChevronDown
               aria-hidden="true"
               className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-foreground/82"
-            >
-              <path d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+              strokeWidth={1.75}
+            />
           </span>
         </label>
       </div>

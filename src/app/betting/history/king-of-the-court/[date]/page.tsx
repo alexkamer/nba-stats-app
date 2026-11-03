@@ -4,7 +4,26 @@ import { Suspense } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { AlertCircle } from "lucide-react";
 import { CircularBadge } from "@/components/CircularBadge";
+import { Skeleton, SkeletonRow } from "@/components/Skeleton";
+
+function KingOfTheCourtSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-9 w-80" />
+        <Skeleton className="h-4 w-64" />
+      </div>
+      <div className="max-w-3xl space-y-2">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <SkeletonRow key={i} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface TeamSummary {
   id: number;
@@ -49,7 +68,7 @@ async function fetchLeaderboard(date: string): Promise<{ date: string; leaderboa
 // prerendered up to it (see Next's "blocking-prerender-client-hook" guidance).
 export default function KingOfTheCourtDayPage() {
   return (
-    <Suspense fallback={<p className="text-foreground/82">Loading…</p>}>
+    <Suspense fallback={<KingOfTheCourtSkeleton />}>
       <KingOfTheCourtDayContent />
     </Suspense>
   );
@@ -77,8 +96,18 @@ function KingOfTheCourtDayContent() {
         <p className="text-foreground/72 text-sm mt-1">Top 25 by combined points+rebounds+assists that day.</p>
       </div>
 
-      {isLoading && <p className="text-foreground/72">Loading leaderboard…</p>}
-      {error && <p className="text-red-600 dark:text-red-400">Failed to load this day&apos;s leaderboard.</p>}
+      {isLoading && (
+        <div className="max-w-3xl space-y-2">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <SkeletonRow key={i} />
+          ))}
+        </div>
+      )}
+      {error && (
+        <p className="flex items-center gap-2 text-red-600 dark:text-red-400">
+          <AlertCircle className="h-4 w-4" /> Failed to load this day&apos;s leaderboard.
+        </p>
+      )}
       {data && data.leaderboard.length === 0 && (
         <p className="text-foreground/72">No games were played on this date.</p>
       )}
