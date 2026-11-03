@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeStdev, isBettable, combineStdev, computeEdgeRatio, BETTABLE_EDGE_STDEV_MULTIPLIER } from "./confidence";
+import {
+  computeStdev,
+  isBettable,
+  combineStdev,
+  computeEdgeRatio,
+  marginToWinPct,
+  BETTABLE_EDGE_STDEV_MULTIPLIER,
+} from "./confidence";
 
 test("computeStdev returns null below 2 values", () => {
   assert.equal(computeStdev([]), null);
@@ -46,4 +53,30 @@ test("combineStdev falls back to whichever single estimate is available", () => 
   assert.equal(combineStdev(3, null), 3);
   assert.equal(combineStdev(null, 4), 4);
   assert.equal(combineStdev(null, null), null);
+});
+
+test("marginToWinPct returns 50 for a dead-even projection", () => {
+  assert.ok(Math.abs(marginToWinPct(0, 10)! - 50) < 1e-6);
+});
+
+test("marginToWinPct favors the home team as the margin grows positive", () => {
+  const pct = marginToWinPct(7, 12);
+  assert.ok(pct! > 50 && pct! < 100);
+});
+
+test("marginToWinPct favors the away team (low home win%) as the margin grows negative", () => {
+  const pct = marginToWinPct(-7, 12);
+  assert.ok(pct! < 50 && pct! > 0);
+});
+
+test("marginToWinPct is symmetric around 50 for equal and opposite margins", () => {
+  const favored = marginToWinPct(7, 12)!;
+  const underdog = marginToWinPct(-7, 12)!;
+  assert.ok(Math.abs(favored + underdog - 100) < 1e-9);
+});
+
+test("marginToWinPct returns null with no or non-positive stdev", () => {
+  assert.equal(marginToWinPct(7, null), null);
+  assert.equal(marginToWinPct(7, 0), null);
+  assert.equal(marginToWinPct(7, -1), null);
 });

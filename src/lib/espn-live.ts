@@ -153,6 +153,7 @@ function extractShots(plays: EspnPlay[]): ShotChartShot[] {
 // plain paragraphs rather than ever rendered as markup (see design.md).
 export interface RecapArticle {
   headline: string;
+  description: string | null;
   source: string | null;
   publishedAt: string | null;
   paragraphs: string[];
@@ -161,6 +162,7 @@ export interface RecapArticle {
 interface EspnArticle {
   type?: string;
   headline?: string;
+  description?: string;
   source?: string;
   originallyPosted?: string;
   story?: string;
@@ -190,10 +192,65 @@ export function extractRecap(summary: { article?: EspnArticle }): RecapArticle |
   if (!article || article.type !== "Recap" || !article.headline || !article.story) return null;
   return {
     headline: article.headline,
+    description: article.description ?? null,
     source: article.source ?? null,
     publishedAt: article.originallyPosted ?? null,
     paragraphs: stripHtmlToParagraphs(article.story),
   };
+}
+
+// The pregame counterpart to extractRecap - same `article` field, same
+// shape, but only ESPN's actual pregame preview counts: a finished game's
+// recap would misrepresent a scheduled game if shown under the Preview tab.
+export function extractPreviewArticle(summary: { article?: EspnArticle }): RecapArticle | null {
+  const article = summary.article;
+  if (!article || article.type !== "Preview" || !article.headline || !article.story) return null;
+  return {
+    headline: article.headline,
+    description: article.description ?? null,
+    source: article.source ?? null,
+    publishedAt: article.originallyPosted ?? null,
+    paragraphs: stripHtmlToParagraphs(article.story),
+  };
+}
+
+// ESPN's own "Matchup Predictor" win probability — shown alongside, never
+// in place of, the app's own GameProjection-derived win% (see
+// openspec/changes/add-pregame-preview/design.md: the two are independent
+// models and must stay visibly separate rather than implying one number).
+// Pulled live from the same summary payload every time, so it's never the
+// stale frozen snapshot PredictorSnapshot would be.
+export interface EspnPredictorSummary {
+  homeWinPct: number;
+  awayWinPct: number;
+}
+
+interface EspnPredictorTeam {
+  id: string;
+  gameProjection: string; // despite the name, this is a win percentage (0-100), not a score
+}
+
+interface EspnPredictor {
+  homeTeam?: EspnPredictorTeam;
+  awayTeam?: EspnPredictorTeam;
+}
+
+export function extractEspnPredictor(
+  summary: { predictor?: EspnPredictor },
+  homeEspnTeamId: string,
+  awayEspnTeamId: string,
+): EspnPredictorSummary | null {
+  const predictor = summary.predictor;
+  if (!predictor?.homeTeam || !predictor.awayTeam) return null;
+  // Match by team id rather than trusting the home/away key names, same
+  // defensive pattern as this file's other extractors.
+  const homeEntry = [predictor.homeTeam, predictor.awayTeam].find((t) => t.id === homeEspnTeamId);
+  const awayEntry = [predictor.homeTeam, predictor.awayTeam].find((t) => t.id === awayEspnTeamId);
+  if (!homeEntry || !awayEntry) return null;
+  const homeWinPct = Number(homeEntry.gameProjection);
+  const awayWinPct = Number(awayEntry.gameProjection);
+  if (!Number.isFinite(homeWinPct) || !Number.isFinite(awayWinPct)) return null;
+  return { homeWinPct, awayWinPct };
 }
 
 // Every named stat category ESPN reports per team — far more than the dozen
@@ -415,6 +472,7 @@ export interface GameSummaryExtras {
   winProbability: WinProbabilityPoint[] | null;
   shots: ShotChartShot[] | null;
   recap: RecapArticle | null;
+  previewArticle: RecapArticle | null;
   teamStatsBreakdown: TeamStatCategory[] | null;
 }
 
@@ -448,11 +506,19 @@ export async function getGameSummaryExtras(eventId: string): Promise<GameSummary
       winProbability: extractWinProbability(summary),
       shots: extractShots(summary.plays ?? []),
       recap: extractRecap(summary),
+      previewArticle: extractPreviewArticle(summary),
       teamStatsBreakdown:
         home && away ? extractTeamStatsBreakdown(summary.boxscore?.teams, away.team.id, home.team.id) : null,
     };
   } catch {
-    return { headerExtras: null, winProbability: null, shots: null, recap: null, teamStatsBreakdown: null };
+    return {
+      headerExtras: null,
+      winProbability: null,
+      shots: null,
+      recap: null,
+      previewArticle: null,
+      teamStatsBreakdown: null,
+    };
   }
 }
 
@@ -557,6 +623,8 @@ export interface LiveGameDetail {
   winProbability: WinProbabilityPoint[];
   shots: ShotChartShot[];
   recap: RecapArticle | null;
+  previewArticle: RecapArticle | null;
+  espnPredictor: EspnPredictorSummary | null;
   teamStatsBreakdown: TeamStatCategory[] | null;
 }
 
@@ -583,6 +651,7 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
     broadcasts?: EspnBroadcast[];
     seasonseries?: EspnSeasonSeries[];
     article?: EspnArticle;
+    predictor?: EspnPredictor;
   };
   try {
     summary = await fetchEspnJson(espnEndpoints.summary(eventId));
@@ -669,6 +738,8 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
     winProbability: extractWinProbability(summary),
     shots: extractShots(summary.plays ?? []),
     recap: extractRecap(summary),
+    previewArticle: extractPreviewArticle(summary),
+    espnPredictor: extractEspnPredictor(summary, home.team.id, away.team.id),
     teamStatsBreakdown: extractTeamStatsBreakdown(
       summary.boxscore.teams as unknown as EspnBoxscoreTeamWithLabels[] | undefined,
       away.team.id,

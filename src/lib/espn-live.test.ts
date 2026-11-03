@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { stripHtmlToParagraphs, extractRecap, extractTeamStatsBreakdown } from "./espn-live";
+import {
+  stripHtmlToParagraphs,
+  extractRecap,
+  extractPreviewArticle,
+  extractEspnPredictor,
+  extractTeamStatsBreakdown,
+} from "./espn-live";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const summaryFixture = JSON.parse(
@@ -31,7 +37,13 @@ test("extractRecap returns the recap for a game whose article is type Recap", ()
   const result = extractRecap(summaryFixture);
   assert.ok(result);
   assert.equal(result!.headline, summaryFixture.article.headline);
+  assert.equal(result!.description, summaryFixture.article.description);
   assert.ok(result!.paragraphs.length > 0);
+});
+
+test("extractRecap returns a null description when the article has none", () => {
+  const result = extractRecap({ article: { ...summaryFixture.article, description: undefined } });
+  assert.equal(result!.description, null);
 });
 
 test("extractRecap returns null when the article type is not Recap", () => {
@@ -41,6 +53,46 @@ test("extractRecap returns null when the article type is not Recap", () => {
 
 test("extractRecap returns null when there is no article", () => {
   assert.equal(extractRecap({}), null);
+});
+
+test("extractPreviewArticle returns the preview for a game whose article is type Preview", () => {
+  const result = extractPreviewArticle({
+    article: { ...summaryFixture.article, type: "Preview" },
+  });
+  assert.ok(result);
+  assert.equal(result!.headline, summaryFixture.article.headline);
+  assert.equal(result!.description, summaryFixture.article.description);
+  assert.ok(result!.paragraphs.length > 0);
+});
+
+test("extractPreviewArticle returns null when the article type is Recap", () => {
+  assert.equal(extractPreviewArticle(summaryFixture), null);
+});
+
+test("extractPreviewArticle returns null when there is no article", () => {
+  assert.equal(extractPreviewArticle({}), null);
+});
+
+test("extractEspnPredictor matches teams by id and converts win% strings to numbers", () => {
+  const result = extractEspnPredictor(
+    { predictor: { homeTeam: { id: "5", gameProjection: "51.3" }, awayTeam: { id: "25", gameProjection: "48.7" } } },
+    "5",
+    "25",
+  );
+  assert.deepEqual(result, { homeWinPct: 51.3, awayWinPct: 48.7 });
+});
+
+test("extractEspnPredictor returns null when there is no predictor field", () => {
+  assert.equal(extractEspnPredictor({}, "5", "25"), null);
+});
+
+test("extractEspnPredictor returns null when a team id doesn't match either entry", () => {
+  const result = extractEspnPredictor(
+    { predictor: { homeTeam: { id: "5", gameProjection: "51.3" }, awayTeam: { id: "25", gameProjection: "48.7" } } },
+    "5",
+    "999",
+  );
+  assert.equal(result, null);
 });
 
 test("extractTeamStatsBreakdown zips every category by name for both teams", () => {

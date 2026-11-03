@@ -59,3 +59,26 @@ export function combineStdev(a: number | null, b: number | null): number | null 
   if (b === null) return a;
   return Math.sqrt((a ** 2 + b ** 2) / 2);
 }
+
+// Abramowitz & Stegun 7.1.26 approximation of the standard normal CDF (max
+// error ~7.5e-8) — accurate enough for a display win probability, no
+// external statistics dependency needed for one function.
+function standardNormalCdf(z: number): number {
+  const sign = z < 0 ? -1 : 1;
+  const x = Math.abs(z) / Math.sqrt(2);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y =
+    1 -
+    (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t) *
+      Math.exp(-x * x);
+  return 0.5 * (1 + sign * y);
+}
+
+/** Converts a projected home-relative margin and its standard deviation
+ * into a home win probability (0-100), treating the margin as normally
+ * distributed. `null` when there's no meaningful variance to integrate
+ * over (so a caller can't mistake "no estimate" for a 50/50 coin flip). */
+export function marginToWinPct(projectedMargin: number, marginStdev: number | null): number | null {
+  if (marginStdev === null || marginStdev <= 0) return null;
+  return standardNormalCdf(projectedMargin / marginStdev) * 100;
+}
