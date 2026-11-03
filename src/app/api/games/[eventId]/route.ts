@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/db";
 import { isEspnOnly } from "@/lib/data-source";
 import { getGameSummaryExtras, getLiveGameDetail } from "@/lib/espn-live";
+import { getGamePreview } from "@/lib/game-preview";
+import { currentSeasonYear } from "@/lib/espn-season";
 import { resolveTeamIdentities } from "@/lib/team-identity";
 import { NextResponse } from "next/server";
 
@@ -32,6 +34,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
             playerGameStats: { include: { player: { include: { position: true } }, team: true } },
             plays: { orderBy: { sequenceNumber: "asc" } },
             odds: true,
+            teamPerformances: { include: { tags: true } },
           },
         });
 
@@ -45,6 +48,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
       ]);
       const homeIdentity = identities.get(game.homeTeamId);
       const awayIdentity = identities.get(game.awayTeamId);
+      const homePerformanceRow = game.teamPerformances.find((p) => p.teamId === game.homeTeamId) ?? null;
+      const awayPerformanceRow = game.teamPerformances.find((p) => p.teamId === game.awayTeamId) ?? null;
+      const toPerformance = (row: (typeof game.teamPerformances)[number] | null) =>
+        row ? { coverMargin: row.coverMargin, label: row.label, tags: row.tags.map((t) => t.tag) } : null;
       const gameWithIdentity = {
         ...game,
         homeTeam: homeIdentity ? { ...game.homeTeam, ...homeIdentity } : game.homeTeam,
@@ -61,6 +68,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
         shots,
         recap,
         teamStatsBreakdown,
+        homePerformance: toPerformance(homePerformanceRow),
+        awayPerformance: toPerformance(awayPerformanceRow),
       };
       return NextResponse.json({ game: gameWithIdentity, source: "db" });
     }
@@ -69,6 +78,21 @@ export async function GET(_request: Request, { params }: { params: Promise<{ eve
     if (!liveGame) {
       return NextResponse.json({ error: "Game not found (unknown espnId)" }, { status: 404 });
     }
+
+    // Preview data (projections, availability, projected lineups) is only
+    // meaningful before tip-off — gated on the raw ESPN status rather than
+    // "not final", since an in-progress game also takes this live branch.
+    if (liveGame.statusName === "STATUS_SCHEDULED") {
+      const corePreview = await getGamePreview(
+        eventId,
+        liveGame.home.espnId,
+        liveGame.away.espnId,
+        currentSeasonYear(),
+      );
+      const preview = { ...corePreview, article: liveGame.previewArticle, espnPredictor: liveGame.espnPredictor };
+      return NextResponse.json({ game: { ...liveGame, preview }, source: "live" });
+    }
+
     return NextResponse.json({ game: liveGame, source: "live" });
   } catch {
     return NextResponse.json({ error: "Failed to load game" }, { status: 500 });

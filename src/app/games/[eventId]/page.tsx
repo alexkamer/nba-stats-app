@@ -9,6 +9,7 @@ import { TabPager, useTabQueryParam } from "@/components/TabPager";
 import { FullBleed } from "@/components/FullBleed";
 import { useBreadcrumbLabel } from "@/components/Breadcrumb";
 import { getTeamAccent } from "@/lib/team-accent";
+import { GamePerformanceCard, type TeamPerformanceSummary } from "@/components/GamePerformanceCard";
 
 // The API returns one of two shapes depending on whether the game has been
 // ingested as `final` (SPEC.md Sec 4): a DB-backed shape with real internal
@@ -160,6 +161,8 @@ interface DbGame {
   shots: Shot[] | null;
   recap: RecapArticle | null;
   teamStatsBreakdown: TeamStatCategory[] | null;
+  homePerformance: TeamPerformanceSummary | null;
+  awayPerformance: TeamPerformanceSummary | null;
 }
 
 interface LiveGame {
@@ -497,6 +500,9 @@ function GameDetailContent() {
   const teamStatsBreakdown = (game as DbGame | LiveGame).teamStatsBreakdown;
   const awayEspnId = source === "db" ? (game as DbGame).awayTeam.espnId : (game as LiveGame).away.espnId;
   const homeEspnId = source === "db" ? (game as DbGame).homeTeam.espnId : (game as LiveGame).home.espnId;
+  // Only ever present for DB-sourced (final, regular-season, graded) games — route.ts omits it otherwise.
+  const awayPerformance = source === "db" ? (game as DbGame).awayPerformance : null;
+  const homePerformance = source === "db" ? (game as DbGame).homePerformance : null;
 
   const awayPlayerRows = playerRowsByTeam(away.abbreviation, away.linkId);
   const homePlayerRows = playerRowsByTeam(home.abbreviation, home.linkId);
@@ -558,6 +564,7 @@ function GameDetailContent() {
               </div>
               <div className="space-y-6">
                 <OddsPanel away={away} home={home} odds={odds} />
+                <GamePerformanceCard away={away} home={home} awayPerformance={awayPerformance} homePerformance={homePerformance} />
                 {headerExtras?.seasonSeries && (
                   <MatchupsCard
                     away={away}
