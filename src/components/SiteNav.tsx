@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SECTIONS } from "@/components/Sidebar";
-import { PlayerSearch } from "@/components/PlayerSearch";
+import { SiteSearch } from "@/components/SiteSearch";
 
 /** Mobile top bar — shown below `lg`, where Sidebar (the desktop
  * equivalent) is hidden. Collapses the same section list Sidebar shows
@@ -46,7 +46,7 @@ export function SiteNav() {
       </div>
 
       <div className="mt-3">
-        <PlayerSearch />
+        <SiteSearch />
       </div>
 
       {open && (
