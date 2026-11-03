@@ -24,6 +24,7 @@ const SCRIPTS = [
   "generate-projections.ts", // needs sync-betting-odds's prop odds + sync-player-availability's statuses
   "grade-predictions.ts", // needs sync-completed-games' final scores + sync-aggregates' box scores
   "compute-cover-records.ts", // needs grade-predictions' final scores folded in (same "grade against the result" dependency)
+  "compute-team-game-performance.ts", // needs final scores, plays, and box scores; same "grade against the line" family as compute-cover-records
   "compute-daily-stat-leaders.ts", // needs sync-aggregates' final box scores
   "sync-news.ts", // M10 (stretch) — independent of the others, order doesn't matter
 ];

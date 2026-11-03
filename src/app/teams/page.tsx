@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { TeamPerformanceLeaderboard } from "@/components/TeamPerformanceLeaderboard";
 
 interface Team {
   id: number;
@@ -38,6 +39,7 @@ export default function TeamsPage() {
   return (
     <div className="space-y-10">
       <h1 className="text-3xl font-extrabold tracking-tight">Teams</h1>
+      <TeamPerformanceLeaderboard />
       {Array.from(byConference.entries()).map(([conference, confTeams]) => (
         <section key={conference}>
           <h2 className="text-lg font-medium text-foreground/92 mb-3">{conference}</h2>

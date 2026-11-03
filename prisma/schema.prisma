@@ -108,6 +108,7 @@ model Team {
   playerGameStats   PlayerGameStat[]
   nbaCupStandings   NbaCupStanding[]
   coverRecords      TeamCoverRecord[]
+  gamePerformances  TeamGamePerformance[]
 
   @@map("team")
 }
@@ -178,6 +179,7 @@ model Season {
   standings         Standing[]
   nbaCupStandings   NbaCupStanding[]
   coverRecords      TeamCoverRecord[]
+  gamePerformances  TeamGamePerformance[]
 
   @@unique([year, type])
   @@map("season")
@@ -215,6 +217,7 @@ model Game {
   gameProjection        GameProjection?
   playerPropProjections PlayerPropProjection[]
   playerAvailabilities  PlayerAvailability[]
+  teamPerformances      TeamGamePerformance[]
 
   @@map("game")
 }
@@ -612,6 +615,70 @@ model TeamCoverRecord {
 
   @@unique([teamId, seasonId])
   @@map("team_cover_record")
+}
+
+// How a team's result compared with the closing spread, bucketed from
+// `TeamGamePerformance.coverMargin` (see team-game-performance-tracking).
+// Independent of whether the team won or lost the game.
+enum PerformanceLabel {
+  STRONG_OVER
+  OVER
+  AS_EXPECTED
+  UNDER
+  STRONG_UNDER
+}
+
+// Deterministic reason tags attached to a game's performance row.
+enum PerformanceTag {
+  STAR_OUT
+  EARLY_BLOWOUT
+  LATE_COLLAPSE
+  GARBAGE_TIME_SWING
+  SHOOTING_HOT
+  SHOOTING_COLD
+}
+
+// One row per team per final game with a recorded spread: the team's
+// expected margin (from the spread in effect at tip-off), its actual margin,
+// and cover margin = actual - expected (see team-game-performance-tracking).
+// Immutable once written — computed once by
+// ingest/compute-team-game-performance.ts, so idempotency comes from the
+// (gameId, teamId) unique constraint rather than a stamp on `Odds`.
+model TeamGamePerformance {
+  id             Int              @id @default(autoincrement())
+  gameId         Int              @map("game_id")
+  game           Game             @relation(fields: [gameId], references: [id])
+  teamId         Int              @map("team_id")
+  team           Team             @relation(fields: [teamId], references: [id])
+  seasonId       Int              @map("season_id")
+  season         Season           @relation(fields: [seasonId], references: [id])
+  opponentTeamId Int              @map("opponent_team_id")
+  isHome         Boolean          @map("is_home")
+  // Derived from the spread's sign; null for a pick'em (spread 0).
+  isFavorite     Boolean?         @map("is_favorite")
+  // Team-relative line (favorite negative, e.g. -13.5), not home-relative.
+  spread         Float
+  expectedMargin Float            @map("expected_margin")
+  actualMargin   Float            @map("actual_margin")
+  coverMargin    Float            @map("cover_margin")
+  label          PerformanceLabel
+  computedAt     DateTime         @default(now()) @map("computed_at")
+
+  tags TeamGamePerformanceTag[]
+
+  @@unique([gameId, teamId])
+  @@index([seasonId, teamId])
+  @@map("team_game_performance")
+}
+
+model TeamGamePerformanceTag {
+  id            Int                 @id @default(autoincrement())
+  performanceId Int                 @map("performance_id")
+  performance   TeamGamePerformance @relation(fields: [performanceId], references: [id], onDelete: Cascade)
+  tag           PerformanceTag
+
+  @@unique([performanceId, tag])
+  @@map("team_game_performance_tag")
 }
 
 model PlayerSeasonStat {

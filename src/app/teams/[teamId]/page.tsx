@@ -9,6 +9,7 @@ import { TabPager, useTabQueryParam } from "@/components/TabPager";
 import { FullBleed } from "@/components/FullBleed";
 import { useBreadcrumbLabel } from "@/components/Breadcrumb";
 import { getTeamAccent } from "@/lib/team-accent";
+import { TeamPerformanceTab } from "@/components/TeamPerformanceTab";
 
 interface SeasonInfo {
   id: number;
@@ -311,7 +312,7 @@ function formatStreak(streak: string | null): string {
   return `W${streak}`;
 }
 
-type TeamTab = "home" | "stats" | "schedule" | "roster" | "depth" | "injuries" | "transactions";
+type TeamTab = "home" | "stats" | "schedule" | "performance" | "roster" | "depth" | "injuries" | "transactions";
 
 type LeadersGroup = "offense" | "defense";
 
@@ -324,6 +325,7 @@ const TEAM_TABS: { value: TeamTab; label: string }[] = [
   { value: "home", label: "Home" },
   { value: "stats", label: "Stats" },
   { value: "schedule", label: "Schedule" },
+  { value: "performance", label: "Performance" },
   { value: "roster", label: "Roster" },
   { value: "depth", label: "Depth" },
   { value: "injuries", label: "Injuries" },
@@ -741,6 +743,10 @@ function TeamDetailContent() {
           schedule={schedule}
           onSeasonChange={(year) => setSelectedSeasonYear(year)}
         />
+      )}
+
+      {activeTab === "performance" && (
+        <TeamPerformanceTab teamId={team.id} year={season?.year ?? null} accentColor={accentColor} />
       )}
 
       {activeTab === "depth" && <DepthChartTab team={team} depthChart={depthChart} />}
