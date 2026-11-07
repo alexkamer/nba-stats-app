@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { computeAccuracy, accuracyByMethod, accuracyByStatType } from "@lib/accuracy/compute-accuracy";
 import { gradeMarketFavorite } from "@lib/accuracy/grade-game";
 import { BEST_BETS_PER_DAY, HIGH_CONFIDENCE_EDGE_RATIO, computeEdgeRatio } from "@lib/projections/confidence";
+import { selectBestBets } from "@lib/betting/select-best-bets";
 import { NextResponse } from "next/server";
 
 /** Local (not UTC) YYYY-MM-DD for a game's date — approximate day bucket
@@ -47,6 +48,7 @@ export async function GET() {
         select: {
           method: true,
           statType: true,
+          playerId: true,
           gradedCorrect: true,
           bettable: true,
           projectedValue: true,
@@ -82,12 +84,13 @@ export async function GET() {
     // bets strip and "Recommended" filter mean by a prop actually counting.
     const decidedProps = propRows
       .filter((r) => r.gradedCorrect !== null)
-      .map((r) => ({ ...r, edgeRatio: computeEdgeRatio(r.projectedValue, r.line, r.stdev) }));
+      .map((r) => ({ ...r, edgeRatio: computeEdgeRatio(r.projectedValue, r.line, r.stdev) ?? 0 }));
 
-    // Replicates BestBetsStrip's own selection (src/app/betting/page.tsx):
-    // per day, the bettable props ranked by edge ratio, top BEST_BETS_PER_DAY
-    // — pooled across every day that's been graded, rather than just the
-    // single day currently on screen.
+    // Uses the same selectBestBets selection as the live BestBetsStrip
+    // (src/app/betting/page.tsx): per day, the bettable props ranked by
+    // edge ratio and deduplicated to one pick per player, top
+    // BEST_BETS_PER_DAY — pooled across every day that's been graded,
+    // rather than just the single day currently on screen.
     const byDay = new Map<string, typeof decidedProps>();
     for (const row of decidedProps.filter((r) => r.bettable)) {
       const key = dayKey(row.game.date);
@@ -97,8 +100,7 @@ export async function GET() {
     }
     const bestBetsGradedValues: Array<boolean | null> = [];
     for (const dayProps of byDay.values()) {
-      dayProps.sort((a, b) => (b.edgeRatio ?? -Infinity) - (a.edgeRatio ?? -Infinity));
-      for (const row of dayProps.slice(0, BEST_BETS_PER_DAY)) bestBetsGradedValues.push(row.gradedCorrect);
+      for (const row of selectBestBets(dayProps, BEST_BETS_PER_DAY)) bestBetsGradedValues.push(row.gradedCorrect);
     }
     const bestBetsAccuracy = computeAccuracy(bestBetsGradedValues);
 

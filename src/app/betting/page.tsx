@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Check, X } from "lucide-react";
 import { BEST_BETS_PER_DAY, HIGH_CONFIDENCE_EDGE_RATIO, computeEdgeRatio } from "@lib/projections/confidence";
+import { selectBestBets } from "@lib/betting/select-best-bets";
 import { StatBlock, ComparisonBar } from "@/components/StatBlock";
 import { CircularBadge } from "@/components/CircularBadge";
 
@@ -408,15 +409,14 @@ function FilterSelect({
  * to be the first thing a visitor reads, ahead of any individual game's
  * own (deliberately quieter) tables. */
 function BestBetsStrip({ games, isToday }: { games: UpcomingGame[]; isToday: boolean }) {
-  const picks = games
+  const candidates = games
     .flatMap((game) =>
       game.playerProps
         .filter(isRecommendedProp)
         .map((p) => ({ ...p, matchup: `${game.awayTeam.abbreviation} @ ${game.homeTeam.abbreviation}` })),
     )
-    .map((p) => ({ ...p, edgeRatio: computeEdgeRatio(p.projectedValue, p.line, p.stdev) ?? 0 }))
-    .sort((a, b) => b.edgeRatio - a.edgeRatio)
-    .slice(0, BEST_BETS_PER_DAY);
+    .map((p) => ({ ...p, edgeRatio: computeEdgeRatio(p.projectedValue, p.line, p.stdev) ?? 0 }));
+  const picks = selectBestBets(candidates, BEST_BETS_PER_DAY);
 
   if (picks.length === 0) return null;
 
