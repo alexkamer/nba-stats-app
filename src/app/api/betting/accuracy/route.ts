@@ -1,7 +1,16 @@
 import { prisma } from "@/lib/db";
-import { computeAccuracy, accuracyByMethod, accuracyByStatType } from "@lib/accuracy/compute-accuracy";
+import { getDailyBestBetSnapshot } from "@/lib/daily-best-bets";
+import {
+  computeAccuracy,
+  accuracyByMethod,
+  accuracyByStatType,
+} from "@lib/accuracy/compute-accuracy";
 import { gradeMarketFavorite } from "@lib/accuracy/grade-game";
-import { BEST_BETS_PER_DAY, HIGH_CONFIDENCE_EDGE_RATIO, computeEdgeRatio } from "@lib/projections/confidence";
+import {
+  BEST_BETS_PER_DAY,
+  HIGH_CONFIDENCE_EDGE_RATIO,
+  computeEdgeRatio,
+} from "@lib/projections/confidence";
 import { selectBestBets } from "@lib/betting/select-best-bets";
 import { NextResponse } from "next/server";
 
@@ -42,13 +51,17 @@ export async function GET() {
           game: { select: { homeScore: true, awayScore: true } },
         },
       }),
-      prisma.predictorSnapshot.findMany({ where: { gradedAt: { not: null } }, select: { gradedCorrect: true } }),
+      prisma.predictorSnapshot.findMany({
+        where: { gradedAt: { not: null } },
+        select: { gradedCorrect: true },
+      }),
       prisma.playerPropProjection.findMany({
         where: { gradedAt: { not: null } },
         select: {
           method: true,
           statType: true,
           playerId: true,
+          gameId: true,
           gradedCorrect: true,
           bettable: true,
           projectedValue: true,
@@ -63,11 +76,17 @@ export async function GET() {
     // picks below, graded separately since picking the right winner and
     // picking the right side of the market line are not the same thing.
     const gameAccuracy = computeAccuracy(gameRows.map((r) => r.gradedCorrect));
-    const spreadAccuracy = computeAccuracy(gameRows.map((r) => r.gradedSpreadCorrect));
-    const bettableSpreadAccuracy = computeAccuracy(
-      gameRows.filter((r) => r.spreadBettable).map((r) => r.gradedSpreadCorrect),
+    const spreadAccuracy = computeAccuracy(
+      gameRows.map((r) => r.gradedSpreadCorrect),
     );
-    const totalAccuracy = computeAccuracy(gameRows.map((r) => r.gradedTotalCorrect));
+    const bettableSpreadAccuracy = computeAccuracy(
+      gameRows
+        .filter((r) => r.spreadBettable)
+        .map((r) => r.gradedSpreadCorrect),
+    );
+    const totalAccuracy = computeAccuracy(
+      gameRows.map((r) => r.gradedTotalCorrect),
+    );
     const bettableTotalAccuracy = computeAccuracy(
       gameRows.filter((r) => r.totalBettable).map((r) => r.gradedTotalCorrect),
     );
@@ -77,41 +96,68 @@ export async function GET() {
     // lib/projections/confidence.ts) — a near-miss call on a low-edge prop
     // shouldn't drag down the number that actually represents our
     // recommendations.
-    const bettablePropAccuracy = computeAccuracy(propRows.filter((r) => r.bettable).map((r) => r.gradedCorrect));
+    const bettablePropAccuracy = computeAccuracy(
+      propRows.filter((r) => r.bettable).map((r) => r.gradedCorrect),
+    );
 
     // DNP props never get a gradedCorrect (see ingest/grade-predictions.ts),
     // so "decided" here already excludes them — same subset the live best-
     // bets strip and "Recommended" filter mean by a prop actually counting.
     const decidedProps = propRows
       .filter((r) => r.gradedCorrect !== null)
-      .map((r) => ({ ...r, edgeRatio: computeEdgeRatio(r.projectedValue, r.line, r.stdev) ?? 0 }));
+      .map((r) => ({
+        ...r,
+        edgeRatio: computeEdgeRatio(r.projectedValue, r.line, r.stdev) ?? 0,
+      }));
 
-    // Uses the same selectBestBets selection as the live BestBetsStrip
-    // (src/app/betting/page.tsx): per day, the bettable props ranked by
-    // edge ratio and deduplicated to one pick per player, top
-    // BEST_BETS_PER_DAY — pooled across every day that's been graded,
-    // rather than just the single day currently on screen.
-    const byDay = new Map<string, typeof decidedProps>();
-    for (const row of decidedProps.filter((r) => r.bettable)) {
+    // For any day that has a locked-in DailyBestBet snapshot (see
+    // src/lib/daily-best-bets.ts — every day from this feature onward,
+    // once its live picks were ever requested), grade exactly that frozen
+    // selection instead of re-ranking today's final data. Only a day that
+    // predates this table, or one nobody ever loaded live, falls back to
+    // the old live-recompute-from-final-data selectBestBets call below.
+    const decidedPropsByKey = new Map(
+      decidedProps.map((r) => [`${r.gameId}|${r.playerId}|${r.statType}`, r]),
+    );
+    const bettableDecidedProps = decidedProps.filter((r) => r.bettable);
+    const byDay = new Map<string, typeof bettableDecidedProps>();
+    for (const row of bettableDecidedProps) {
       const key = dayKey(row.game.date);
       const group = byDay.get(key);
       if (group) group.push(row);
       else byDay.set(key, [row]);
     }
     const bestBetsGradedValues: Array<boolean | null> = [];
-    for (const dayProps of byDay.values()) {
-      for (const row of selectBestBets(dayProps, BEST_BETS_PER_DAY)) bestBetsGradedValues.push(row.gradedCorrect);
+    for (const [day, dayProps] of byDay.entries()) {
+      const snapshot = await getDailyBestBetSnapshot(day);
+      if (snapshot) {
+        for (const pick of snapshot) {
+          const row = decidedPropsByKey.get(
+            `${pick.gameId}|${pick.playerId}|${pick.statType}`,
+          );
+          if (row) bestBetsGradedValues.push(row.gradedCorrect);
+        }
+      } else {
+        for (const row of selectBestBets(dayProps, BEST_BETS_PER_DAY))
+          bestBetsGradedValues.push(row.gradedCorrect);
+      }
     }
     const bestBetsAccuracy = computeAccuracy(bestBetsGradedValues);
 
     // Stricter than the bettable floor — picks whose edge was at least a
     // full standard deviation of the player's own recent variance.
     const highConfidenceAccuracy = computeAccuracy(
-      decidedProps.filter((r) => (r.edgeRatio ?? 0) >= HIGH_CONFIDENCE_EDGE_RATIO).map((r) => r.gradedCorrect),
+      decidedProps
+        .filter((r) => (r.edgeRatio ?? 0) >= HIGH_CONFIDENCE_EDGE_RATIO)
+        .map((r) => r.gradedCorrect),
     );
 
-    const overallAccuracy = computeAccuracy([...gameRows, ...propRows].map((r) => r.gradedCorrect));
-    const predictorAccuracy = computeAccuracy(predictorRows.map((r) => r.gradedCorrect));
+    const overallAccuracy = computeAccuracy(
+      [...gameRows, ...propRows].map((r) => r.gradedCorrect),
+    );
+    const predictorAccuracy = computeAccuracy(
+      predictorRows.map((r) => r.gradedCorrect),
+    );
 
     // Third baseline, computed live from data already frozen/final — no
     // new grading pass or storage needed (design.md "Market-favorite
@@ -120,7 +166,14 @@ export async function GET() {
     const marketFavoriteAccuracy = computeAccuracy(
       gameRows
         .filter((r) => r.game.homeScore !== null && r.game.awayScore !== null)
-        .map((r) => gradeMarketFavorite(r.marketMarginAtPick, r.game.homeScore!, r.game.awayScore!).correct),
+        .map(
+          (r) =>
+            gradeMarketFavorite(
+              r.marketMarginAtPick,
+              r.game.homeScore!,
+              r.game.awayScore!,
+            ).correct,
+        ),
     );
 
     // Per-methodology-version breakdown — each table's `method` tag is
@@ -133,7 +186,10 @@ export async function GET() {
       spread: accuracyByMethod(gameRows, (r) => r.gradedSpreadCorrect),
       total: accuracyByMethod(gameRows, (r) => r.gradedTotalCorrect),
       props: accuracyByMethod(propRows, (r) => r.gradedCorrect),
-      bettableProps: accuracyByMethod(propRows.filter((r) => r.bettable), (r) => r.gradedCorrect),
+      bettableProps: accuracyByMethod(
+        propRows.filter((r) => r.bettable),
+        (r) => r.gradedCorrect,
+      ),
     };
 
     // Retrospective breakdown for the betting-history-page capability
@@ -141,7 +197,9 @@ export async function GET() {
     // types with at least one graded pick are included, rather than
     // showing a meaningless null-hit-rate entry for one with none yet.
     const propsByStatType = Object.fromEntries(
-      Object.entries(accuracyByStatType(propRows, (r) => r.gradedCorrect)).filter(([, summary]) => summary.graded > 0),
+      Object.entries(
+        accuracyByStatType(propRows, (r) => r.gradedCorrect),
+      ).filter(([, summary]) => summary.graded > 0),
     );
 
     return NextResponse.json({
@@ -164,6 +222,9 @@ export async function GET() {
     });
   } catch (error) {
     console.error("GET /api/betting/accuracy failed:", error);
-    return NextResponse.json({ error: "Failed to load accuracy summary" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to load accuracy summary" },
+      { status: 500 },
+    );
   }
 }

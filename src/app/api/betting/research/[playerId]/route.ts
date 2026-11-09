@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/db";
-import { extractStatValue, type RawPlayerGameRow } from "@lib/projections/extract-prop-stat";
+import {
+  extractStatValue,
+  type RawPlayerGameRow,
+} from "@lib/projections/extract-prop-stat";
 import type { PropStatType } from "@lib/espn/prop-types";
 import { currentSeasonYear } from "@/lib/espn-season";
 import { NextResponse } from "next/server";
@@ -11,11 +14,25 @@ import { NextResponse } from "next/server";
 // against TODAY's current line, applied retroactively to past games — no
 // historical line snapshot exists for past games (see design.md "Line-at-
 // the-time vs. today's line").
+//
+// The optional `?game=<espnId>` param switches this into a historical
+// mode for a specific already-played game instead — used by the accuracy
+// verification pages (src/app/betting/accuracy/[bucket]/page.tsx) so
+// clicking a past pick shows the line/projection it was actually made
+// against and the games that led up to it, rather than requiring (and
+// silently 404ing without) a live prop today for a player whose game is
+// long over.
 
 type Filter = "all" | "home" | "away" | "opponent";
 type PropResult = "OVER" | "UNDER" | "PUSH";
 
-const TEAM_SELECT = { id: true, abbreviation: true, name: true, logoUrl: true, color: true } as const;
+const TEAM_SELECT = {
+  id: true,
+  abbreviation: true,
+  name: true,
+  logoUrl: true,
+  color: true,
+} as const;
 
 function todayWindow() {
   const now = new Date();
@@ -43,7 +60,10 @@ interface HitRateSummary {
  * `windowSize` is null, for the "season" window) — `sampleSizeNote` flags
  * when fewer games exist than the window asked for, rather than silently
  * padding or erroring. */
-function summarizeWindow(results: PropResult[], windowSize: number | null): HitRateSummary {
+function summarizeWindow(
+  results: PropResult[],
+  windowSize: number | null,
+): HitRateSummary {
   const windowed = windowSize === null ? results : results.slice(0, windowSize);
   const games = windowed.length;
   return {
@@ -51,11 +71,17 @@ function summarizeWindow(results: PropResult[], windowSize: number | null): HitR
     over: windowed.filter((r) => r === "OVER").length,
     under: windowed.filter((r) => r === "UNDER").length,
     push: windowed.filter((r) => r === "PUSH").length,
-    sampleSizeNote: windowSize !== null && games < windowSize ? `Only ${games} of ${windowSize} games available` : null,
+    sampleSizeNote:
+      windowSize !== null && games < windowSize
+        ? `Only ${games} of ${windowSize} games available`
+        : null,
   };
 }
 
-export async function GET(request: Request, { params }: { params: Promise<{ playerId: string }> }) {
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ playerId: string }> },
+) {
   const { playerId: playerIdParam } = await params;
   const playerId = Number(playerIdParam);
   if (!Number.isInteger(playerId)) {
@@ -64,34 +90,75 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
 
   const url = new URL(request.url);
   const statParam = url.searchParams.get("stat");
+  const gameParam = url.searchParams.get("game");
   const filterParam = url.searchParams.get("filter");
-  const filter: Filter = filterParam === "home" || filterParam === "away" || filterParam === "opponent" ? filterParam : "all";
+  const filter: Filter =
+    filterParam === "home" ||
+    filterParam === "away" ||
+    filterParam === "opponent"
+      ? filterParam
+      : "all";
   const seasonIdParam = url.searchParams.get("seasonId");
-  const requestedSeasonId = seasonIdParam != null && Number.isInteger(Number(seasonIdParam)) ? Number(seasonIdParam) : null;
+  const requestedSeasonId =
+    seasonIdParam != null && Number.isInteger(Number(seasonIdParam))
+      ? Number(seasonIdParam)
+      : null;
 
   try {
+    // Historical mode (`?game=<espnId>`): scope to the exact prop odds
+    // frozen for that one already-played game, no "today" window at all —
+    // the live-today query below requires a currently-SCHEDULED game,
+    // which an already-final game never is.
     const { startOfDay, endOfDay } = todayWindow();
-
     const livePropOdds = await prisma.playerPropOdds.findMany({
-      where: { playerId, game: { status: "SCHEDULED", date: { gte: startOfDay, lt: endOfDay } } },
+      where: gameParam
+        ? { playerId, game: { espnId: gameParam } }
+        : {
+            playerId,
+            game: {
+              status: "SCHEDULED",
+              date: { gte: startOfDay, lt: endOfDay },
+            },
+          },
       include: {
-        game: { include: { homeTeam: { select: TEAM_SELECT }, awayTeam: { select: TEAM_SELECT } } },
-        player: { select: { id: true, espnId: true, displayName: true, headshotUrl: true, currentTeamId: true } },
+        game: {
+          include: {
+            homeTeam: { select: TEAM_SELECT },
+            awayTeam: { select: TEAM_SELECT },
+          },
+        },
+        player: {
+          select: {
+            id: true,
+            espnId: true,
+            displayName: true,
+            headshotUrl: true,
+            currentTeamId: true,
+          },
+        },
         projection: true,
       },
     });
 
     if (livePropOdds.length === 0) {
-      return NextResponse.json({ error: "no_live_prop" }, { status: 404 });
+      return NextResponse.json(
+        { error: gameParam ? "no_prop_for_game" : "no_live_prop" },
+        { status: 404 },
+      );
     }
 
-    const liveStatTypes = [...new Set(livePropOdds.map((p) => p.statType))] as PropStatType[];
+    const liveStatTypes = [
+      ...new Set(livePropOdds.map((p) => p.statType)),
+    ] as PropStatType[];
     const statType: PropStatType =
-      statParam && liveStatTypes.includes(statParam as PropStatType) ? (statParam as PropStatType) : liveStatTypes[0];
+      statParam && liveStatTypes.includes(statParam as PropStatType)
+        ? (statParam as PropStatType)
+        : liveStatTypes[0];
 
-    // Today's line per live stat type — same derivation as `line` below,
-    // computed for every tracked stat so the grid can grade each of its
-    // columns, not just the selected one.
+    // Line per live stat type — same derivation as `line` below, computed
+    // for every tracked stat so the grid can grade each of its columns,
+    // not just the selected one. In historical mode this is the line
+    // frozen for that specific game, not today's.
     const lineByStatType = new Map<PropStatType, number | null>();
     for (const stat of liveStatTypes) {
       const rows = livePropOdds.filter((p) => p.statType === stat);
@@ -107,14 +174,33 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
     const overRow = rowsForStat.find((p) => p.side === "OVER");
     const underRow = rowsForStat.find((p) => p.side === "UNDER");
     const line = lineByStatType.get(statType) ?? null;
-    const projectionRow = rowsForStat.map((p) => p.projection).find((p) => p != null) ?? null;
+    const projectionRow =
+      rowsForStat.map((p) => p.projection).find((p) => p != null) ?? null;
 
-    const isHomeToday = player.currentTeamId === game.homeTeamId;
+    // Which team the player suited up for in *that* game — not necessarily
+    // their current team (a trade between then and now would make
+    // `currentTeamId` wrong for a historical game), falling back to it only
+    // when there's no boxscore row to read instead (e.g. a DNP).
+    const historicalStat = gameParam
+      ? await prisma.playerGameStat.findUnique({
+          where: { gameId_playerId: { gameId: game.id, playerId } },
+          select: { teamId: true },
+        })
+      : null;
+    const playerTeamId = historicalStat?.teamId ?? player.currentTeamId;
+    const isHomeToday = playerTeamId === game.homeTeamId;
     const team = isHomeToday ? game.homeTeam : game.awayTeam;
     const opponentTeam = isHomeToday ? game.awayTeam : game.homeTeam;
 
     const historyRows = await prisma.playerGameStat.findMany({
-      where: { playerId, points: { not: null }, game: { status: "FINAL" } },
+      where: {
+        playerId,
+        points: { not: null },
+        game: {
+          status: "FINAL",
+          ...(gameParam ? { date: { lt: game.date } } : {}),
+        },
+      },
       orderBy: { game: { date: "desc" } },
       select: {
         teamId: true,
@@ -150,15 +236,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
       new Map(
         historyRows
           .filter((row) => row.game.seasonType === "REGULAR")
-          .map((row) => [row.game.seasonId, { id: row.game.seasonId, year: row.game.season.year }]),
+          .map((row) => [
+            row.game.seasonId,
+            { id: row.game.seasonId, year: row.game.season.year },
+          ]),
       ).values(),
     ).sort((a, b) => b.year - a.year);
 
-    const defaultSeason = seasonsAvailable.find((s) => s.year === currentSeasonYear()) ?? seasonsAvailable[0] ?? null;
+    const defaultSeason =
+      seasonsAvailable.find((s) => s.year === currentSeasonYear()) ??
+      seasonsAvailable[0] ??
+      null;
     const selectedSeasonId =
-      requestedSeasonId != null && seasonsAvailable.some((s) => s.id === requestedSeasonId)
+      requestedSeasonId != null &&
+      seasonsAvailable.some((s) => s.id === requestedSeasonId)
         ? requestedSeasonId
-        : defaultSeason?.id ?? null;
+        : (defaultSeason?.id ?? null);
 
     // "vs Opponent" is its own small sample already — matchup history
     // against one team is worth more career-wide than confined to
@@ -183,7 +276,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
       };
     });
 
-    const filterPredicate = (g: { isHome: boolean; opponent: { id: number } }) => {
+    const filterPredicate = (g: {
+      isHome: boolean;
+      opponent: { id: number };
+    }) => {
       if (filter === "home") return g.isHome;
       if (filter === "away") return !g.isHome;
       if (filter === "opponent") return g.opponent.id === opponentTeam.id;
@@ -191,7 +287,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
     };
 
     const filteredHistory = fullHistory.filter(filterPredicate);
-    const filteredResults = filteredHistory.map((g) => g.result).filter((r): r is PropResult => r !== null);
+    const filteredResults = filteredHistory
+      .map((g) => g.result)
+      .filter((r): r is PropResult => r !== null);
     const hitRates = {
       l5: summarizeWindow(filteredResults, 5),
       l10: summarizeWindow(filteredResults, 10),
@@ -222,13 +320,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
         cells: liveStatTypes.map((stat) => {
           const value = extractStatValue(stat, raw);
           const statLine = lineByStatType.get(stat) ?? null;
-          return { statType: stat, value, result: statLine !== null ? compareToLine(value, statLine) : null };
+          return {
+            statType: stat,
+            value,
+            result: statLine !== null ? compareToLine(value, statLine) : null,
+          };
         }),
       }));
 
     return NextResponse.json({
-      player: { id: player.id, espnId: player.espnId, displayName: player.displayName, headshotUrl: player.headshotUrl },
+      player: {
+        id: player.id,
+        espnId: player.espnId,
+        displayName: player.displayName,
+        headshotUrl: player.headshotUrl,
+      },
       game: { espnId: game.espnId, date: game.date, isHomeToday },
+      historical: Boolean(gameParam),
       team,
       opponent: opponentTeam,
       statType,
@@ -236,7 +344,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
       line,
       odds: { over: overRow?.odds ?? null, under: underRow?.odds ?? null },
       projection: projectionRow
-        ? { projectedValue: projectionRow.projectedValue, stdev: projectionRow.stdev, bettable: projectionRow.bettable }
+        ? {
+            projectedValue: projectionRow.projectedValue,
+            stdev: projectionRow.stdev,
+            bettable: projectionRow.bettable,
+          }
         : null,
       filter,
       seasons: seasonsAvailable,
@@ -247,6 +359,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ play
     });
   } catch (error) {
     console.error(`GET /api/betting/research/${playerIdParam} failed:`, error);
-    return NextResponse.json({ error: "Failed to load player prop research" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to load player prop research" },
+      { status: 500 },
+    );
   }
 }

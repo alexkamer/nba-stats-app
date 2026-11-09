@@ -164,6 +164,7 @@ model Player {
   propProjections PlayerPropProjection[]
   availabilities  PlayerAvailability[]
   dailyStatLeaderEntries DailyStatLeaderEntry[]
+  dailyBestBets   DailyBestBet[]
 
   @@map("player")
 }
@@ -218,6 +219,7 @@ model Game {
   playerPropProjections PlayerPropProjection[]
   playerAvailabilities  PlayerAvailability[]
   teamPerformances      TeamGamePerformance[]
+  dailyBestBets         DailyBestBet[]
 
   @@map("game")
 }
@@ -436,6 +438,32 @@ model PlayerPropProjection {
 
   @@unique([gameId, playerId, statType])
   @@map("player_prop_projection")
+}
+
+// Locks in a calendar day's "Best Bets" selection the first time anyone
+// requests that day's live picks (see src/lib/daily-best-bets.ts) — every
+// later request for the same `date` reads this same frozen list instead of
+// re-ranking against whatever's changed since (a newly-ingested prop with
+// a bigger edge, a player ruled out promoting the next-best candidate),
+// so a pick already shown to an early visitor can't be silently swapped
+// out later the same day. `edgeRatioAtSelection` is the edge the pick had
+// when it was locked in, kept for display — grading itself is always read
+// live off the referenced PlayerPropProjection's own gradedCorrect, never
+// duplicated here.
+model DailyBestBet {
+  id                   Int          @id @default(autoincrement())
+  date                 String       // local YYYY-MM-DD this selection is frozen for
+  rank                 Int          // 1-based order within that day's selection
+  gameId               Int          @map("game_id")
+  game                 Game         @relation(fields: [gameId], references: [id])
+  playerId             Int          @map("player_id")
+  player               Player       @relation(fields: [playerId], references: [id])
+  statType             PropStatType @map("stat_type")
+  edgeRatioAtSelection Float        @map("edge_ratio_at_selection")
+  createdAt            DateTime     @default(now()) @map("created_at")
+
+  @@unique([date, playerId, statType])
+  @@map("daily_best_bet")
 }
 
 model Play {

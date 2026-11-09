@@ -4,8 +4,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Check, X } from "lucide-react";
-import { BEST_BETS_PER_DAY, HIGH_CONFIDENCE_EDGE_RATIO, computeEdgeRatio } from "@lib/projections/confidence";
-import { selectBestBets } from "@lib/betting/select-best-bets";
+import {
+  HIGH_CONFIDENCE_EDGE_RATIO,
+  computeEdgeRatio,
+} from "@lib/projections/confidence";
 import { StatBlock, ComparisonBar } from "@/components/StatBlock";
 import { CircularBadge } from "@/components/CircularBadge";
 
@@ -21,7 +23,19 @@ interface PlayerPropLean {
   playerName: string;
   statType: string;
   projectedValue: number;
+  // The line our pick was actually decided against — frozen once the
+  // projection is made (see schema.prisma's PlayerPropProjection comment).
+  // This is what grading, `bettable`, and Best Bets ranking all key off,
+  // so it's the number shown as the pick itself even if the market's since
+  // moved off it.
   line: number;
+  // The market's current line for this side, only when it's moved off
+  // `line` since our pick was made (null otherwise) — shown parenthetically
+  // next to the pick as "(now oX.X)" so it's clear that's not the number
+  // being graded, just what the book currently shows. The confidence meter
+  // below still reads it, as a "here's the deal right now" figure distinct
+  // from the frozen one everything else keys off.
+  currentLine: number | null;
   lean: "OVER" | "UNDER" | "PUSH";
   // American odds for the side we're actually leaning (e.g. -121) — null
   // when that side's odds weren't captured.
@@ -43,6 +57,13 @@ interface PlayerPropLean {
   // Player is on the current injury report as "Out" — only ever set for a
   // game that hasn't been played yet (see /api/betting/upcoming).
   ruledOut: boolean;
+  // Whether this prop is part of that day's locked-in Best Bets selection
+  // (see src/lib/daily-best-bets.ts) — computed server-side and frozen the
+  // first time that day's picks were requested, so the client never
+  // re-ranks candidates itself and can't silently swap a pick out later
+  // the same day.
+  isBestBet: boolean;
+  bestBetRank: number | null;
 }
 
 interface UpcomingGame {
@@ -166,11 +187,15 @@ function formatOdds(odds: number | null): string {
   return odds > 0 ? `+${odds}` : `${odds}`;
 }
 
+function formatNumber(value: number): string {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+}
+
 /** This app's own house notation for a line with a side (see the game
  * page's "Game Odds" panel), reused here for every over/under-shaped
  * number on this page. */
 function formatLine(side: "OVER" | "UNDER" | "PUSH", line: number): string {
-  const formatted = Number.isInteger(line) ? `${line}` : line.toFixed(1);
+  const formatted = formatNumber(line);
   if (side === "PUSH") return formatted;
   return `${side === "OVER" ? "o" : "u"}${formatted}`;
 }
@@ -182,7 +207,10 @@ function impliedSpread(homeRelativeMargin: number) {
   return { home: -homeRelativeMargin, away: homeRelativeMargin };
 }
 
-function totalLean(ourTotal: number, marketTotal: number): "OVER" | "UNDER" | "PUSH" {
+function totalLean(
+  ourTotal: number,
+  marketTotal: number,
+): "OVER" | "UNDER" | "PUSH" {
   if (ourTotal > marketTotal) return "OVER";
   if (ourTotal < marketTotal) return "UNDER";
   return "PUSH";
@@ -195,7 +223,10 @@ function totalLean(ourTotal: number, marketTotal: number): "OVER" | "UNDER" | "P
  * a team can be our own projected winner and still be the side we'd fade
  * against a market line (e.g. market has them -14.5, we have them by only
  * +6.4: the value side is the underdog getting +14.5, not the favorite). */
-function spreadValueSide(ourMargin: number, marketMargin: number): "home" | "away" | null {
+function spreadValueSide(
+  ourMargin: number,
+  marketMargin: number,
+): "home" | "away" | null {
   if (ourMargin === marketMargin) return null;
   return ourMargin > marketMargin ? "home" : "away";
 }
@@ -214,45 +245,71 @@ function isRecommendedProp(p: PlayerPropLean): boolean {
  * bettable player props combined. Shared by the game card's own "N picks"
  * badge and the page-level "Most picks" sort, so the two never disagree. */
 function recommendedCount(game: UpcomingGame): number {
-  const marketMarginValue = game.market?.spread != null ? -game.market.spread : null;
+  const marketMarginValue =
+    game.market?.spread != null ? -game.market.spread : null;
   const spreadValue =
-    game.projection && marketMarginValue !== null ? spreadValueSide(game.projection.projectedMargin, marketMarginValue) : null;
-  const showSpreadPick = Boolean(game.projection?.spreadBettable && spreadValue !== null);
-  return (showSpreadPick ? 1 : 0) + (game.projection?.totalBettable ? 1 : 0) + game.playerProps.filter(isRecommendedProp).length;
+    game.projection && marketMarginValue !== null
+      ? spreadValueSide(game.projection.projectedMargin, marketMarginValue)
+      : null;
+  const showSpreadPick = Boolean(
+    game.projection?.spreadBettable && spreadValue !== null,
+  );
+  return (
+    (showSpreadPick ? 1 : 0) +
+    (game.projection?.totalBettable ? 1 : 0) +
+    game.playerProps.filter(isRecommendedProp).length
+  );
 }
 
 function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
-  const nothingGraded = accuracy.ourModel.overall.graded === 0 && accuracy.espnPredictor.graded === 0;
+  const nothingGraded =
+    accuracy.ourModel.overall.graded === 0 &&
+    accuracy.espnPredictor.graded === 0;
   if (nothingGraded) {
     return (
       <p className="text-sm text-foreground/72">
-        No games have finished yet to grade our picks against — the scoreboard fills in as the season plays out.
+        No games have finished yet to grade our picks against — the scoreboard
+        fills in as the season plays out.
       </p>
     );
   }
   return (
     <div className="flex flex-wrap gap-2">
       <StatBlock
+        href="/betting/accuracy/model"
         label="Our model, this season"
-        value={accuracy.ourModel.overall.hitRate !== null ? `${(accuracy.ourModel.overall.hitRate * 100).toFixed(0)}%` : null}
+        value={
+          accuracy.ourModel.overall.hitRate !== null
+            ? `${(accuracy.ourModel.overall.hitRate * 100).toFixed(0)}%`
+            : null
+        }
         caption={`${accuracy.ourModel.overall.correct}/${accuracy.ourModel.overall.graded}`}
       />
       <StatBlock
+        href="/betting/accuracy/espn"
         label="ESPN's predictor"
-        value={accuracy.espnPredictor.hitRate !== null ? `${(accuracy.espnPredictor.hitRate * 100).toFixed(0)}%` : null}
+        value={
+          accuracy.espnPredictor.hitRate !== null
+            ? `${(accuracy.espnPredictor.hitRate * 100).toFixed(0)}%`
+            : null
+        }
         caption={`${accuracy.espnPredictor.correct}/${accuracy.espnPredictor.graded}`}
       />
       {accuracy.ourModel.bettableProps.graded > 0 && (
         <StatBlock
+          href="/betting/accuracy/recommended"
           label="Our recommended props"
           value={
-            accuracy.ourModel.bettableProps.hitRate !== null ? `${(accuracy.ourModel.bettableProps.hitRate * 100).toFixed(0)}%` : null
+            accuracy.ourModel.bettableProps.hitRate !== null
+              ? `${(accuracy.ourModel.bettableProps.hitRate * 100).toFixed(0)}%`
+              : null
           }
           caption={`${accuracy.ourModel.bettableProps.correct}/${accuracy.ourModel.bettableProps.graded}`}
         />
       )}
       {accuracy.ourModel.highConfidenceProps.graded > 0 && (
         <StatBlock
+          href="/betting/accuracy/high-confidence"
           label={`High-confidence props (≥${HIGH_CONFIDENCE_EDGE_RATIO.toFixed(1)}σ)`}
           value={
             accuracy.ourModel.highConfidenceProps.hitRate !== null
@@ -264,8 +321,13 @@ function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
       )}
       {accuracy.ourModel.bestBets.graded > 0 && (
         <StatBlock
+          href="/betting/accuracy/best-bets"
           label="Best bets"
-          value={accuracy.ourModel.bestBets.hitRate !== null ? `${(accuracy.ourModel.bestBets.hitRate * 100).toFixed(0)}%` : null}
+          value={
+            accuracy.ourModel.bestBets.hitRate !== null
+              ? `${(accuracy.ourModel.bestBets.hitRate * 100).toFixed(0)}%`
+              : null
+          }
           caption={`${accuracy.ourModel.bestBets.correct}/${accuracy.ourModel.bestBets.graded}`}
         />
       )}
@@ -299,10 +361,16 @@ function ResultMark({ correct }: { correct: boolean | null }) {
       fallback={
         <span
           className={`flex h-full w-full items-center justify-center rounded-full text-[9px] font-bold text-white ${
-            correct ? "bg-emerald-600 dark:bg-emerald-500" : "bg-red-600 dark:bg-red-500"
+            correct
+              ? "bg-emerald-600 dark:bg-emerald-500"
+              : "bg-red-600 dark:bg-red-500"
           }`}
         >
-          {correct ? <Check className="h-2.5 w-2.5" strokeWidth={3} /> : <X className="h-2.5 w-2.5" strokeWidth={3} />}
+          {correct ? (
+            <Check className="h-2.5 w-2.5" strokeWidth={3} />
+          ) : (
+            <X className="h-2.5 w-2.5" strokeWidth={3} />
+          )}
         </span>
       }
     />
@@ -325,14 +393,47 @@ function TeamLabel({ team }: { team: TeamSummary }) {
  * same `ComparisonBar` primitive `StatBlock` uses. Capped at 3σ: beyond that
  * the bar is already full and the exact number stops mattering for the
  * "how much better is this than that" comparison the bar is for. */
-function ConfidenceMeter({ edgeRatio, bettable }: { edgeRatio: number | null; bettable: boolean }) {
+function ConfidenceMeter({
+  edgeRatio,
+  originalEdgeRatio,
+  bettable,
+}: {
+  edgeRatio: number | null;
+  // The edge our pick actually had when it was made, against the frozen
+  // line — only passed where the line can move (player props). Shown
+  // alongside `edgeRatio` as "was → now" whenever the market's moved
+  // enough to actually change the number; the bar itself always reflects
+  // `edgeRatio`, the deal available right now.
+  originalEdgeRatio?: number | null;
+  bettable: boolean;
+}) {
   const pct = edgeRatio !== null ? Math.min(edgeRatio / 3, 1) * 100 : 0;
+  const showBoth =
+    edgeRatio !== null &&
+    originalEdgeRatio != null &&
+    Math.abs(originalEdgeRatio - edgeRatio) >= 0.05;
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className="w-8 shrink-0">
-        <ComparisonBar pct={pct} color={bettable ? "var(--color-accent)" : "var(--color-border)"} />
+        <ComparisonBar
+          pct={pct}
+          color={bettable ? "var(--color-accent)" : "var(--color-border)"}
+        />
       </span>
-      <span className="text-xs text-foreground/60 tabular-nums">{edgeRatio !== null ? `${edgeRatio.toFixed(1)}σ` : "—"}</span>
+      <span
+        className="text-xs text-foreground/60 tabular-nums"
+        title={
+          showBoth
+            ? "Was the pick's edge when made; now is its edge at the current line"
+            : undefined
+        }
+      >
+        {edgeRatio === null
+          ? "—"
+          : showBoth
+            ? `${originalEdgeRatio!.toFixed(1)}σ → ${edgeRatio.toFixed(1)}σ`
+            : `${edgeRatio.toFixed(1)}σ`}
+      </span>
     </span>
   );
 }
@@ -358,14 +459,24 @@ function PickRow({
 }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <span className="text-xs text-foreground/60 w-14 shrink-0 pt-0.5">{label}</span>
+      <span className="text-xs text-foreground/60 w-14 shrink-0 pt-0.5">
+        {label}
+      </span>
       {mainLabel === null ? (
-        <span className="text-sm text-foreground/60">Not enough history yet</span>
+        <span className="text-sm text-foreground/60">
+          Not enough history yet
+        </span>
       ) : (
         <div className="flex flex-1 flex-wrap items-center justify-end gap-x-2.5 gap-y-1">
-          <span className={`text-base ${bettable ? "font-semibold text-foreground" : "text-foreground/82"}`}>{mainLabel}</span>
+          <span
+            className={`text-base ${bettable ? "font-semibold text-foreground" : "text-foreground/82"}`}
+          >
+            {mainLabel}
+          </span>
           <span className="flex items-center whitespace-nowrap">
-            <span className="text-xs text-foreground/60 tabular-nums">{formatOdds(odds)}</span>
+            <span className="text-xs text-foreground/60 tabular-nums">
+              {formatOdds(odds)}
+            </span>
             {bettable && <BettableMark />}
             {graded !== null && <ResultMark correct={graded} />}
           </span>
@@ -399,7 +510,9 @@ function FilterSelect({
       >
         {children}
       </select>
-      <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-foreground/50">▾</span>
+      <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-foreground/50">
+        ▾
+      </span>
     </div>
   );
 }
@@ -408,21 +521,50 @@ function FilterSelect({
  * across every game, as a horizontal row of scannable ticket chips — meant
  * to be the first thing a visitor reads, ahead of any individual game's
  * own (deliberately quieter) tables. */
-function BestBetsStrip({ games, isToday }: { games: UpcomingGame[]; isToday: boolean }) {
-  const candidates = games
+function BestBetsStrip({
+  games,
+  isToday,
+}: {
+  games: UpcomingGame[];
+  isToday: boolean;
+}) {
+  // Membership and order both come straight from the server's locked-in
+  // selection (see src/lib/daily-best-bets.ts) rather than being
+  // recomputed here — re-ranking candidates client-side is exactly what
+  // let a pick get silently swapped out mid-day in the first place.
+  const picks = games
     .flatMap((game) =>
       game.playerProps
-        .filter(isRecommendedProp)
-        .map((p) => ({ ...p, matchup: `${game.awayTeam.abbreviation} @ ${game.homeTeam.abbreviation}` })),
+        .filter((p) => p.isBestBet)
+        .map((p) => ({
+          ...p,
+          matchup: `${game.awayTeam.abbreviation} @ ${game.homeTeam.abbreviation}`,
+          // Display only (the σ figure below), computed against the live
+          // current line when the market's moved — not used for
+          // membership or order, both of which come from the server's
+          // locked-in selection above and stay pinned to the frozen line.
+          edgeRatio:
+            computeEdgeRatio(
+              p.projectedValue,
+              p.currentLine ?? p.line,
+              p.stdev,
+            ) ?? 0,
+          originalEdgeRatio: computeEdgeRatio(
+            p.projectedValue,
+            p.line,
+            p.stdev,
+          ),
+        })),
     )
-    .map((p) => ({ ...p, edgeRatio: computeEdgeRatio(p.projectedValue, p.line, p.stdev) ?? 0 }));
-  const picks = selectBestBets(candidates, BEST_BETS_PER_DAY);
+    .sort((a, b) => (a.bestBetRank ?? 0) - (b.bestBetRank ?? 0));
 
   if (picks.length === 0) return null;
 
   return (
     <div>
-      <p className="text-xs font-medium text-foreground/72 mb-2">{isToday ? "Today's" : "That day's"} best bets</p>
+      <p className="text-xs font-medium text-foreground/72 mb-2">
+        {isToday ? "Today's" : "That day's"} best bets
+      </p>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {picks.map((p) => (
           <Link
@@ -430,20 +572,47 @@ function BestBetsStrip({ games, isToday }: { games: UpcomingGame[]; isToday: boo
             href={`/betting/research/${p.playerId}?stat=${p.statType}`}
             className="w-36 shrink-0 rounded-lg border border-border bg-surface px-3 py-2.5 hover:border-accent transition-colors"
           >
-            <p className="truncate text-[10px] text-foreground/50">{p.matchup}</p>
-            <p className="truncate text-xs text-foreground/72">{p.playerName}</p>
-            <p className="text-sm font-semibold text-foreground">
+            <p className="truncate text-[10px] text-foreground/50">
+              {p.matchup}
+            </p>
+            <p className="truncate text-xs text-foreground/72">
+              {p.playerName}
+            </p>
+            <p className="truncate text-sm font-semibold text-foreground">
               {formatLine(p.lean, p.line)} {STAT_LABELS[p.statType]}
             </p>
+            {p.currentLine !== null && (
+              <p
+                className="truncate text-[10px] text-foreground/50"
+                title={`The market's moved to ${formatLine(p.lean, p.currentLine)} since we made this pick — that's not what we're graded against`}
+              >
+                Now {formatLine(p.lean, p.currentLine)}
+              </p>
+            )}
             <div className="mt-1.5 flex items-center justify-between">
-              <span className="text-xs text-foreground/60 tabular-nums">{formatOdds(p.odds)}</span>
+              <span className="text-xs text-foreground/60 tabular-nums">
+                {formatOdds(p.odds)}
+              </span>
               {p.gradedCorrect !== null ? (
                 <span className="flex items-center gap-1 text-xs text-foreground/60 tabular-nums">
                   {p.gradedActualValue}
                   <ResultMark correct={p.gradedCorrect} />
                 </span>
               ) : (
-                <span className="text-xs font-medium text-accent tabular-nums">{p.edgeRatio.toFixed(1)}σ</span>
+                <span
+                  className="text-xs font-medium text-accent tabular-nums"
+                  title={
+                    p.originalEdgeRatio != null &&
+                    Math.abs(p.originalEdgeRatio - p.edgeRatio) >= 0.05
+                      ? "Was the pick's edge when made; now is its edge at the current line"
+                      : undefined
+                  }
+                >
+                  {p.originalEdgeRatio != null &&
+                  Math.abs(p.originalEdgeRatio - p.edgeRatio) >= 0.05
+                    ? `${p.originalEdgeRatio.toFixed(1)}→${p.edgeRatio.toFixed(1)}σ`
+                    : `${p.edgeRatio.toFixed(1)}σ`}
+                </span>
               )}
             </div>
           </Link>
@@ -492,7 +661,9 @@ function SegmentedToggle<T extends string>({
           type="button"
           onClick={() => onChange(option.value)}
           className={`px-2.5 py-1 ${
-            value === option.value ? "bg-accent text-accent-foreground" : "text-foreground/72 hover:text-foreground"
+            value === option.value
+              ? "bg-accent text-accent-foreground"
+              : "text-foreground/72 hover:text-foreground"
           }`}
         >
           {option.label}
@@ -503,57 +674,104 @@ function SegmentedToggle<T extends string>({
 }
 
 function GameCard({ game }: { game: UpcomingGame }) {
-  const [propsView, setPropsView] = useState<"all" | "recommended">("recommended");
+  const [propsView, setPropsView] = useState<"all" | "recommended">(
+    "recommended",
+  );
   const [statFilter, setStatFilter] = useState<string>("all");
   const [playerFilter, setPlayerFilter] = useState<string>("all");
 
-  const ourSpread = game.projection ? impliedSpread(game.projection.projectedMargin) : null;
+  const ourSpread = game.projection
+    ? impliedSpread(game.projection.projectedMargin)
+    : null;
   const marketSpread =
-    game.market?.spread != null ? { home: game.market.spread, away: -game.market.spread } : null;
-  const ourTotal = game.projection ? game.projection.projectedHomeScore + game.projection.projectedAwayScore : null;
+    game.market?.spread != null
+      ? { home: game.market.spread, away: -game.market.spread }
+      : null;
+  const ourTotal = game.projection
+    ? game.projection.projectedHomeScore + game.projection.projectedAwayScore
+    : null;
 
   // The side our own margin favors against the market's line — not just
   // whichever team we project to win outright (see spreadValueSide). Only
   // marked when it clears the confidence bar; otherwise the two numbers
   // are shown for comparison without implying a recommendation either way.
-  const marketMarginValue = game.market?.spread != null ? -game.market.spread : null;
+  const marketMarginValue =
+    game.market?.spread != null ? -game.market.spread : null;
   const spreadValue =
     game.projection && marketMarginValue !== null
       ? spreadValueSide(game.projection.projectedMargin, marketMarginValue)
       : null;
-  const showSpreadPick = Boolean(game.projection?.spreadBettable && spreadValue !== null);
+  const showSpreadPick = Boolean(
+    game.projection?.spreadBettable && spreadValue !== null,
+  );
   const spreadEdgeRatio =
     game.projection && marketMarginValue !== null
-      ? computeEdgeRatio(game.projection.projectedMargin, marketMarginValue, game.projection.marginStdev)
+      ? computeEdgeRatio(
+          game.projection.projectedMargin,
+          marketMarginValue,
+          game.projection.marginStdev,
+        )
       : null;
 
-  const ourTotalLean = ourTotal !== null && game.market?.overUnder != null ? totalLean(ourTotal, game.market.overUnder) : null;
+  const ourTotalLean =
+    ourTotal !== null && game.market?.overUnder != null
+      ? totalLean(ourTotal, game.market.overUnder)
+      : null;
   const totalEdgeRatio =
     ourTotal !== null && game.market?.overUnder != null
-      ? computeEdgeRatio(ourTotal, game.market.overUnder, game.projection?.totalStdev ?? null)
+      ? computeEdgeRatio(
+          ourTotal,
+          game.market.overUnder,
+          game.projection?.totalStdev ?? null,
+        )
       : null;
 
   // Dropdown options, in a stable order — stat types that actually have a
   // prop for this game (PROP_STAT_TYPES' own order), players alphabetical.
-  const statOptions = PROP_STAT_TYPES.filter((st) => game.playerProps.some((p) => p.statType === st));
-  const playerOptions = [...new Map(game.playerProps.map((p) => [p.playerId, p.playerName])).entries()].sort((a, b) =>
-    a[1].localeCompare(b[1]),
+  const statOptions = PROP_STAT_TYPES.filter((st) =>
+    game.playerProps.some((p) => p.statType === st),
   );
+  const playerOptions = [
+    ...new Map(
+      game.playerProps.map((p) => [p.playerId, p.playerName]),
+    ).entries(),
+  ].sort((a, b) => a[1].localeCompare(b[1]));
 
   const visibleProps = game.playerProps
     .filter((p) => propsView === "all" || isRecommendedProp(p))
     .filter((p) => statFilter === "all" || p.statType === statFilter)
-    .filter((p) => playerFilter === "all" || String(p.playerId) === playerFilter)
+    .filter(
+      (p) => playerFilter === "all" || String(p.playerId) === playerFilter,
+    )
     .sort((a, b) => {
       if (propsView === "recommended") {
-        const edgeA = computeEdgeRatio(a.projectedValue, a.line, a.stdev) ?? -Infinity;
-        const edgeB = computeEdgeRatio(b.projectedValue, b.line, b.stdev) ?? -Infinity;
+        // Sorts by the same live-line confidence the meter displays, not
+        // the frozen one membership/grading key off.
+        const edgeA =
+          computeEdgeRatio(
+            a.projectedValue,
+            a.currentLine ?? a.line,
+            a.stdev,
+          ) ?? -Infinity;
+        const edgeB =
+          computeEdgeRatio(
+            b.projectedValue,
+            b.currentLine ?? b.line,
+            b.stdev,
+          ) ?? -Infinity;
         if (edgeA !== edgeB) return edgeB - edgeA;
       }
-      return a.playerName.localeCompare(b.playerName) || PROP_STAT_TYPES.indexOf(a.statType) - PROP_STAT_TYPES.indexOf(b.statType);
+      return (
+        a.playerName.localeCompare(b.playerName) ||
+        PROP_STAT_TYPES.indexOf(a.statType) -
+          PROP_STAT_TYPES.indexOf(b.statType)
+      );
     });
 
-  const hasScores = game.status !== "SCHEDULED" && game.awayScore != null && game.homeScore != null;
+  const hasScores =
+    game.status !== "SCHEDULED" &&
+    game.awayScore != null &&
+    game.homeScore != null;
   const awayLeading = hasScores && game.awayScore! > game.homeScore!;
   const homeLeading = hasScores && game.homeScore! > game.awayScore!;
 
@@ -566,15 +784,35 @@ function GameCard({ game }: { game: UpcomingGame }) {
     >
       <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-border">
         <div className="flex items-center gap-2.5 text-sm">
-          <span className={awayLeading || !hasScores ? "text-foreground" : "text-foreground/60"}>
+          <span
+            className={
+              awayLeading || !hasScores
+                ? "text-foreground"
+                : "text-foreground/60"
+            }
+          >
             <TeamLabel team={game.awayTeam} />
           </span>
-          {hasScores && <span className="font-bold tabular-nums text-foreground">{game.awayScore}</span>}
+          {hasScores && (
+            <span className="font-bold tabular-nums text-foreground">
+              {game.awayScore}
+            </span>
+          )}
           <span className="text-foreground/50 text-xs">@</span>
-          <span className={homeLeading || !hasScores ? "text-foreground" : "text-foreground/60"}>
+          <span
+            className={
+              homeLeading || !hasScores
+                ? "text-foreground"
+                : "text-foreground/60"
+            }
+          >
             <TeamLabel team={game.homeTeam} />
           </span>
-          {hasScores && <span className="font-bold tabular-nums text-foreground">{game.homeScore}</span>}
+          {hasScores && (
+            <span className="font-bold tabular-nums text-foreground">
+              {game.homeScore}
+            </span>
+          )}
           {picksCount > 0 && (
             <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
               {picksCount} pick{picksCount === 1 ? "" : "s"}
@@ -605,41 +843,69 @@ function GameCard({ game }: { game: UpcomingGame }) {
         <PickRow
           label="Spread"
           mainLabel={
-            ourSpread && marketSpread && spreadValue
-              ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <TeamLabel team={spreadValue === "home" ? game.homeTeam : game.awayTeam} />
-                    {formatSigned(spreadValue === "home" ? marketSpread.home : marketSpread.away)}
-                    <span className="text-sm font-normal text-foreground/60">
-                      ({formatSigned(spreadValue === "home" ? ourSpread.home : ourSpread.away)})
-                    </span>
-                  </span>
-                )
-              : null
+            ourSpread && marketSpread && spreadValue ? (
+              <span className="inline-flex items-center gap-1.5">
+                <TeamLabel
+                  team={spreadValue === "home" ? game.homeTeam : game.awayTeam}
+                />
+                {formatSigned(
+                  spreadValue === "home"
+                    ? marketSpread.home
+                    : marketSpread.away,
+                )}
+                <span className="text-sm font-normal text-foreground/60">
+                  (
+                  {formatSigned(
+                    spreadValue === "home" ? ourSpread.home : ourSpread.away,
+                  )}
+                  )
+                </span>
+              </span>
+            ) : null
           }
-          odds={spreadValue === "home" ? game.market?.homeSpreadOdds ?? null : game.market?.awaySpreadOdds ?? null}
+          odds={
+            spreadValue === "home"
+              ? (game.market?.homeSpreadOdds ?? null)
+              : (game.market?.awaySpreadOdds ?? null)
+          }
           edgeRatio={spreadEdgeRatio}
           bettable={showSpreadPick}
-          graded={spreadValue !== null ? game.projection?.gradedSpreadCorrect ?? null : null}
+          graded={
+            spreadValue !== null
+              ? (game.projection?.gradedSpreadCorrect ?? null)
+              : null
+          }
         />
         <PickRow
           label="Total"
           mainLabel={
-            ourTotal !== null
-              ? ourTotalLean && game.market?.overUnder != null
-                ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      {formatLine(ourTotalLean, game.market.overUnder)}
-                      <span className="text-sm font-normal text-foreground/60">({ourTotal.toFixed(1)})</span>
-                    </span>
-                  )
-                : ourTotal.toFixed(1)
-              : null
+            ourTotal !== null ? (
+              ourTotalLean && game.market?.overUnder != null ? (
+                <span className="inline-flex items-center gap-1.5">
+                  {formatLine(ourTotalLean, game.market.overUnder)}
+                  <span className="text-sm font-normal text-foreground/60">
+                    ({ourTotal.toFixed(1)})
+                  </span>
+                </span>
+              ) : (
+                ourTotal.toFixed(1)
+              )
+            ) : null
           }
-          odds={ourTotalLean === "OVER" ? game.market?.overOdds ?? null : ourTotalLean === "UNDER" ? game.market?.underOdds ?? null : null}
+          odds={
+            ourTotalLean === "OVER"
+              ? (game.market?.overOdds ?? null)
+              : ourTotalLean === "UNDER"
+                ? (game.market?.underOdds ?? null)
+                : null
+          }
           edgeRatio={totalEdgeRatio}
           bettable={Boolean(game.projection?.totalBettable)}
-          graded={game.market?.overUnder != null ? game.projection?.gradedTotalCorrect ?? null : null}
+          graded={
+            game.market?.overUnder != null
+              ? (game.projection?.gradedTotalCorrect ?? null)
+              : null
+          }
         />
         <p className="text-xs text-foreground/60 pt-2 border-t border-border/60">
           Market{game.market ? ` (${game.market.provider})` : ""}:{" "}
@@ -655,7 +921,9 @@ function GameCard({ game }: { game: UpcomingGame }) {
       {game.playerProps.length > 0 && (
         <div className="px-4 pb-4">
           <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-border mb-2">
-            <span className="text-xs font-medium text-foreground/72">Player props</span>
+            <span className="text-xs font-medium text-foreground/72">
+              Player props
+            </span>
             <div className="flex flex-wrap items-center gap-2">
               <FilterSelect value={statFilter} onChange={setStatFilter}>
                 <option value="all">All stats</option>
@@ -685,7 +953,9 @@ function GameCard({ game }: { game: UpcomingGame }) {
           </div>
           {visibleProps.length === 0 ? (
             <p className="text-sm text-foreground/72">
-              {propsView === "recommended" ? "No player props clear our confidence bar for this game." : "No player props match these filters."}
+              {propsView === "recommended"
+                ? "No player props clear our confidence bar for this game."
+                : "No player props match these filters."}
             </p>
           ) : (
             <table className="w-full border-collapse text-sm">
@@ -709,7 +979,10 @@ function GameCard({ game }: { game: UpcomingGame }) {
                     }`}
                   >
                     <td className="py-1.5 text-foreground/82">
-                      <Link href={`/betting/research/${prop.playerId}?stat=${prop.statType}`} className="hover:text-accent">
+                      <Link
+                        href={`/betting/research/${prop.playerId}?stat=${prop.statType}`}
+                        className="hover:text-accent"
+                      >
                         {prop.playerName}
                       </Link>
                       {prop.ruledOut && (
@@ -719,20 +992,57 @@ function GameCard({ game }: { game: UpcomingGame }) {
                       )}
                     </td>
                     <td className="py-1.5 text-foreground/72">
-                      <span className="sm:hidden">{STAT_LABELS[prop.statType]}</span>
-                      <span className="hidden sm:inline">{STAT_LABELS_FULL[prop.statType]}</span>
-                    </td>
-                    <td className="py-1.5 text-right">
-                      <span className={isRecommendedProp(prop) ? "font-semibold text-foreground" : ""}>
-                        {formatLine(prop.lean, prop.line)}
+                      <span className="sm:hidden">
+                        {STAT_LABELS[prop.statType]}
                       </span>
-                      {isRecommendedProp(prop) && <BettableMark />}
+                      <span className="hidden sm:inline">
+                        {STAT_LABELS_FULL[prop.statType]}
+                      </span>
                     </td>
-                    <td className="py-1.5 text-right text-foreground/72">{formatOdds(prop.odds)}</td>
-                    <td className="py-1.5 text-right text-foreground/72">{prop.projectedValue.toFixed(1)}</td>
+                    <td className="whitespace-nowrap py-1.5 text-right">
+                      <div>
+                        <span
+                          className={
+                            isRecommendedProp(prop)
+                              ? "font-semibold text-foreground"
+                              : ""
+                          }
+                        >
+                          {formatLine(prop.lean, prop.line)}
+                        </span>
+                        {isRecommendedProp(prop) && <BettableMark />}
+                      </div>
+                      {prop.currentLine !== null && (
+                        <div
+                          className="text-[10px] text-foreground/50"
+                          title={`The market's moved to ${formatLine(prop.lean, prop.currentLine)} since we made this pick — that's not what we're graded against`}
+                        >
+                          Now {formatLine(prop.lean, prop.currentLine)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-1.5 text-right text-foreground/72">
+                      {formatOdds(prop.odds)}
+                    </td>
+                    <td className="py-1.5 text-right text-foreground/72">
+                      {prop.projectedValue.toFixed(1)}
+                    </td>
                     <td className="py-1.5 text-right">
+                      {/* Shows "was → now" when the line's moved — the edge the
+                          pick was actually made at vs. its edge at the current
+                          line — unlike `bettable`/Best Bets membership just
+                          below, which stay pinned to the frozen line. */}
                       <ConfidenceMeter
-                        edgeRatio={computeEdgeRatio(prop.projectedValue, prop.line, prop.stdev)}
+                        edgeRatio={computeEdgeRatio(
+                          prop.projectedValue,
+                          prop.currentLine ?? prop.line,
+                          prop.stdev,
+                        )}
+                        originalEdgeRatio={computeEdgeRatio(
+                          prop.projectedValue,
+                          prop.line,
+                          prop.stdev,
+                        )}
                         bettable={isRecommendedProp(prop)}
                       />
                     </td>
@@ -742,7 +1052,10 @@ function GameCard({ game }: { game: UpcomingGame }) {
                       ) : prop.gradedCorrect !== null ? (
                         <>
                           <ResultMark correct={prop.gradedCorrect} />
-                          <span className="text-xs"> {prop.gradedActualValue}</span>
+                          <span className="text-xs">
+                            {" "}
+                            {prop.gradedActualValue}
+                          </span>
                         </>
                       ) : (
                         "—"
@@ -801,7 +1114,13 @@ function DayNav({
         ← Prev day
       </button>
       <span className="font-medium min-w-[8rem] text-center">
-        {isToday ? "Today" : date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+        {isToday
+          ? "Today"
+          : date.toLocaleDateString(undefined, {
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+            })}
       </span>
       <button
         type="button"
@@ -812,7 +1131,11 @@ function DayNav({
         Next day →
       </button>
       {!isToday && (
-        <button type="button" onClick={onJumpToday} className="text-accent hover:underline">
+        <button
+          type="button"
+          onClick={onJumpToday}
+          className="text-accent hover:underline"
+        >
           Jump to today
         </button>
       )}
@@ -867,11 +1190,17 @@ export default function BettingPage() {
     queryFn: () => fetchUpcoming(dateParam!),
     enabled: dateParam !== null,
   });
-  const { data: accuracy } = useQuery({ queryKey: ["betting", "accuracy"], queryFn: fetchAccuracy });
+  const { data: accuracy } = useQuery({
+    queryKey: ["betting", "accuracy"],
+    queryFn: fetchAccuracy,
+  });
 
   // Games already arrive in start-time order from the API — "time" needs
   // no re-sort, only "picks" (most recommendations first) does.
-  const sortedGames = games && sortBy === "picks" ? [...games].sort((a, b) => recommendedCount(b) - recommendedCount(a)) : games;
+  const sortedGames =
+    games && sortBy === "picks"
+      ? [...games].sort((a, b) => recommendedCount(b) - recommendedCount(a))
+      : games;
 
   if (!selectedDate) {
     return <p className="text-foreground/82">Loading…</p>;
@@ -881,7 +1210,9 @@ export default function BettingPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">Bettor&apos;s Heaven</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight">
+            Bettor&apos;s Heaven
+          </h1>
           <p className="text-foreground/72 text-sm mt-1">
             {isToday
               ? "Our own projections for today's games and player props, measured against the market."
@@ -896,14 +1227,22 @@ export default function BettingPage() {
         />
       </div>
 
-      {games && games.length > 0 && <BestBetsStrip games={games} isToday={isToday} />}
+      {games && games.length > 0 && (
+        <BestBetsStrip games={games} isToday={isToday} />
+      )}
 
       {accuracy && <AccuracyStrip accuracy={accuracy} />}
 
-      {gamesError && <p className="text-red-600 dark:text-red-400">Failed to load betting insights.</p>}
+      {gamesError && (
+        <p className="text-red-600 dark:text-red-400">
+          Failed to load betting insights.
+        </p>
+      )}
       {games && games.length === 0 && (
         <p className="text-foreground/72">
-          {isToday ? "No games scheduled today — check back on game day." : "No games that day."}
+          {isToday
+            ? "No games scheduled today — check back on game day."
+            : "No games that day."}
         </p>
       )}
 
@@ -924,7 +1263,9 @@ export default function BettingPage() {
       <div className="space-y-4">
         {gamesLoading
           ? Array.from({ length: 3 }, (_, i) => <GameCardSkeleton key={i} />)
-          : sortedGames?.map((game) => <GameCard key={game.espnId} game={game} />)}
+          : sortedGames?.map((game) => (
+              <GameCard key={game.espnId} game={game} />
+            ))}
       </div>
     </div>
   );
