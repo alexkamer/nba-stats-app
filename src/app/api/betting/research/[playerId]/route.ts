@@ -22,9 +22,32 @@ import { NextResponse } from "next/server";
 // against and the games that led up to it, rather than requiring (and
 // silently 404ing without) a live prop today for a player whose game is
 // long over.
+//
+// A player with neither a live prop today nor a `?game=` anchor falls
+// into a third, "browse" mode (buildBrowseResponse) instead of 404ing —
+// still lets a visitor look at the full gamelog for any numeric stat and
+// the player's current health status; there's no market line to grade
+// against here, so the client sets its own line locally instead.
 
 type Filter = "all" | "home" | "away" | "opponent";
 type PropResult = "OVER" | "UNDER" | "PUSH";
+
+// The subset of PropStatType with a numeric over/under line — excludes
+// DOUBLE_DOUBLE/TRIPLE_DOUBLE, which are binary yes/no props a user
+// couldn't meaningfully set "their own line" for anyway (same exclusion
+// the live betting page's own PROP_STAT_TYPES already makes).
+const NUMERIC_STAT_TYPES: PropStatType[] = [
+  "POINTS",
+  "REBOUNDS",
+  "ASSISTS",
+  "THREE_POINTERS_MADE",
+  "STEALS",
+  "BLOCKS",
+  "POINTS_ASSISTS",
+  "POINTS_REBOUNDS",
+  "REBOUNDS_ASSISTS",
+  "POINTS_REBOUNDS_ASSISTS",
+];
 
 const TEAM_SELECT = {
   id: true,
@@ -41,6 +64,35 @@ function todayWindow() {
   endOfDay.setDate(endOfDay.getDate() + 1);
   return { startOfDay, endOfDay };
 }
+
+// Shared shape for a player's game-by-game boxscore history — used by
+// both the live/historical branch below and buildBrowseResponse, so the
+// two can't quietly drift apart.
+const HISTORY_ROW_SELECT = {
+  teamId: true,
+  points: true,
+  rebounds: true,
+  assists: true,
+  threeMade: true,
+  steals: true,
+  blocks: true,
+  minutes: true,
+  fgMade: true,
+  fgAtt: true,
+  game: {
+    select: {
+      espnId: true,
+      date: true,
+      homeTeamId: true,
+      awayTeamId: true,
+      homeTeam: { select: TEAM_SELECT },
+      awayTeam: { select: TEAM_SELECT },
+      seasonId: true,
+      seasonType: true,
+      season: { select: { year: true } },
+    },
+  },
+} as const;
 
 function compareToLine(value: number, line: number): PropResult {
   if (value > line) return "OVER";
@@ -76,6 +128,208 @@ function summarizeWindow(
         ? `Only ${games} of ${windowSize} games available`
         : null,
   };
+}
+
+/** Browse mode: a player with no live prop today and no `?game=` anchor
+ * still gets their full gamelog for any numeric stat, their current
+ * health status, and every season/filter option the live/historical
+ * branch offers — just with no market line, since there isn't one. The
+ * client is expected to apply its own locally-chosen line to grade
+ * `history`/`grid`'s raw `value`s itself (this route always returns
+ * `result: null` here, and zeroed `hitRates`, since there's nothing
+ * server-side to grade against). */
+async function buildBrowseResponse(
+  playerId: number,
+  filter: Filter,
+  requestedSeasonId: number | null,
+  statParam: string | null,
+): Promise<NextResponse> {
+  const player = await prisma.player.findUnique({
+    where: { id: playerId },
+    select: {
+      id: true,
+      espnId: true,
+      displayName: true,
+      headshotUrl: true,
+      currentTeamId: true,
+    },
+  });
+  if (!player) {
+    return NextResponse.json({ error: "player_not_found" }, { status: 404 });
+  }
+
+  const team = player.currentTeamId
+    ? await prisma.team.findUnique({
+        where: { id: player.currentTeamId },
+        select: TEAM_SELECT,
+      })
+    : null;
+
+  // The player's next scheduled game, purely for matchup/health-status
+  // context — there's no prop tied to it, so no line/odds/projection
+  // comes along with it the way the live branch's anchor game does.
+  const nextGame = player.currentTeamId
+    ? await prisma.game.findFirst({
+        where: {
+          status: "SCHEDULED",
+          date: { gte: new Date() },
+          OR: [
+            { homeTeamId: player.currentTeamId },
+            { awayTeamId: player.currentTeamId },
+          ],
+        },
+        orderBy: { date: "asc" },
+        select: {
+          id: true,
+          espnId: true,
+          date: true,
+          homeTeamId: true,
+          homeTeam: { select: TEAM_SELECT },
+          awayTeam: { select: TEAM_SELECT },
+        },
+      })
+    : null;
+  const isHomeNext = nextGame
+    ? player.currentTeamId === nextGame.homeTeamId
+    : null;
+  const opponentTeam = nextGame
+    ? isHomeNext
+      ? nextGame.awayTeam
+      : nextGame.homeTeam
+    : null;
+
+  const availabilityRow = nextGame
+    ? await prisma.playerAvailability.findUnique({
+        where: { gameId_playerId: { gameId: nextGame.id, playerId } },
+        select: { status: true, comment: true },
+      })
+    : null;
+
+  const statType: PropStatType =
+    statParam && NUMERIC_STAT_TYPES.includes(statParam as PropStatType)
+      ? (statParam as PropStatType)
+      : NUMERIC_STAT_TYPES[0];
+
+  const historyRows = await prisma.playerGameStat.findMany({
+    where: { playerId, points: { not: null }, game: { status: "FINAL" } },
+    orderBy: { game: { date: "desc" } },
+    select: HISTORY_ROW_SELECT,
+  });
+
+  const seasonsAvailable = Array.from(
+    new Map(
+      historyRows
+        .filter((row) => row.game.seasonType === "REGULAR")
+        .map((row) => [
+          row.game.seasonId,
+          { id: row.game.seasonId, year: row.game.season.year },
+        ]),
+    ).values(),
+  ).sort((a, b) => b.year - a.year);
+
+  const defaultSeason =
+    seasonsAvailable.find((s) => s.year === currentSeasonYear()) ??
+    seasonsAvailable[0] ??
+    null;
+  const selectedSeasonId =
+    requestedSeasonId != null &&
+    seasonsAvailable.some((s) => s.id === requestedSeasonId)
+      ? requestedSeasonId
+      : (defaultSeason?.id ?? null);
+
+  const seasonScopedRows =
+    filter === "opponent" || selectedSeasonId == null
+      ? historyRows
+      : historyRows.filter((row) => row.game.seasonId === selectedSeasonId);
+
+  const filterPredicate = (g: {
+    isHome: boolean;
+    opponent: { id: number };
+  }) => {
+    if (filter === "home") return g.isHome;
+    if (filter === "away") return !g.isHome;
+    if (filter === "opponent")
+      return opponentTeam !== null && g.opponent.id === opponentTeam.id;
+    return true;
+  };
+
+  const fullHistory = seasonScopedRows.map((row) => {
+    const raw: RawPlayerGameRow = row;
+    const value = extractStatValue(statType, raw);
+    const isHome = row.teamId === row.game.homeTeamId;
+    const opponent = isHome ? row.game.awayTeam : row.game.homeTeam;
+    return {
+      gameEspnId: row.game.espnId,
+      date: row.game.date,
+      isHome,
+      opponent,
+      value,
+      result: null as PropResult | null,
+    };
+  });
+  const filteredHistory = fullHistory.filter(filterPredicate);
+
+  const zeroHitRates = {
+    l5: summarizeWindow([], 5),
+    l10: summarizeWindow([], 10),
+    l20: summarizeWindow([], 20),
+    season: summarizeWindow([], null),
+  };
+
+  const grid = seasonScopedRows
+    .map((row) => {
+      const raw: RawPlayerGameRow = row;
+      const isHome = row.teamId === row.game.homeTeamId;
+      const opponent = isHome ? row.game.awayTeam : row.game.homeTeam;
+      return { row, raw, isHome, opponent };
+    })
+    .filter(filterPredicate)
+    .map(({ row, raw, isHome, opponent }) => ({
+      gameEspnId: row.game.espnId,
+      date: row.game.date,
+      isHome,
+      opponent,
+      minutes: row.minutes,
+      fgMade: row.fgMade,
+      fgAtt: row.fgAtt,
+      cells: NUMERIC_STAT_TYPES.map((stat) => ({
+        statType: stat,
+        value: extractStatValue(stat, raw),
+        result: null as PropResult | null,
+      })),
+    }));
+
+  return NextResponse.json({
+    player: {
+      id: player.id,
+      espnId: player.espnId,
+      displayName: player.displayName,
+      headshotUrl: player.headshotUrl,
+    },
+    game: nextGame
+      ? {
+          espnId: nextGame.espnId,
+          date: nextGame.date,
+          isHomeToday: isHomeNext,
+        }
+      : null,
+    historical: false,
+    browse: true,
+    availability: availabilityRow,
+    team,
+    opponent: opponentTeam,
+    statType,
+    statTypes: NUMERIC_STAT_TYPES,
+    line: null,
+    odds: { over: null, under: null },
+    projection: null,
+    filter,
+    seasons: seasonsAvailable,
+    selectedSeasonId,
+    history: filteredHistory,
+    hitRates: zeroHitRates,
+    grid,
+  });
 }
 
 export async function GET(
@@ -141,9 +395,19 @@ export async function GET(
     });
 
     if (livePropOdds.length === 0) {
-      return NextResponse.json(
-        { error: gameParam ? "no_prop_for_game" : "no_live_prop" },
-        { status: 404 },
+      if (gameParam) {
+        return NextResponse.json(
+          { error: "no_prop_for_game" },
+          { status: 404 },
+        );
+      }
+      // No live prop today and no historical anchor — browse mode instead
+      // of a dead-end 404 (see buildBrowseResponse).
+      return buildBrowseResponse(
+        playerId,
+        filter,
+        requestedSeasonId,
+        statParam,
       );
     }
 
@@ -192,6 +456,15 @@ export async function GET(
     const team = isHomeToday ? game.homeTeam : game.awayTeam;
     const opponentTeam = isHomeToday ? game.awayTeam : game.homeTeam;
 
+    // Pre-tip availability snapshot for this exact game (see
+    // player-availability-tracking) — still meaningful in historical mode
+    // as "their status going into that game," since it's frozen once the
+    // game's no longer SCHEDULED, not deleted.
+    const availabilityRow = await prisma.playerAvailability.findUnique({
+      where: { gameId_playerId: { gameId: game.id, playerId } },
+      select: { status: true, comment: true },
+    });
+
     const historyRows = await prisma.playerGameStat.findMany({
       where: {
         playerId,
@@ -202,31 +475,7 @@ export async function GET(
         },
       },
       orderBy: { game: { date: "desc" } },
-      select: {
-        teamId: true,
-        points: true,
-        rebounds: true,
-        assists: true,
-        threeMade: true,
-        steals: true,
-        blocks: true,
-        minutes: true,
-        fgMade: true,
-        fgAtt: true,
-        game: {
-          select: {
-            espnId: true,
-            date: true,
-            homeTeamId: true,
-            awayTeamId: true,
-            homeTeam: { select: TEAM_SELECT },
-            awayTeam: { select: TEAM_SELECT },
-            seasonId: true,
-            seasonType: true,
-            season: { select: { year: true } },
-          },
-        },
-      },
+      select: HISTORY_ROW_SELECT,
     });
 
     // Regular-season games only populate the season dropdown — preseason
@@ -337,6 +586,7 @@ export async function GET(
       },
       game: { espnId: game.espnId, date: game.date, isHomeToday },
       historical: Boolean(gameParam),
+      availability: availabilityRow,
       team,
       opponent: opponentTeam,
       statType,

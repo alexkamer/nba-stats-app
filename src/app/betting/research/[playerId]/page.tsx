@@ -62,12 +62,22 @@ interface ResearchData {
     displayName: string;
     headshotUrl: string | null;
   };
-  game: { espnId: string; date: string; isHomeToday: boolean };
+  // Null in browse mode when the player has no upcoming game at all —
+  // see `browse` below.
+  game: { espnId: string; date: string; isHomeToday: boolean | null } | null;
   // True when scoped to one specific already-played game (via `?game=`)
   // rather than today's live prop — see fetchResearch's `game` param.
   historical: boolean;
-  team: TeamSummary;
-  opponent: TeamSummary;
+  // True when the player has no live prop today and no historical anchor
+  // — still shows their full gamelog and health status, but `line` is
+  // always null (no market line exists to show), so the page lets the
+  // user set their own instead (see customLine state below).
+  browse?: boolean;
+  availability: { status: string; comment: string | null } | null;
+  // Null only in browse mode for a player with no current team at all
+  // (e.g. unrostered) — every other mode always has one.
+  team: TeamSummary | null;
+  opponent: TeamSummary | null;
   statType: string;
   statTypes: string[];
   line: number | null;
@@ -155,6 +165,37 @@ function formatLine(line: number): string {
   return Number.isInteger(line) ? `${line}` : line.toFixed(1);
 }
 
+/** Same grading the server does for a market line (see the route's own
+ * `compareToLine`) — duplicated here for browse mode, where there's no
+ * server-side line to grade against and the user's own locally-chosen
+ * one has to be applied client-side instead. */
+function compareToLineClient(value: number, line: number): PropResult {
+  if (value > line) return "OVER";
+  if (value < line) return "UNDER";
+  return "PUSH";
+}
+
+/** Same window-summarizing the server does (see the route's own
+ * `summarizeWindow`) — duplicated for the same reason as
+ * `compareToLineClient`. */
+function summarizeWindowClient(
+  results: PropResult[],
+  windowSize: number | null,
+): HitRateSummary {
+  const windowed = windowSize === null ? results : results.slice(0, windowSize);
+  const games = windowed.length;
+  return {
+    games,
+    over: windowed.filter((r) => r === "OVER").length,
+    under: windowed.filter((r) => r === "UNDER").length,
+    push: windowed.filter((r) => r === "PUSH").length,
+    sampleSizeNote:
+      windowSize !== null && games < windowSize
+        ? `Only ${games} of ${windowSize} games available`
+        : null,
+  };
+}
+
 /** American odds, e.g. +150 / -110 — same house convention as the game and
  * betting pages' own `formatSigned` (each keeps a local copy). */
 function formatOdds(odds: number | null): string {
@@ -239,6 +280,42 @@ function TabList<T extends string>({
         </button>
       ))}
     </div>
+  );
+}
+
+/** Colors for the health-status badge — same red/amber/green language as
+ * the "OUT" tag already used on the betting page's own props table
+ * (src/app/betting/page.tsx), extended across the rest of ESPN's injury
+ * report statuses. */
+function availabilityColor(status: string): string {
+  switch (status) {
+    case "OUT":
+    case "DOUBTFUL":
+      return "var(--color-red-500, #ef4444)";
+    case "QUESTIONABLE":
+      return "var(--color-amber-500, #f59e0b)";
+    case "PROBABLE":
+    case "AVAILABLE":
+      return "var(--color-emerald-500, #10b981)";
+    default:
+      return "var(--border)";
+  }
+}
+
+function AvailabilityBadge({
+  availability,
+}: {
+  availability: { status: string; comment: string | null };
+}) {
+  const color = availabilityColor(availability.status);
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+      style={{ backgroundColor: `${color}1a`, color }}
+      title={availability.comment ?? undefined}
+    >
+      {availability.status}
+    </span>
   );
 }
 
@@ -647,6 +724,16 @@ function PlayerPropResearchContent() {
   // the user actually picks a season from the dropdown, this is set and
   // sent explicitly so the choice survives the stat/filter it's combined with.
   const [seasonId, setSeasonId] = useState<number | null>(null);
+  // Browse mode only (no market line exists to default to) — the line the
+  // user's chosen to grade the gamelog against themselves. Reset whenever
+  // the stat changes, since a number that made sense for points doesn't
+  // for blocks (see handleStatChange below).
+  const [customLine, setCustomLine] = useState<number | null>(null);
+
+  function handleStatChange(nextStat: string) {
+    setStat(nextStat);
+    setCustomLine(null);
+  }
 
   const { data, isLoading, error } = useQuery({
     queryKey: [
@@ -678,7 +765,7 @@ function PlayerPropResearchContent() {
         <p className="text-foreground/72 text-sm">
           {historicalGame
             ? "No prop was tracked for this player in that game."
-            : "This player has no live prop on today's slate."}
+            : "Player not found."}
         </p>
         <Link
           href="/betting"
@@ -691,7 +778,7 @@ function PlayerPropResearchContent() {
   }
 
   const { accent: accentColor, accentForeground } = getTeamAccent(
-    data.team.color,
+    data.team?.color ?? null,
     resolvedTheme === "dark" ? "dark" : "light",
   );
   // Fixed order (not reordered to put the selected stat first) so the tabs
@@ -715,9 +802,60 @@ function PlayerPropResearchContent() {
     .split(/\s+/);
   const lastName = lastNameParts.join(" ");
 
+  // No market line (always true in browse mode) — grade the gamelog
+  // against whatever the user's typed into the "Your line" input instead,
+  // entirely client-side, since the server has nothing to grade against
+  // either (see buildBrowseResponse's zeroed `hitRates`/null `result`s).
+  const canCustomizeLine = data.line === null;
+  const effectiveLine = data.line ?? customLine;
+  const history =
+    effectiveLine !== null
+      ? data.history.map((g) => ({
+          ...g,
+          result: compareToLineClient(g.value, effectiveLine),
+        }))
+      : data.history;
+  const grid =
+    effectiveLine !== null
+      ? data.grid.map((row) => ({
+          ...row,
+          cells: row.cells.map((cell) =>
+            cell.statType === data.statType
+              ? {
+                  ...cell,
+                  result: compareToLineClient(cell.value, effectiveLine),
+                }
+              : cell,
+          ),
+        }))
+      : data.grid;
+  const hitRates =
+    effectiveLine !== null
+      ? (() => {
+          const results = history
+            .filter((g) => g.result !== null)
+            .map((g) => g.result!);
+          return {
+            l5: summarizeWindowClient(results, 5),
+            l10: summarizeWindowClient(results, 10),
+            l20: summarizeWindowClient(results, 20),
+            season: summarizeWindowClient(results, null),
+          };
+        })()
+      : data.hitRates;
+
   return (
     <div className="space-y-6">
-      {data.historical && (
+      {data.browse && (
+        <p className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs text-foreground/72">
+          No live prop for this player today — set your own line in the{" "}
+          <span className="font-medium text-foreground">
+            {STAT_LABELS[data.statType] ?? data.statType} line
+          </span>{" "}
+          box above to grade their gamelog against it.
+        </p>
+      )}
+      {data.historical && data.game && (
         <p className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs text-foreground/72">
           Viewing this pick as it was made for{" "}
           <span className="font-medium text-foreground">
@@ -745,7 +883,7 @@ function PlayerPropResearchContent() {
                 className="h-full w-full object-cover"
               />
             ) : (
-              data.team.logoUrl && (
+              data.team?.logoUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={data.team.logoUrl}
@@ -757,53 +895,90 @@ function PlayerPropResearchContent() {
           </div>
 
           <div className="flex flex-1 flex-col min-w-0 leading-tight">
-            <Link
-              href={`/players/${data.player.espnId}`}
-              className="truncate font-semibold text-foreground hover:text-accent"
-            >
-              {firstName} {lastName}
-            </Link>
+            <span className="flex items-center gap-1.5">
+              <Link
+                href={`/players/${data.player.espnId}`}
+                className="truncate font-semibold text-foreground hover:text-accent"
+              >
+                {firstName} {lastName}
+              </Link>
+              {data.availability && (
+                <AvailabilityBadge availability={data.availability} />
+              )}
+            </span>
             <span className="truncate text-xs text-foreground/72">
-              {data.team.abbreviation} {data.game.isHomeToday ? "vs" : "@"}{" "}
-              {data.opponent.abbreviation} ·{" "}
-              {new Date(data.game.date).toLocaleString(undefined, {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-              })}
+              {data.game ? (
+                <>
+                  {data.team?.abbreviation ?? "—"}{" "}
+                  {data.game.isHomeToday ? "vs" : "@"}{" "}
+                  {data.opponent?.abbreviation ?? "—"} ·{" "}
+                  {new Date(data.game.date).toLocaleString(undefined, {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                  })}
+                  {data.browse && " (next game)"}
+                </>
+              ) : (
+                "No upcoming game scheduled"
+              )}
             </span>
           </div>
 
           <div className="flex items-center gap-4 text-sm basis-full sm:basis-auto sm:shrink-0">
-            <span className="text-foreground/72">
-              {STAT_LABELS[data.statType] ?? data.statType}{" "}
-              <span className="font-semibold text-foreground">
-                {data.line !== null ? formatLine(data.line) : "—"}
+            {canCustomizeLine ? (
+              <label className="flex items-center gap-1.5 text-foreground/72">
+                <span>{STAT_LABELS[data.statType] ?? data.statType} line</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.5"
+                  placeholder="Set a line"
+                  value={customLine ?? ""}
+                  onChange={(e) =>
+                    setCustomLine(
+                      e.target.value === "" ? null : Number(e.target.value),
+                    )
+                  }
+                  className="w-24 rounded-md border-2 px-2 py-1 text-sm font-semibold text-foreground focus:outline-none"
+                  style={{ borderColor: accentColor }}
+                />
+              </label>
+            ) : (
+              <span className="text-foreground/72">
+                {STAT_LABELS[data.statType] ?? data.statType}{" "}
+                <span className="font-semibold text-foreground">
+                  {data.line !== null ? formatLine(data.line) : "—"}
+                </span>
               </span>
-            </span>
-            <span className="hidden sm:inline text-foreground/72">
-              Odds{" "}
-              <span className="font-medium text-foreground">
-                {formatOdds(data.odds.over)} / {formatOdds(data.odds.under)}
-              </span>
-            </span>
-            <span className="hidden sm:inline text-foreground/72">
-              Our #{" "}
-              <span className="font-medium text-foreground">
-                {data.projection
-                  ? formatLine(data.projection.projectedValue)
-                  : "—"}
-              </span>
-              {data.projection?.bettable && (
-                <span style={{ color: accentColor }}> ●</span>
-              )}
-            </span>
-            <span className="text-foreground/72">
-              Confidence{" "}
-              <span className="font-medium" style={{ color: accentColor }}>
-                {edgeRatio !== null ? `${edgeRatio.toFixed(1)}σ` : "—"}
-              </span>
-            </span>
+            )}
+            {!canCustomizeLine && (
+              <>
+                <span className="hidden sm:inline text-foreground/72">
+                  Odds{" "}
+                  <span className="font-medium text-foreground">
+                    {formatOdds(data.odds.over)} / {formatOdds(data.odds.under)}
+                  </span>
+                </span>
+                <span className="hidden sm:inline text-foreground/72">
+                  Our #{" "}
+                  <span className="font-medium text-foreground">
+                    {data.projection
+                      ? formatLine(data.projection.projectedValue)
+                      : "—"}
+                  </span>
+                  {data.projection?.bettable && (
+                    <span style={{ color: accentColor }}> ●</span>
+                  )}
+                </span>
+                <span className="text-foreground/72">
+                  Confidence{" "}
+                  <span className="font-medium" style={{ color: accentColor }}>
+                    {edgeRatio !== null ? `${edgeRatio.toFixed(1)}σ` : "—"}
+                  </span>
+                </span>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -812,7 +987,7 @@ function PlayerPropResearchContent() {
         {statOptions.length > 1 && (
           <TabList
             value={data.statType}
-            onChange={setStat}
+            onChange={handleStatChange}
             options={statOptions}
             accentColor={accentColor}
             accentForeground={accentForeground}
@@ -830,10 +1005,14 @@ function PlayerPropResearchContent() {
                 { value: "all", label: "All" },
                 { value: "home", label: "Home" },
                 { value: "away", label: "Away" },
-                {
-                  value: "opponent",
-                  label: `vs ${data.opponent.abbreviation}`,
-                },
+                ...(data.opponent
+                  ? [
+                      {
+                        value: "opponent" as const,
+                        label: `vs ${data.opponent.abbreviation}`,
+                      },
+                    ]
+                  : []),
               ]}
             />
             {data.seasons.length > 1 && (
@@ -853,22 +1032,22 @@ function PlayerPropResearchContent() {
           <div className="flex flex-wrap gap-2 mb-5">
             <HitRateChip
               label="L5"
-              summary={data.hitRates.l5}
+              summary={hitRates.l5}
               accentColor={accentColor}
             />
             <HitRateChip
               label="L10"
-              summary={data.hitRates.l10}
+              summary={hitRates.l10}
               accentColor={accentColor}
             />
             <HitRateChip
               label="L20"
-              summary={data.hitRates.l20}
+              summary={hitRates.l20}
               accentColor={accentColor}
             />
             <HitRateChip
               label="Season"
-              summary={data.hitRates.season}
+              summary={hitRates.season}
               accentColor={accentColor}
             />
           </div>
@@ -877,19 +1056,25 @@ function PlayerPropResearchContent() {
             <summary className="cursor-pointer text-sm font-medium text-foreground/72 hover:text-foreground">
               Trend chart — {STAT_LABELS[data.statType] ?? data.statType}
             </summary>
+            {canCustomizeLine && effectiveLine === null && (
+              <p className="pt-2 text-xs text-foreground/60">
+                No market line for this stat — set your own line above to grade
+                these games (bars stay neutral until you do).
+              </p>
+            )}
             <HistoryChart
-              history={data.history}
-              line={data.line}
+              history={history}
+              line={effectiveLine}
               projection={data.projection?.projectedValue ?? null}
               accentColor={accentColor}
             />
           </details>
 
           <HitRateGrid
-            rows={data.grid}
+            rows={grid}
             statTypes={gridStatTypes}
             selectedStat={data.statType}
-            onSelectStat={setStat}
+            onSelectStat={handleStatChange}
             accentColor={accentColor}
           />
         </SectionCard>
