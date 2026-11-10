@@ -115,6 +115,21 @@ function formatMoney(value: number): string {
   return `${sign}$${Math.abs(value).toFixed(2)}`;
 }
 
+/** Same reduction as `lib/accuracy/compute-accuracy.ts`'s `computeAccuracy`
+ * — kept as a local copy since that module is server-only (imported by the
+ * API route, not safe to pull into a client bundle) and this is just a
+ * three-line fold over already-fetched picks. */
+function computeAccuracySummary(
+  correctValues: boolean[],
+): { graded: number; correct: number; hitRate: number | null } {
+  const correct = correctValues.filter(Boolean).length;
+  return {
+    graded: correctValues.length,
+    correct,
+    hitRate: correctValues.length > 0 ? correct / correctValues.length : null,
+  };
+}
+
 type ChartMode = "bar" | "line";
 
 interface DayPnl {
@@ -544,27 +559,35 @@ function AccuracyVerificationContent() {
     enabled: Boolean(bucket),
   });
 
-  const hitRatePct =
-    data?.summary.hitRate !== null && data?.summary.hitRate !== undefined
-      ? data.summary.hitRate * 100
-      : null;
   const filteredPicks = useMemo(() => {
     if (!data) return [];
     if (!selectedDay) return data.picks;
     return data.picks.filter((p) => toDayKey(p.date) === selectedDay);
   }, [data, selectedDay]);
+  // Summary tile reflects only the selected day's picks once a bar is
+  // clicked — falls back to the bucket-wide summary from the API when
+  // nothing is selected, rather than recomputing the unfiltered case.
+  const summary = useMemo(() => {
+    if (!data) return null;
+    if (!selectedDay) return data.summary;
+    return computeAccuracySummary(filteredPicks.map((p) => p.correct));
+  }, [data, selectedDay, filteredPicks]);
+  const hitRatePct =
+    summary?.hitRate !== null && summary?.hitRate !== undefined
+      ? summary.hitRate * 100
+      : null;
   const picks = useMemo(
     () => filteredPicks.slice(0, visible),
     [filteredPicks, visible],
   );
-  // Net P/L across every graded pick (not just the currently-visible page),
-  // so the summary tile always reflects the whole bucket regardless of how
-  // far the "Show more" paging has gone.
+  // Net P/L across every graded pick in the current scope (the full bucket,
+  // or just the selected day) — not just the currently-visible page, so the
+  // summary tile always reflects the whole scope regardless of how far the
+  // "Show more" paging has gone.
   const netPnl = useMemo(() => {
-    if (!data) return null;
     let total = 0;
     let settled = 0;
-    for (const p of data.picks) {
+    for (const p of filteredPicks) {
       const pnl = settlePnl(p.odds, p.correct, unitSize);
       if (pnl !== null) {
         total += pnl;
@@ -572,7 +595,7 @@ function AccuracyVerificationContent() {
       }
     }
     return settled > 0 ? { total, settled } : null;
-  }, [data, unitSize]);
+  }, [filteredPicks, unitSize]);
   const dailyPnl = useMemo(
     () => (data ? buildDailyPnl(data.picks, unitSize) : []),
     [data, unitSize],
@@ -643,7 +666,7 @@ function AccuracyVerificationContent() {
                 Correct
               </p>
               <p className="font-display text-3xl font-extrabold leading-none tracking-tight text-foreground">
-                {data.summary.correct}
+                {summary?.correct ?? 0}
               </p>
             </div>
             <div className="min-w-[8rem] border-l border-border pl-4 text-center">
@@ -651,7 +674,7 @@ function AccuracyVerificationContent() {
                 Graded picks
               </p>
               <p className="font-display text-3xl font-extrabold leading-none tracking-tight text-foreground">
-                {data.summary.graded}
+                {summary?.graded ?? 0}
               </p>
             </div>
             <div className="min-w-[8rem] border-l border-border pl-4 text-center">
@@ -684,21 +707,22 @@ function AccuracyVerificationContent() {
                 <input
                   id="unit-size"
                   type="number"
-                  min={1}
-                  step={1}
+                  min={0.1}
+                  step={0.1}
                   value={unitSize}
                   onChange={(e) =>
-                    setUnitSize(Math.max(1, Number(e.target.value) || 1))
+                    setUnitSize(Math.max(0.1, Number(e.target.value) || 0.1))
                   }
                   className="w-20 rounded-md border border-border bg-surface-muted px-2 py-1 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-accent"
                 />
               </div>
             </div>
             <p className="flex-1 self-center text-xs text-foreground/60">
-              This matches the number shown on the /betting accuracy strip
-              exactly — every row below counted once toward it. P/L assumes
-              every pick was bet at the same flat unit size, settled at the odds
-              shown.
+              {selectedDay
+                ? "Scoped to the selected day — clear the filter to see the full-bucket numbers that match the /betting accuracy strip."
+                : "This matches the number shown on the /betting accuracy strip exactly — every row below counted once toward it."}{" "}
+              P/L assumes every pick was bet at the same flat unit size,
+              settled at the odds shown.
             </p>
           </div>
 
