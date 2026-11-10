@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  gradeEspnPredictorSpread,
   gradeGameProjection,
   gradeMarketFavorite,
   gradePredictorSnapshot,
@@ -76,4 +77,22 @@ test("gradeTotalCoverage returns a push (null) when there's no market line, or o
   assert.equal(gradeTotalCoverage(230, null, 225).correct, null);
   assert.equal(gradeTotalCoverage(220, 220, 225).correct, null);
   assert.equal(gradeTotalCoverage(230, 220, 220).correct, null);
+});
+
+// Market has the home side favored by 14.5; ESPN leans home too (60/40).
+test("gradeEspnPredictorSpread covers when ESPN's favored side beats the market's margin", () => {
+  const correctCall = gradeEspnPredictorSpread(60, 40, 14.5, 20); // home won by 20, cleared 14.5
+  assert.equal(correctCall.correct, true);
+  const incorrectCall = gradeEspnPredictorSpread(60, 40, 14.5, 10); // home won by only 10, didn't cover
+  assert.equal(incorrectCall.correct, false);
+});
+
+test("gradeEspnPredictorSpread grades the away side when ESPN favors it", () => {
+  const result = gradeEspnPredictorSpread(40, 60, 14.5, -2); // away favored by ESPN, away lost by only 2 -> away covered +14.5
+  assert.equal(result.correct, true);
+});
+
+test("gradeEspnPredictorSpread returns a push (null) when there's no market line or the result lands exactly on it", () => {
+  assert.equal(gradeEspnPredictorSpread(60, 40, null, 10).correct, null);
+  assert.equal(gradeEspnPredictorSpread(60, 40, 14.5, 14.5).correct, null);
 });

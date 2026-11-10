@@ -37,7 +37,11 @@ export function gradeSpreadCoverage(
   marketMargin: number | null,
   actualMargin: number,
 ): CoverGradeResult {
-  if (marketMargin === null || projectedMargin === marketMargin || actualMargin === marketMargin) {
+  if (
+    marketMargin === null ||
+    projectedMargin === marketMargin ||
+    actualMargin === marketMargin
+  ) {
     return { correct: null };
   }
   const pickedHome = projectedMargin > marketMargin;
@@ -51,7 +55,11 @@ export function gradeTotalCoverage(
   marketTotal: number | null,
   actualTotal: number,
 ): CoverGradeResult {
-  if (marketTotal === null || projectedTotal === marketTotal || actualTotal === marketTotal) {
+  if (
+    marketTotal === null ||
+    projectedTotal === marketTotal ||
+    actualTotal === marketTotal
+  ) {
     return { correct: null };
   }
   const pickedOver = projectedTotal > marketTotal;
@@ -78,10 +86,31 @@ export function gradeMarketFavorite(
   actualHomeScore: number,
   actualAwayScore: number,
 ): MarketFavoriteGradeResult {
-  if (marketMarginAtPick === null || marketMarginAtPick === 0) return { correct: null };
+  if (marketMarginAtPick === null || marketMarginAtPick === 0)
+    return { correct: null };
   const homeFavored = marketMarginAtPick > 0;
   const homeWon = actualHomeScore > actualAwayScore;
   return { correct: homeFavored === homeWon };
+}
+
+/** Grades ESPN's predictor against the spread — a baseline distinct from
+ * `gradeSpreadCoverage` (our own model's spread pick), since ESPN's
+ * `predictor` only exposes win probability, not a projected margin (see
+ * ingest/mappers/predictor.ts). The side ESPN gives the higher win
+ * probability to stands in for a margin pick here; whether that side
+ * actually covered is graded the same way as any other spread pick. */
+export function gradeEspnPredictorSpread(
+  homeWinPct: number,
+  awayWinPct: number,
+  marketMarginAtPick: number | null,
+  actualMargin: number,
+): CoverGradeResult {
+  if (marketMarginAtPick === null || actualMargin === marketMarginAtPick) {
+    return { correct: null };
+  }
+  const pickedHome = homeWinPct >= awayWinPct;
+  const homeCovered = actualMargin > marketMarginAtPick;
+  return { correct: pickedHome === homeCovered };
 }
 
 /** Grades a snapshotted ESPN `predictor` (win probabilities, not a score

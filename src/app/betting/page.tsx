@@ -110,6 +110,8 @@ interface AccuracyBucket {
 interface AccuracySummary {
   ourModel: {
     game: AccuracyBucket;
+    spread: AccuracyBucket;
+    bettableSpread: AccuracyBucket;
     props: AccuracyBucket;
     bettableProps: AccuracyBucket;
     highConfidenceProps: AccuracyBucket;
@@ -117,6 +119,7 @@ interface AccuracySummary {
     overall: AccuracyBucket;
   };
   espnPredictor: AccuracyBucket;
+  espnPredictorSpread: AccuracyBucket;
 }
 
 async function fetchUpcoming(date: string): Promise<UpcomingGame[]> {
@@ -285,6 +288,42 @@ function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
         }
         caption={`${accuracy.ourModel.overall.correct}/${accuracy.ourModel.overall.graded}`}
       />
+      {accuracy.ourModel.game.graded > 0 && (
+        <StatBlock
+          href="/betting/accuracy/game-winners"
+          label="Our model, game picks"
+          value={
+            accuracy.ourModel.game.hitRate !== null
+              ? `${(accuracy.ourModel.game.hitRate * 100).toFixed(0)}%`
+              : null
+          }
+          caption={`${accuracy.ourModel.game.correct}/${accuracy.ourModel.game.graded}`}
+        />
+      )}
+      {accuracy.ourModel.spread.graded > 0 && (
+        <StatBlock
+          href="/betting/accuracy/spread-all"
+          label="Our model, all spread picks"
+          value={
+            accuracy.ourModel.spread.hitRate !== null
+              ? `${(accuracy.ourModel.spread.hitRate * 100).toFixed(0)}%`
+              : null
+          }
+          caption={`${accuracy.ourModel.spread.correct}/${accuracy.ourModel.spread.graded}`}
+        />
+      )}
+      {accuracy.ourModel.bettableSpread.graded > 0 && (
+        <StatBlock
+          href="/betting/accuracy/spread"
+          label="Our model, spread picks"
+          value={
+            accuracy.ourModel.bettableSpread.hitRate !== null
+              ? `${(accuracy.ourModel.bettableSpread.hitRate * 100).toFixed(0)}%`
+              : null
+          }
+          caption={`${accuracy.ourModel.bettableSpread.correct}/${accuracy.ourModel.bettableSpread.graded}`}
+        />
+      )}
       <StatBlock
         href="/betting/accuracy/espn"
         label="ESPN's predictor"
@@ -295,6 +334,18 @@ function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
         }
         caption={`${accuracy.espnPredictor.correct}/${accuracy.espnPredictor.graded}`}
       />
+      {accuracy.espnPredictorSpread.graded > 0 && (
+        <StatBlock
+          href="/betting/accuracy/espn-spread"
+          label="ESPN's predictor, spread"
+          value={
+            accuracy.espnPredictorSpread.hitRate !== null
+              ? `${(accuracy.espnPredictorSpread.hitRate * 100).toFixed(0)}%`
+              : null
+          }
+          caption={`${accuracy.espnPredictorSpread.correct}/${accuracy.espnPredictorSpread.graded}`}
+        />
+      )}
       {accuracy.ourModel.bettableProps.graded > 0 && (
         <StatBlock
           href="/betting/accuracy/recommended"

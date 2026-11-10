@@ -5,7 +5,10 @@ import {
   accuracyByMethod,
   accuracyByStatType,
 } from "@lib/accuracy/compute-accuracy";
-import { gradeMarketFavorite } from "@lib/accuracy/grade-game";
+import {
+  gradeEspnPredictorSpread,
+  gradeMarketFavorite,
+} from "@lib/accuracy/grade-game";
 import {
   BEST_BETS_PER_DAY,
   HIGH_CONFIDENCE_EDGE_RATIO,
@@ -53,7 +56,25 @@ export async function GET() {
       }),
       prisma.predictorSnapshot.findMany({
         where: { gradedAt: { not: null } },
-        select: { gradedCorrect: true },
+        select: {
+          gradedCorrect: true,
+          homeWinPct: true,
+          awayWinPct: true,
+          game: {
+            select: {
+              homeScore: true,
+              awayScore: true,
+              // The market's own spread, not our model's frozen
+              // `marketMarginAtPick` — ESPN's predictor has no pick-time
+              // framing to stay faithful to (it's just a win probability),
+              // so there's no hindsight risk in reading the game's actual
+              // closing line directly. `Odds` stops updating once a game
+              // goes FINAL, so this is already the stable closing number,
+              // not something that could still move.
+              odds: { select: { spread: true } },
+            },
+          },
+        },
       }),
       prisma.playerPropProjection.findMany({
         where: { gradedAt: { not: null } },
@@ -176,6 +197,26 @@ export async function GET() {
         ),
     );
 
+    // ESPN's predictor against the spread — ESPN only exposes a win
+    // probability, not a projected margin (see ingest/mappers/predictor.ts),
+    // so the side it favors to win stands in for a margin pick; whether
+    // that side covered is graded the same way as our own spread picks
+    // (gradeEspnPredictorSpread). Computed live, same as marketFavorite
+    // below — no new storage needed.
+    const espnSpreadAccuracy = computeAccuracy(
+      predictorRows
+        .filter((r) => r.game.homeScore !== null && r.game.awayScore !== null)
+        .map(
+          (r) =>
+            gradeEspnPredictorSpread(
+              r.homeWinPct,
+              r.awayWinPct,
+              r.game.odds?.spread != null ? -r.game.odds.spread : null,
+              r.game.homeScore! - r.game.awayScore!,
+            ).correct,
+        ),
+    );
+
     // Per-methodology-version breakdown — each table's `method` tag is
     // frozen at creation time and bumped independently of the other table
     // whenever that table's own methodology actually changes (see
@@ -216,6 +257,7 @@ export async function GET() {
         overall: overallAccuracy,
       },
       espnPredictor: predictorAccuracy,
+      espnPredictorSpread: espnSpreadAccuracy,
       marketFavorite: marketFavoriteAccuracy,
       byMethod,
       propsByStatType,

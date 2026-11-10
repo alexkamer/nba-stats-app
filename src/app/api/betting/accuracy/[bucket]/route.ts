@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getDailyBestBetSnapshot } from "@/lib/daily-best-bets";
 import { computeAccuracy } from "@lib/accuracy/compute-accuracy";
+import { gradeEspnPredictorSpread } from "@lib/accuracy/grade-game";
 import {
   BEST_BETS_PER_DAY,
   HIGH_CONFIDENCE_EDGE_RATIO,
@@ -21,7 +22,11 @@ import { NextResponse } from "next/server";
 
 const BUCKETS = [
   "model",
+  "game-winners",
+  "spread-all",
+  "spread",
   "espn",
+  "espn-spread",
   "recommended",
   "high-confidence",
   "best-bets",
@@ -30,7 +35,11 @@ type Bucket = (typeof BUCKETS)[number];
 
 const TITLES: Record<Bucket, string> = {
   model: "Our model, this season",
+  "game-winners": "Our model, game picks",
+  "spread-all": "Our model, all spread picks",
+  spread: "Our model, spread picks",
   espn: "ESPN's predictor",
+  "espn-spread": "ESPN's predictor, spread",
   recommended: "Our recommended props",
   "high-confidence": `High-confidence props (≥${HIGH_CONFIDENCE_EDGE_RATIO.toFixed(1)}σ)`,
   "best-bets": "Best bets",
@@ -144,6 +153,101 @@ async function gamePicks(where: object): Promise<VerificationPick[]> {
     });
 }
 
+/** A team's own spread (negative = favored), derived from a home-relative
+ * margin — same sign convention as the live betting page's own
+ * `impliedSpread` (src/app/betting/page.tsx), kept as a local copy here
+ * per that file's own comment about each page keeping its own. */
+function impliedSpread(homeRelativeMargin: number): {
+  home: number;
+  away: number;
+} {
+  return { home: -homeRelativeMargin, away: homeRelativeMargin };
+}
+
+/** Against-the-spread picks — `onlyBettable` scopes to the subset
+ * (`spreadBettable`) that actually clears our confidence bar, which is
+ * what the live page recommends and what `ourModel.bettableSpread` on the
+ * headline accuracy route measures. Without it, every graded game with a
+ * captured market spread counts, confident or not — closer to "every
+ * game," matching `ourModel.spread`. Distinct from `gamePicks`' straight-up
+ * winner picks either way: beating the spread and picking the outright
+ * winner are different bets, graded independently (see
+ * lib/accuracy/grade-game.ts). */
+async function spreadPicks(onlyBettable: boolean): Promise<VerificationPick[]> {
+  const rows = await prisma.gameProjection.findMany({
+    where: {
+      gradedAt: { not: null },
+      ...(onlyBettable ? { spreadBettable: true } : {}),
+    },
+    select: {
+      gradedSpreadCorrect: true,
+      projectedMargin: true,
+      marginStdev: true,
+      marketMarginAtPick: true,
+      game: {
+        select: {
+          espnId: true,
+          date: true,
+          homeScore: true,
+          awayScore: true,
+          homeTeam: { select: TEAM_SELECT },
+          awayTeam: { select: TEAM_SELECT },
+          odds: { select: { homeSpreadOdds: true, awaySpreadOdds: true } },
+        },
+      },
+    },
+  });
+  return rows
+    .filter(
+      (
+        r,
+      ): r is typeof r & {
+        gradedSpreadCorrect: boolean;
+        marketMarginAtPick: number;
+      } => r.gradedSpreadCorrect !== null && r.marketMarginAtPick !== null,
+    )
+    .map((r) => {
+      const pickedHome = r.projectedMargin > r.marketMarginAtPick;
+      const picked = pickedHome ? r.game.homeTeam : r.game.awayTeam;
+      const spread = impliedSpread(r.marketMarginAtPick);
+      const pickedSpread = pickedHome ? spread.home : spread.away;
+      const pickedOdds = pickedHome
+        ? (r.game.odds?.homeSpreadOdds ?? null)
+        : (r.game.odds?.awaySpreadOdds ?? null);
+      const edgeRatio = computeEdgeRatio(
+        r.projectedMargin,
+        r.marketMarginAtPick,
+        r.marginStdev,
+      );
+      const actualWinner =
+        r.game.homeScore !== null && r.game.awayScore !== null
+          ? r.game.homeScore >= r.game.awayScore
+            ? r.game.homeTeam
+            : r.game.awayTeam
+          : null;
+      return {
+        id: `spread-${r.game.espnId}`,
+        date: r.game.date.toISOString(),
+        type: "game" as const,
+        gameEspnId: r.game.espnId,
+        playerId: null,
+        playerName: null,
+        statType: null,
+        label: `${r.game.awayTeam.abbreviation} @ ${r.game.homeTeam.abbreviation}`,
+        pickDescription: `Picked ${picked.abbreviation} ${pickedSpread > 0 ? "+" : ""}${fmtNum(pickedSpread)}`,
+        line: fmtNum(pickedSpread),
+        projected: `${picked.abbreviation} margin ${fmtNum(Math.abs(r.projectedMargin))}`,
+        actual:
+          actualWinner && r.game.homeScore !== null && r.game.awayScore !== null
+            ? `${r.game.awayTeam.abbreviation} ${r.game.awayScore}, ${r.game.homeTeam.abbreviation} ${r.game.homeScore} (${actualWinner.abbreviation} won)`
+            : "—",
+        confidence: edgeRatio !== null ? `${edgeRatio.toFixed(1)}σ` : null,
+        odds: formatOdds(pickedOdds),
+        correct: r.gradedSpreadCorrect,
+      };
+    });
+}
+
 async function espnPicks(): Promise<VerificationPick[]> {
   const rows = await prisma.predictorSnapshot.findMany({
     where: { gradedAt: { not: null } },
@@ -198,6 +302,102 @@ async function espnPicks(): Promise<VerificationPick[]> {
         confidence: `${pickedPct.toFixed(0)}% win prob.`,
         odds: formatOdds(pickedMoneyline),
         correct: r.gradedCorrect as boolean,
+      };
+    });
+}
+
+/** ESPN's predictor against the spread — ESPN only exposes a win
+ * probability, not a projected margin (see ingest/mappers/predictor.ts),
+ * so the side it favors to win stands in for a margin pick, graded the
+ * same way as our own model's `spreadPicks` (gradeEspnPredictorSpread). */
+async function espnSpreadPicks(): Promise<VerificationPick[]> {
+  const rows = await prisma.predictorSnapshot.findMany({
+    where: { gradedAt: { not: null } },
+    select: {
+      homeWinPct: true,
+      awayWinPct: true,
+      game: {
+        select: {
+          espnId: true,
+          date: true,
+          homeScore: true,
+          awayScore: true,
+          homeTeam: { select: TEAM_SELECT },
+          awayTeam: { select: TEAM_SELECT },
+          // The market's own spread, not our model's frozen
+          // `marketMarginAtPick` — ESPN's predictor has no pick-time
+          // framing to stay faithful to (it's just a win probability), so
+          // there's no hindsight risk in reading the game's actual closing
+          // line directly. `Odds` stops updating once a game goes FINAL,
+          // so this is already the stable closing number.
+          odds: {
+            select: {
+              spread: true,
+              homeSpreadOdds: true,
+              awaySpreadOdds: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  return rows
+    .filter(
+      (
+        r,
+      ): r is typeof r & {
+        game: typeof r.game & { homeScore: number; awayScore: number };
+      } => r.game.homeScore !== null && r.game.awayScore !== null,
+    )
+    .map((r) => {
+      const marketMargin =
+        r.game.odds?.spread != null ? -r.game.odds.spread : null;
+      const actualMargin = r.game.homeScore - r.game.awayScore;
+      const graded = gradeEspnPredictorSpread(
+        r.homeWinPct,
+        r.awayWinPct,
+        marketMargin,
+        actualMargin,
+      );
+      return { r, marketMargin, graded };
+    })
+    .filter(
+      (
+        x,
+      ): x is typeof x & {
+        marketMargin: number;
+        graded: { correct: boolean };
+      } => x.marketMargin !== null && x.graded.correct !== null,
+    )
+    .map(({ r, marketMargin, graded }) => {
+      const pickedHome = r.homeWinPct >= r.awayWinPct;
+      const picked = pickedHome ? r.game.homeTeam : r.game.awayTeam;
+      const pickedPct = Math.max(r.homeWinPct, r.awayWinPct);
+      const spread = impliedSpread(marketMargin);
+      const pickedSpread = pickedHome ? spread.home : spread.away;
+      const pickedOdds = pickedHome
+        ? (r.game.odds?.homeSpreadOdds ?? null)
+        : (r.game.odds?.awaySpreadOdds ?? null);
+      const actualWinner =
+        r.game.homeScore >= r.game.awayScore
+          ? r.game.homeTeam
+          : r.game.awayTeam;
+      return {
+        id: `espn-spread-${r.game.espnId}`,
+        date: r.game.date.toISOString(),
+        type: "game" as const,
+        gameEspnId: r.game.espnId,
+        playerId: null,
+        playerName: null,
+        statType: null,
+        label: `${r.game.awayTeam.abbreviation} @ ${r.game.homeTeam.abbreviation}`,
+        pickDescription: `Picked ${picked.abbreviation} ${pickedSpread > 0 ? "+" : ""}${fmtNum(pickedSpread)}`,
+        line: fmtNum(pickedSpread),
+        projected: `${picked.abbreviation}, ${pickedPct.toFixed(0)}% win prob.`,
+        actual: `${r.game.awayTeam.abbreviation} ${r.game.awayScore}, ${r.game.homeTeam.abbreviation} ${r.game.homeScore} (${actualWinner.abbreviation} won)`,
+        confidence: `${pickedPct.toFixed(0)}% win prob.`,
+        odds: formatOdds(pickedOdds),
+        correct: graded.correct,
       };
     });
 }
@@ -287,8 +487,16 @@ export async function GET(
           toPropPick(r, computeEdgeRatio(r.projectedValue, r.line, r.stdev)),
         );
       picks = [...games, ...propsWithEdge];
+    } else if (bucket === "game-winners") {
+      picks = await gamePicks({ gradedAt: { not: null } });
+    } else if (bucket === "spread-all") {
+      picks = await spreadPicks(false);
+    } else if (bucket === "spread") {
+      picks = await spreadPicks(true);
     } else if (bucket === "espn") {
       picks = await espnPicks();
+    } else if (bucket === "espn-spread") {
+      picks = await espnSpreadPicks();
     } else {
       const rows = (await propRows()).filter((r) => r.gradedCorrect !== null);
       const withEdge = rows.map((r) => ({

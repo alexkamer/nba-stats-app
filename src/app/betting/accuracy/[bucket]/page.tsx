@@ -19,7 +19,15 @@ import { Skeleton, SkeletonRow } from "@/components/Skeleton";
 const METHODOLOGY: Record<string, string> = {
   model:
     "Every graded straight-up game pick and every graded player prop, pooled together — our model's full season track record.",
+  "game-winners":
+    "Our model's straight-up game winner picks only, no player props mixed in — the same scope as ESPN's predictor below, for a like-for-like comparison.",
+  "spread-all":
+    'Every graded against-the-spread pick, confident or not, for every game with a captured market spread — closer to "every game" than the recommended-only bucket below.',
+  spread:
+    "The subset of against-the-spread picks above where our projected margin cleared the market's line by enough relative to recent variance to be worth calling out — the actual bet the live page recommends, not just the outright winner.",
   espn: "ESPN's own pre-game win-probability predictor, graded the same way as our picks for a like-for-like baseline.",
+  "espn-spread":
+    "ESPN's predictor doesn't give a projected margin, only a win probability — so the side it favors to win stands in for a spread pick, graded against the same market line our own spread picks use.",
   recommended:
     "Player props where our projection cleared the line by enough relative to the player's own recent variance to be worth calling out (≥0.75σ edge).",
   "high-confidence":
