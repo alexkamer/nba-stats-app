@@ -3,6 +3,7 @@
  * needs the same visual language without the full stat-block card. */
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
+import type { ReactNode } from "react";
 
 export function ComparisonBar({ pct, color }: { pct: number; color?: string }) {
   return (
@@ -34,7 +35,7 @@ export function StatBlock({
 }: {
   label: string;
   value: string | number | null;
-  caption?: string;
+  caption?: ReactNode;
   comparison?: { pct: number; color?: string };
   /** When set, the whole tile becomes a link (e.g. to a page that lists the
    * individual picks behind this number) — a small chevron signals it's

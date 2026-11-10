@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { getDailyBestBetSnapshot } from "@/lib/daily-best-bets";
 import {
   computeAccuracy,
+  computeAccuracyWithPnl,
   accuracyByMethod,
   accuracyByStatType,
 } from "@lib/accuracy/compute-accuracy";
@@ -51,7 +52,24 @@ export async function GET() {
           // own already-final score, with no new storage (design.md
           // "Market-favorite accuracy baseline").
           marketMarginAtPick: true,
-          game: { select: { homeScore: true, awayScore: true } },
+          // Frozen at pick time, same as above — needed to tell which side
+          // (home/away) our straight-up and spread picks actually landed
+          // on, so the right side's odds get settled for `unitsPnl` below.
+          projectedMargin: true,
+          game: {
+            select: {
+              homeScore: true,
+              awayScore: true,
+              odds: {
+                select: {
+                  homeMoneyline: true,
+                  awayMoneyline: true,
+                  homeSpreadOdds: true,
+                  awaySpreadOdds: true,
+                },
+              },
+            },
+          },
         },
       }),
       prisma.predictorSnapshot.findMany({
@@ -71,7 +89,15 @@ export async function GET() {
               // closing line directly. `Odds` stops updating once a game
               // goes FINAL, so this is already the stable closing number,
               // not something that could still move.
-              odds: { select: { spread: true } },
+              odds: {
+                select: {
+                  spread: true,
+                  homeMoneyline: true,
+                  awayMoneyline: true,
+                  homeSpreadOdds: true,
+                  awaySpreadOdds: true,
+                },
+              },
             },
           },
         },
@@ -88,22 +114,99 @@ export async function GET() {
           projectedValue: true,
           line: true,
           stdev: true,
-          game: { select: { date: true } },
+          game: {
+            select: {
+              date: true,
+              // Per-side (OVER/UNDER) American odds — matched below by
+              // player/stat/side to the side we actually leaned, same as
+              // `/api/betting/upcoming` and the accuracy drill-down route.
+              playerPropOdds: {
+                select: {
+                  playerId: true,
+                  statType: true,
+                  side: true,
+                  odds: true,
+                },
+              },
+            },
+          },
         },
       }),
     ]);
 
+    /** Moneyline for the side our straight-up pick actually favors. */
+    function gamePickOdds(r: (typeof gameRows)[number]): number | null {
+      const pickedHome = r.projectedMargin >= 0;
+      return pickedHome
+        ? (r.game.odds?.homeMoneyline ?? null)
+        : (r.game.odds?.awayMoneyline ?? null);
+    }
+
+    /** Spread odds for the side our against-the-spread pick actually
+     * favors — same `pickedHome` convention as the accuracy drill-down
+     * route's own `spreadPicks`. */
+    function spreadPickOdds(r: (typeof gameRows)[number]): number | null {
+      if (r.marketMarginAtPick === null) return null;
+      const pickedHome = r.projectedMargin > r.marketMarginAtPick;
+      return pickedHome
+        ? (r.game.odds?.homeSpreadOdds ?? null)
+        : (r.game.odds?.awaySpreadOdds ?? null);
+    }
+
+    /** Moneyline for the side ESPN's predictor favors to win. */
+    function espnPickOdds(r: (typeof predictorRows)[number]): number | null {
+      const pickedHome = r.homeWinPct >= r.awayWinPct;
+      return pickedHome
+        ? (r.game.odds?.homeMoneyline ?? null)
+        : (r.game.odds?.awayMoneyline ?? null);
+    }
+
+    /** Odds for the OVER/UNDER side a prop pick actually leaned, matched
+     * the same way `toPropPick` in the accuracy drill-down route does. */
+    function propPickOdds(r: {
+      playerId: number;
+      statType: string;
+      line: number | null;
+      projectedValue: number;
+      game: {
+        playerPropOdds: Array<{
+          playerId: number;
+          statType: string;
+          side: string;
+          odds: number | null;
+        }>;
+      };
+    }): number | null {
+      if (r.line === null) return null;
+      const side = r.projectedValue > r.line ? "OVER" : "UNDER";
+      const oddsRow = r.game.playerPropOdds.find(
+        (o) =>
+          o.playerId === r.playerId &&
+          o.statType === r.statType &&
+          o.side === side,
+      );
+      return oddsRow?.odds ?? null;
+    }
+
     // Winner (straight-up) accuracy — a different bet than the spread/total
     // picks below, graded separately since picking the right winner and
     // picking the right side of the market line are not the same thing.
-    const gameAccuracy = computeAccuracy(gameRows.map((r) => r.gradedCorrect));
-    const spreadAccuracy = computeAccuracy(
-      gameRows.map((r) => r.gradedSpreadCorrect),
+    const gameAccuracy = computeAccuracyWithPnl(
+      gameRows.map((r) => ({ correct: r.gradedCorrect, odds: gamePickOdds(r) })),
     );
-    const bettableSpreadAccuracy = computeAccuracy(
+    const spreadAccuracy = computeAccuracyWithPnl(
+      gameRows.map((r) => ({
+        correct: r.gradedSpreadCorrect,
+        odds: spreadPickOdds(r),
+      })),
+    );
+    const bettableSpreadAccuracy = computeAccuracyWithPnl(
       gameRows
         .filter((r) => r.spreadBettable)
-        .map((r) => r.gradedSpreadCorrect),
+        .map((r) => ({
+          correct: r.gradedSpreadCorrect,
+          odds: spreadPickOdds(r),
+        })),
     );
     const totalAccuracy = computeAccuracy(
       gameRows.map((r) => r.gradedTotalCorrect),
@@ -112,13 +215,17 @@ export async function GET() {
       gameRows.filter((r) => r.totalBettable).map((r) => r.gradedTotalCorrect),
     );
 
-    const propAccuracy = computeAccuracy(propRows.map((r) => r.gradedCorrect));
+    const propAccuracy = computeAccuracyWithPnl(
+      propRows.map((r) => ({ correct: r.gradedCorrect, odds: propPickOdds(r) })),
+    );
     // The subset of props that cleared the confidence bar (see
     // lib/projections/confidence.ts) — a near-miss call on a low-edge prop
     // shouldn't drag down the number that actually represents our
     // recommendations.
-    const bettablePropAccuracy = computeAccuracy(
-      propRows.filter((r) => r.bettable).map((r) => r.gradedCorrect),
+    const bettablePropAccuracy = computeAccuracyWithPnl(
+      propRows
+        .filter((r) => r.bettable)
+        .map((r) => ({ correct: r.gradedCorrect, odds: propPickOdds(r) })),
     );
 
     // DNP props never get a gradedCorrect (see ingest/grade-predictions.ts),
@@ -148,7 +255,8 @@ export async function GET() {
       if (group) group.push(row);
       else byDay.set(key, [row]);
     }
-    const bestBetsGradedValues: Array<boolean | null> = [];
+    const bestBetsRows: Array<{ correct: boolean | null; odds: number | null }> =
+      [];
     for (const [day, dayProps] of byDay.entries()) {
       const snapshot = await getDailyBestBetSnapshot(day);
       if (snapshot) {
@@ -156,28 +264,36 @@ export async function GET() {
           const row = decidedPropsByKey.get(
             `${pick.gameId}|${pick.playerId}|${pick.statType}`,
           );
-          if (row) bestBetsGradedValues.push(row.gradedCorrect);
+          if (row)
+            bestBetsRows.push({
+              correct: row.gradedCorrect,
+              odds: propPickOdds(row),
+            });
         }
       } else {
         for (const row of selectBestBets(dayProps, BEST_BETS_PER_DAY))
-          bestBetsGradedValues.push(row.gradedCorrect);
+          bestBetsRows.push({
+            correct: row.gradedCorrect,
+            odds: propPickOdds(row),
+          });
       }
     }
-    const bestBetsAccuracy = computeAccuracy(bestBetsGradedValues);
+    const bestBetsAccuracy = computeAccuracyWithPnl(bestBetsRows);
 
     // Stricter than the bettable floor — picks whose edge was at least a
     // full standard deviation of the player's own recent variance.
-    const highConfidenceAccuracy = computeAccuracy(
+    const highConfidenceAccuracy = computeAccuracyWithPnl(
       decidedProps
         .filter((r) => (r.edgeRatio ?? 0) >= HIGH_CONFIDENCE_EDGE_RATIO)
-        .map((r) => r.gradedCorrect),
+        .map((r) => ({ correct: r.gradedCorrect, odds: propPickOdds(r) })),
     );
 
-    const overallAccuracy = computeAccuracy(
-      [...gameRows, ...propRows].map((r) => r.gradedCorrect),
-    );
-    const predictorAccuracy = computeAccuracy(
-      predictorRows.map((r) => r.gradedCorrect),
+    const overallAccuracy = computeAccuracyWithPnl([
+      ...gameRows.map((r) => ({ correct: r.gradedCorrect, odds: gamePickOdds(r) })),
+      ...propRows.map((r) => ({ correct: r.gradedCorrect, odds: propPickOdds(r) })),
+    ]);
+    const predictorAccuracy = computeAccuracyWithPnl(
+      predictorRows.map((r) => ({ correct: r.gradedCorrect, odds: espnPickOdds(r) })),
     );
 
     // Third baseline, computed live from data already frozen/final — no
@@ -203,18 +319,22 @@ export async function GET() {
     // that side covered is graded the same way as our own spread picks
     // (gradeEspnPredictorSpread). Computed live, same as marketFavorite
     // below — no new storage needed.
-    const espnSpreadAccuracy = computeAccuracy(
+    const espnSpreadAccuracy = computeAccuracyWithPnl(
       predictorRows
         .filter((r) => r.game.homeScore !== null && r.game.awayScore !== null)
-        .map(
-          (r) =>
-            gradeEspnPredictorSpread(
-              r.homeWinPct,
-              r.awayWinPct,
-              r.game.odds?.spread != null ? -r.game.odds.spread : null,
-              r.game.homeScore! - r.game.awayScore!,
-            ).correct,
-        ),
+        .map((r) => {
+          const graded = gradeEspnPredictorSpread(
+            r.homeWinPct,
+            r.awayWinPct,
+            r.game.odds?.spread != null ? -r.game.odds.spread : null,
+            r.game.homeScore! - r.game.awayScore!,
+          );
+          const pickedHome = r.homeWinPct >= r.awayWinPct;
+          const odds = pickedHome
+            ? (r.game.odds?.homeSpreadOdds ?? null)
+            : (r.game.odds?.awaySpreadOdds ?? null);
+          return { correct: graded.correct, odds };
+        }),
     );
 
     // Per-methodology-version breakdown — each table's `method` tag is

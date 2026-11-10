@@ -105,6 +105,11 @@ interface AccuracyBucket {
   graded: number;
   correct: number;
   hitRate: number | null;
+  /** Net units a flat 1-unit-per-pick bettor would be up (or down) on this
+   * bucket's season, settled at whatever odds were captured for the side
+   * actually picked — `null` when nothing graded had odds to settle
+   * against. See `computeAccuracyWithPnl` (lib/accuracy/compute-accuracy.ts). */
+  unitsPnl: number | null;
 }
 
 interface AccuracySummary {
@@ -264,6 +269,84 @@ function recommendedCount(game: UpcomingGame): number {
   );
 }
 
+/** Tiers a hit rate into the same green/amber/red language the rest of the
+ * page uses for win/loss (see the `emerald`/`red` pair at line ~416) — green
+ * once a rate clears a typical -110 breakeven (~52.4%), red once it's
+ * meaningfully below a coin flip, amber in between. Gives every tile's
+ * `ComparisonBar` a color instead of always defaulting to the flat accent,
+ * so a glance at the strip shows which numbers are good without reading
+ * every percentage. */
+function hitRateColor(hitRate: number): string {
+  if (hitRate >= 0.524) return "var(--color-emerald-500, #10b981)";
+  if (hitRate < 0.45) return "var(--color-red-500, #ef4444)";
+  return "var(--color-accent)";
+}
+
+/** "+42.6u" / "-3.2u" — a flat 1-unit-per-pick bettor's running total for
+ * the bucket, in the same unit-denominated style the accuracy drill-down
+ * page's own `formatMoney` uses for dollars. */
+function formatUnits(unitsPnl: number): string {
+  const sign = unitsPnl > 0 ? "+" : unitsPnl < 0 ? "−" : "";
+  return `${sign}${Math.abs(unitsPnl).toFixed(1)}u`;
+}
+
+function AccuracyTile({
+  href,
+  label,
+  summary,
+}: {
+  href: string;
+  label: string;
+  summary: AccuracyBucket;
+}) {
+  return (
+    <StatBlock
+      href={href}
+      label={label}
+      value={
+        summary.hitRate !== null ? `${(summary.hitRate * 100).toFixed(0)}%` : null
+      }
+      caption={
+        <>
+          {summary.correct}/{summary.graded} graded
+          {summary.unitsPnl !== null && (
+            <>
+              {" "}
+              <span
+                className={
+                  summary.unitsPnl > 0
+                    ? "text-green-600 dark:text-green-400"
+                    : summary.unitsPnl < 0
+                      ? "text-red-600 dark:text-red-400"
+                      : ""
+                }
+              >
+                ({formatUnits(summary.unitsPnl)})
+              </span>
+            </>
+          )}
+        </>
+      }
+      comparison={
+        summary.hitRate !== null
+          ? { pct: summary.hitRate * 100, color: hitRateColor(summary.hitRate) }
+          : undefined
+      }
+    />
+  );
+}
+
+/** Small uppercase group label above a row of tiles — same type scale as
+ * `StatBlock`'s own label, just left-aligned and not centered over a
+ * single tile, so a row of several tiles reads as one labeled group. */
+function AccuracyGroupLabel({ children }: { children: ReactNode }) {
+  return (
+    <p className="text-[11px] font-semibold uppercase tracking-wide text-foreground/50">
+      {children}
+    </p>
+  );
+}
+
 function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
   const nothingGraded =
     accuracy.ourModel.overall.graded === 0 &&
@@ -277,110 +360,80 @@ function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
     );
   }
   return (
-    <div className="flex flex-wrap gap-2">
-      <StatBlock
-        href="/betting/accuracy/model"
-        label="Our model, this season"
-        value={
-          accuracy.ourModel.overall.hitRate !== null
-            ? `${(accuracy.ourModel.overall.hitRate * 100).toFixed(0)}%`
-            : null
-        }
-        caption={`${accuracy.ourModel.overall.correct}/${accuracy.ourModel.overall.graded}`}
-      />
-      {accuracy.ourModel.game.graded > 0 && (
-        <StatBlock
-          href="/betting/accuracy/game-winners"
-          label="Our model, game picks"
-          value={
-            accuracy.ourModel.game.hitRate !== null
-              ? `${(accuracy.ourModel.game.hitRate * 100).toFixed(0)}%`
-              : null
-          }
-          caption={`${accuracy.ourModel.game.correct}/${accuracy.ourModel.game.graded}`}
-        />
-      )}
-      {accuracy.ourModel.spread.graded > 0 && (
-        <StatBlock
-          href="/betting/accuracy/spread-all"
-          label="Our model, all spread picks"
-          value={
-            accuracy.ourModel.spread.hitRate !== null
-              ? `${(accuracy.ourModel.spread.hitRate * 100).toFixed(0)}%`
-              : null
-          }
-          caption={`${accuracy.ourModel.spread.correct}/${accuracy.ourModel.spread.graded}`}
-        />
-      )}
-      {accuracy.ourModel.bettableSpread.graded > 0 && (
-        <StatBlock
-          href="/betting/accuracy/spread"
-          label="Our model, spread picks"
-          value={
-            accuracy.ourModel.bettableSpread.hitRate !== null
-              ? `${(accuracy.ourModel.bettableSpread.hitRate * 100).toFixed(0)}%`
-              : null
-          }
-          caption={`${accuracy.ourModel.bettableSpread.correct}/${accuracy.ourModel.bettableSpread.graded}`}
-        />
-      )}
-      <StatBlock
-        href="/betting/accuracy/espn"
-        label="ESPN's predictor"
-        value={
-          accuracy.espnPredictor.hitRate !== null
-            ? `${(accuracy.espnPredictor.hitRate * 100).toFixed(0)}%`
-            : null
-        }
-        caption={`${accuracy.espnPredictor.correct}/${accuracy.espnPredictor.graded}`}
-      />
-      {accuracy.espnPredictorSpread.graded > 0 && (
-        <StatBlock
-          href="/betting/accuracy/espn-spread"
-          label="ESPN's predictor, spread"
-          value={
-            accuracy.espnPredictorSpread.hitRate !== null
-              ? `${(accuracy.espnPredictorSpread.hitRate * 100).toFixed(0)}%`
-              : null
-          }
-          caption={`${accuracy.espnPredictorSpread.correct}/${accuracy.espnPredictorSpread.graded}`}
-        />
-      )}
-      {accuracy.ourModel.bettableProps.graded > 0 && (
-        <StatBlock
-          href="/betting/accuracy/recommended"
-          label="Our recommended props"
-          value={
-            accuracy.ourModel.bettableProps.hitRate !== null
-              ? `${(accuracy.ourModel.bettableProps.hitRate * 100).toFixed(0)}%`
-              : null
-          }
-          caption={`${accuracy.ourModel.bettableProps.correct}/${accuracy.ourModel.bettableProps.graded}`}
-        />
-      )}
-      {accuracy.ourModel.highConfidenceProps.graded > 0 && (
-        <StatBlock
-          href="/betting/accuracy/high-confidence"
-          label={`High-confidence props (≥${HIGH_CONFIDENCE_EDGE_RATIO.toFixed(1)}σ)`}
-          value={
-            accuracy.ourModel.highConfidenceProps.hitRate !== null
-              ? `${(accuracy.ourModel.highConfidenceProps.hitRate * 100).toFixed(0)}%`
-              : null
-          }
-          caption={`${accuracy.ourModel.highConfidenceProps.correct}/${accuracy.ourModel.highConfidenceProps.graded}`}
-        />
-      )}
-      {accuracy.ourModel.bestBets.graded > 0 && (
-        <StatBlock
-          href="/betting/accuracy/best-bets"
-          label="Best bets"
-          value={
-            accuracy.ourModel.bestBets.hitRate !== null
-              ? `${(accuracy.ourModel.bestBets.hitRate * 100).toFixed(0)}%`
-              : null
-          }
-          caption={`${accuracy.ourModel.bestBets.correct}/${accuracy.ourModel.bestBets.graded}`}
-        />
+    <div className="space-y-4 rounded-lg border border-border bg-surface p-4">
+      <div className="space-y-2">
+        <AccuracyGroupLabel>Our model vs. ESPN&apos;s predictor</AccuracyGroupLabel>
+        <div className="flex flex-wrap gap-2">
+          <AccuracyTile
+            href="/betting/accuracy/model"
+            label="Our model, this season"
+            summary={accuracy.ourModel.overall}
+          />
+          {accuracy.ourModel.game.graded > 0 && (
+            <AccuracyTile
+              href="/betting/accuracy/game-winners"
+              label="Our model, game picks"
+              summary={accuracy.ourModel.game}
+            />
+          )}
+          <AccuracyTile
+            href="/betting/accuracy/espn"
+            label="ESPN's predictor"
+            summary={accuracy.espnPredictor}
+          />
+          {accuracy.ourModel.spread.graded > 0 && (
+            <AccuracyTile
+              href="/betting/accuracy/spread-all"
+              label="Our model, all spread picks"
+              summary={accuracy.ourModel.spread}
+            />
+          )}
+          {accuracy.espnPredictorSpread.graded > 0 && (
+            <AccuracyTile
+              href="/betting/accuracy/espn-spread"
+              label="ESPN's predictor, spread"
+              summary={accuracy.espnPredictorSpread}
+            />
+          )}
+          {accuracy.ourModel.bettableSpread.graded > 0 && (
+            <AccuracyTile
+              href="/betting/accuracy/spread"
+              label="Our model, spread picks"
+              summary={accuracy.ourModel.bettableSpread}
+            />
+          )}
+        </div>
+      </div>
+
+      {(accuracy.ourModel.bettableProps.graded > 0 ||
+        accuracy.ourModel.highConfidenceProps.graded > 0 ||
+        accuracy.ourModel.bestBets.graded > 0) && (
+        <div className="space-y-2 border-t border-border pt-3">
+          <AccuracyGroupLabel>Player props</AccuracyGroupLabel>
+          <div className="flex flex-wrap gap-2">
+            {accuracy.ourModel.bettableProps.graded > 0 && (
+              <AccuracyTile
+                href="/betting/accuracy/recommended"
+                label="Our recommended props"
+                summary={accuracy.ourModel.bettableProps}
+              />
+            )}
+            {accuracy.ourModel.highConfidenceProps.graded > 0 && (
+              <AccuracyTile
+                href="/betting/accuracy/high-confidence"
+                label={`High-confidence props (≥${HIGH_CONFIDENCE_EDGE_RATIO.toFixed(1)}σ)`}
+                summary={accuracy.ourModel.highConfidenceProps}
+              />
+            )}
+            {accuracy.ourModel.bestBets.graded > 0 && (
+              <AccuracyTile
+                href="/betting/accuracy/best-bets"
+                label="Best bets"
+                summary={accuracy.ourModel.bestBets}
+              />
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
