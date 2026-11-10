@@ -105,8 +105,17 @@ interface AccuracyBucket {
 
 interface PlayerStreakEntry {
   player: PlayerSummary & { currentTeam: { id: number; abbreviation: string; logoUrl: string | null; color: string | null } | null };
-  statType: "POINTS" | "REBOUNDS" | "ASSISTS";
-  floor: number;
+  statType:
+    | "POINTS"
+    | "REBOUNDS"
+    | "ASSISTS"
+    | "THREE_POINTERS_MADE"
+    | "POINTS_REBOUNDS_ASSISTS"
+    | "POINTS_REBOUNDS"
+    | "POINTS_ASSISTS"
+    | "REBOUNDS_ASSISTS"
+    | "DOUBLE_DOUBLE";
+  floor: number | null;
   streak: number;
   hitRate: number | null;
 }
@@ -122,6 +131,7 @@ const STAT_LABELS: Record<string, string> = {
   POINTS_REBOUNDS: "Points + Rebounds",
   REBOUNDS_ASSISTS: "Rebounds + Assists",
   POINTS_REBOUNDS_ASSISTS: "Points + Rebounds + Assists",
+  DOUBLE_DOUBLE: "Double-Double",
 };
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -692,7 +702,8 @@ function PlayerStreaksSection() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-foreground">{entry.player.displayName}</p>
                 <p className="text-xs text-foreground/60">
-                  {entry.player.currentTeam?.abbreviation} · {STAT_LABELS[entry.statType]} {entry.floor}+
+                  {entry.player.currentTeam?.abbreviation} · {STAT_LABELS[entry.statType]}
+                  {entry.floor !== null ? ` ${entry.floor}+` : ""}
                 </p>
               </div>
             </div>

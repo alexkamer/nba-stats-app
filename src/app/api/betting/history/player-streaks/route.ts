@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/db";
 import {
   ELIGIBLE_STREAK_STAT_TYPES,
-  STREAK_STAT_FLOORS,
+  STREAK_STAT_THRESHOLDS,
   evaluatePlayerStreak,
+  pickHighestNotableThreshold,
   type EligibleStreakStatType,
 } from "@lib/betting/player-prop-streaks";
 import type { PropStatType } from "@lib/espn/prop-types";
@@ -11,19 +12,54 @@ import { NextResponse } from "next/server";
 const ELIGIBLE_PROP_STAT_TYPES: PropStatType[] = [...ELIGIBLE_STREAK_STAT_TYPES];
 
 // Serves the betting-history-page capability's "Player streaks" section:
-// players with a live OVER prop (on POINTS/REBOUNDS/ASSISTS, the only stat
-// types with a fixed floor defined — see player-prop-streak-tracking)
-// clearing that floor consistently. Only ever looks at OVER props — an
-// Under pick gets no signal from "has this player been scoring a lot."
-// Scoped to the earliest upcoming date (today or later) with any eligible
-// OVER prop, so the section still shows something useful on a day with no
-// games today (see design.md "Relevant date resolution").
+// players with a live OVER prop on an eligible stat type who are clearing a
+// notable threshold on that stat's ladder consistently (see
+// player-prop-streak-tracking). Only ever looks at OVER props — an Under
+// pick gets no signal from "has this player been scoring a lot." Scoped to
+// the earliest upcoming date (today or later) with any eligible OVER prop,
+// so the section still shows something useful on a day with no games today
+// (see design.md "Relevant date resolution").
 
-const STAT_FIELD: Record<EligibleStreakStatType, "points" | "rebounds" | "assists"> = {
-  POINTS: "points",
-  REBOUNDS: "rebounds",
-  ASSISTS: "assists",
+type GameStatRow = {
+  playerId: number;
+  points: number | null;
+  rebounds: number | null;
+  assists: number | null;
+  steals: number | null;
+  blocks: number | null;
+  threeMade: number | null;
 };
+
+/** Value this stat type contributes for one game, or `null` when a
+ * required underlying field is missing. DOUBLE_DOUBLE is a 0/1 flag for
+ * whether the game cleared two of the five double-double categories. */
+function statValueForGame(statType: EligibleStreakStatType, game: GameStatRow): number | null {
+  switch (statType) {
+    case "POINTS":
+      return game.points;
+    case "REBOUNDS":
+      return game.rebounds;
+    case "ASSISTS":
+      return game.assists;
+    case "THREE_POINTERS_MADE":
+      return game.threeMade;
+    case "POINTS_REBOUNDS_ASSISTS":
+      return game.points === null || game.rebounds === null || game.assists === null
+        ? null
+        : game.points + game.rebounds + game.assists;
+    case "POINTS_REBOUNDS":
+      return game.points === null || game.rebounds === null ? null : game.points + game.rebounds;
+    case "POINTS_ASSISTS":
+      return game.points === null || game.assists === null ? null : game.points + game.assists;
+    case "REBOUNDS_ASSISTS":
+      return game.rebounds === null || game.assists === null ? null : game.rebounds + game.assists;
+    case "DOUBLE_DOUBLE": {
+      const categories = [game.points, game.rebounds, game.assists, game.steals, game.blocks];
+      const doubleDigitCategories = categories.filter((v) => v !== null && v >= 10).length;
+      return doubleDigitCategories >= 2 ? 1 : 0;
+    }
+  }
+}
 
 function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -74,10 +110,10 @@ export async function GET() {
     const recentGames = await prisma.playerGameStat.findMany({
       where: { playerId: { in: playerIds }, game: { status: "FINAL" } },
       orderBy: { game: { date: "desc" } },
-      select: { playerId: true, points: true, rebounds: true, assists: true },
+      select: { playerId: true, points: true, rebounds: true, assists: true, steals: true, blocks: true, threeMade: true },
     });
 
-    const gamesByPlayer = new Map<number, typeof recentGames>();
+    const gamesByPlayer = new Map<number, GameStatRow[]>();
     for (const game of recentGames) {
       const list = gamesByPlayer.get(game.playerId) ?? [];
       list.push(game);
@@ -87,15 +123,20 @@ export async function GET() {
     const entries = eligibleProps
       .map((prop) => {
         const statType = prop.statType as EligibleStreakStatType;
-        const field = STAT_FIELD[statType];
-        const floor = STREAK_STAT_FLOORS[statType];
         const recentValues = (gamesByPlayer.get(prop.playerId) ?? [])
-          .map((g) => g[field])
+          .map((g) => statValueForGame(statType, g))
           .filter((v): v is number => v !== null);
-        const { streak, hitRate, notable } = evaluatePlayerStreak(recentValues, floor);
-        return { player: prop.player, statType, floor, streak, hitRate, notable };
+
+        if (statType === "DOUBLE_DOUBLE") {
+          const { streak, hitRate, notable } = evaluatePlayerStreak(recentValues, 1);
+          return notable ? { player: prop.player, statType, floor: null, streak, hitRate } : null;
+        }
+
+        const evaluation = pickHighestNotableThreshold(recentValues, STREAK_STAT_THRESHOLDS[statType]);
+        if (!evaluation) return null;
+        return { player: prop.player, statType, floor: evaluation.threshold, streak: evaluation.streak, hitRate: evaluation.hitRate };
       })
-      .filter((entry) => entry.notable)
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
       .sort((a, b) => b.streak - a.streak || (b.hitRate ?? 0) - (a.hitRate ?? 0));
 
     return NextResponse.json({ date: relevantDayStart, entries });

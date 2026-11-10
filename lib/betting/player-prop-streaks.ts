@@ -1,19 +1,36 @@
 /**
- * Flags players with a live Over player-prop pick who are clearing a fixed
- * stat floor consistently (see player-prop-streak-tracking capability).
- * Only `OVER` props on the three single-count stat types with a sensible
- * fixed floor are evaluated — combo and double/triple-double stat types
- * have no fixed floor defined and are out of scope.
+ * Flags players with a live Over player-prop pick who are clearing a
+ * notable stat threshold consistently (see player-prop-streak-tracking
+ * capability). Each eligible stat type (besides DOUBLE_DOUBLE) has a ladder
+ * of thresholds; a player's entry reports the highest threshold on that
+ * ladder they currently have a notable streak at.
  */
 
-export const ELIGIBLE_STREAK_STAT_TYPES = ["POINTS", "REBOUNDS", "ASSISTS"] as const;
+export const ELIGIBLE_STREAK_STAT_TYPES = [
+  "POINTS",
+  "REBOUNDS",
+  "ASSISTS",
+  "THREE_POINTERS_MADE",
+  "POINTS_REBOUNDS_ASSISTS",
+  "POINTS_REBOUNDS",
+  "POINTS_ASSISTS",
+  "REBOUNDS_ASSISTS",
+  "DOUBLE_DOUBLE",
+] as const;
 
 export type EligibleStreakStatType = (typeof ELIGIBLE_STREAK_STAT_TYPES)[number];
 
-export const STREAK_STAT_FLOORS: Record<EligibleStreakStatType, number> = {
-  POINTS: 10,
-  REBOUNDS: 6,
-  ASSISTS: 2,
+/** Threshold ladders, ascending, for every eligible stat type except
+ * DOUBLE_DOUBLE (which has no threshold — it's a per-game boolean). */
+export const STREAK_STAT_THRESHOLDS: Record<Exclude<EligibleStreakStatType, "DOUBLE_DOUBLE">, number[]> = {
+  POINTS: [10, 15, 20, 25, 30, 35, 40],
+  ASSISTS: [3, 5, 7, 10, 13],
+  REBOUNDS: [3, 5, 7, 10, 13, 15],
+  THREE_POINTERS_MADE: [1, 2, 3, 4, 5, 6, 7],
+  POINTS_REBOUNDS_ASSISTS: [15, 20, 25, 30, 35, 40, 45, 50, 55],
+  POINTS_REBOUNDS: [10, 15, 20, 25, 30, 35, 40, 45],
+  POINTS_ASSISTS: [10, 15, 20, 25, 30, 35, 40, 45],
+  REBOUNDS_ASSISTS: [5, 7, 10, 13, 15, 17, 20],
 };
 
 // A streak this long or longer is worth calling out on its own, even
@@ -67,6 +84,26 @@ export function evaluatePlayerStreak(recentValuesMostRecentFirst: number[], floo
   const hitRate = computeHitRate(recentValuesMostRecentFirst, floor);
   const notable = streak >= NOTABLE_STREAK_LENGTH || (hitRate !== null && hitRate >= NOTABLE_HIT_RATE);
   return { streak, hitRate, notable };
+}
+
+export interface PlayerThresholdStreakEvaluation extends PlayerStreakEvaluation {
+  threshold: number;
+}
+
+/** Walks `thresholds` (ascending) from the top down and returns the
+ * evaluation for the highest one that's notable — e.g. a player notable at
+ * both 10+ and 20+ points reports only the 20+ entry, since the lower one
+ * is implied. `null` when no threshold on the ladder is notable. */
+export function pickHighestNotableThreshold(
+  recentValuesMostRecentFirst: number[],
+  thresholds: number[],
+): PlayerThresholdStreakEvaluation | null {
+  for (let i = thresholds.length - 1; i >= 0; i--) {
+    const threshold = thresholds[i];
+    const evaluation = evaluatePlayerStreak(recentValuesMostRecentFirst, threshold);
+    if (evaluation.notable) return { threshold, ...evaluation };
+  }
+  return null;
 }
 
 /** Earliest date, at or after `today`, that appears in `datesWithEligibleOverProps`
