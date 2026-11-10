@@ -4,9 +4,11 @@ import {
   lockInDailyBestBets,
   type DailyBestBetRow,
 } from "@/lib/daily-best-bets";
+import { upsertDailyBestBetCurrent } from "@/lib/daily-best-bets-current";
 import {
   BEST_BETS_PER_DAY,
   computeEdgeRatio,
+  isBettable,
 } from "@lib/projections/confidence";
 import { selectBestBets } from "@lib/betting/select-best-bets";
 import { NextResponse } from "next/server";
@@ -194,6 +196,24 @@ export async function GET(request: Request) {
               oddsRow.line !== frozenLine
                 ? oddsRow.line
                 : null;
+            // Lean/odds recomputed against today's actual market number
+            // (liveLine), for the "Current" side of the best-bets toggle —
+            // these can point at the other side from `lean`/`odds` above
+            // when the market's moved far enough to flip which side our
+            // projection now favors.
+            const liveLine = currentLine ?? frozenLine;
+            const currentLean =
+              p.projectedValue > liveLine
+                ? "OVER"
+                : p.projectedValue < liveLine
+                  ? "UNDER"
+                  : "PUSH";
+            const currentOddsRow = game.playerPropOdds.find(
+              (o) =>
+                o.playerId === p.playerId &&
+                o.statType === p.statType &&
+                o.side === currentLean,
+            );
             return {
               playerId: p.player.id,
               playerName: p.player.displayName,
@@ -203,6 +223,8 @@ export async function GET(request: Request) {
               currentLine,
               lean,
               odds: oddsRow?.odds ?? null,
+              currentLean,
+              currentOdds: currentOddsRow?.odds ?? null,
               bettable: p.bettable,
               stdev: p.stdev,
               gradedCorrect: p.gradedCorrect,
@@ -267,13 +289,72 @@ export async function GET(request: Request) {
       ]),
     );
 
+    // "Current" best bets: the same top-8-by-edge selection, but always
+    // recomputed against today's live market line instead of the frozen
+    // pick-time one, and never locked in — unlike the frozen selection
+    // above, there's no fairness concern to protect here since this view
+    // is explicitly "what the market looks like right now."
+    const currentCandidates = result.flatMap((game) =>
+      game.playerProps
+        .filter((p) => !p.dnp && !p.ruledOut)
+        .map((p) => {
+          const liveLine = p.currentLine ?? p.line;
+          return {
+            playerId: p.playerId,
+            gameId: p.gameId,
+            statType: p.statType,
+            line: liveLine,
+            lean: p.currentLean,
+            odds: p.currentOdds,
+            edgeRatio: computeEdgeRatio(p.projectedValue, liveLine, p.stdev) ?? 0,
+            bettable: isBettable(p.projectedValue, liveLine, p.stdev),
+            gameFinal: game.status === "FINAL",
+          };
+        })
+        .filter((p) => p.bettable),
+    );
+    const currentBestBetRankByKey = new Map(
+      selectBestBets(currentCandidates, BEST_BETS_PER_DAY).map((p, i) => [
+        `${p.gameId}|${p.playerId}|${p.statType}`,
+        i + 1,
+      ]),
+    );
+
+    // Record today's (or a future day's) live top-8 for later grading (see
+    // DailyBestBetCurrent's schema comment) — only not-yet-FINAL games can
+    // still be written, and only today-or-later days get written at all,
+    // mirroring the frozen selection's own lock-in scoping above. A past
+    // day predating this feature (or one where every game finished before
+    // anyone ever loaded it live) simply has nothing recorded — the
+    // accuracy route falls back to the frozen line for those, same as it
+    // does when no DailyBestBet snapshot exists.
+    if (dateKey >= todayKey) {
+      const liveCandidates = currentCandidates
+        .filter((p) => !p.gameFinal)
+        .map(({ gameFinal: _gameFinal, lean, ...rest }) => ({
+          ...rest,
+          lean: lean as "OVER" | "UNDER",
+        }));
+      if (liveCandidates.length > 0) {
+        await upsertDailyBestBetCurrent(dateKey, liveCandidates, BEST_BETS_PER_DAY);
+      }
+    }
+
     const resultWithBestBets = result.map((game) => ({
       ...game,
       playerProps: game.playerProps.map((p) => {
         const { gameId, ...prop } = p;
         const bestBetRank =
           bestBetRankByKey.get(`${gameId}|${p.playerId}|${p.statType}`) ?? null;
-        return { ...prop, isBestBet: bestBetRank !== null, bestBetRank };
+        const bestBetRankCurrent =
+          currentBestBetRankByKey.get(`${gameId}|${p.playerId}|${p.statType}`) ?? null;
+        return {
+          ...prop,
+          isBestBet: bestBetRank !== null,
+          bestBetRank,
+          isBestBetCurrent: bestBetRankCurrent !== null,
+          bestBetRankCurrent,
+        };
       }),
     }));
 

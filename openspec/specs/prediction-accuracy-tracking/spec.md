@@ -35,6 +35,13 @@ The system SHALL maintain and expose an aggregate accuracy record (e.g., hit rat
 - **WHEN** graded player-prop projections exist for one or more `PropStatType` values
 - **THEN** the system can report a separate hit rate for each `PropStatType` that has at least one graded pick, in addition to the overall prop hit rate
 
+### Requirement: Grade the Current Best Bets selection against its own captured line
+The system SHALL maintain a separate running accuracy record for the Current-view Best Bets selection (see best-bets-selection), graded using the line-independent actual stat value rather than the frozen projection's own graded result — since a Current pick's line and lean can differ from the frozen pick's.
+
+#### Scenario: A Current Best Bets pick's line differs from the frozen pick's line
+- **WHEN** a prop recorded in a day's Current Best Bets selection has a line or lean that differs from its frozen `PlayerPropProjection`
+- **THEN** the system grades that pick by comparing the player's actual stat value directly against the Current selection's own recorded line and lean, not by reusing the frozen projection's graded result
+
 ### Requirement: Ungraded until resolved
 The system SHALL NOT include a game's projections in the accuracy record until that game is final.
 

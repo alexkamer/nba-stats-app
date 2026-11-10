@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { getDailyBestBetSnapshot } from "@/lib/daily-best-bets";
+import { getDailyBestBetCurrentSnapshot } from "@/lib/daily-best-bets-current";
 import { computeAccuracy } from "@lib/accuracy/compute-accuracy";
 import { gradeEspnPredictorSpread } from "@lib/accuracy/grade-game";
 import {
@@ -30,6 +31,7 @@ const BUCKETS = [
   "recommended",
   "high-confidence",
   "best-bets",
+  "best-bets-current",
 ] as const;
 type Bucket = (typeof BUCKETS)[number];
 
@@ -43,6 +45,7 @@ const TITLES: Record<Bucket, string> = {
   recommended: "Our recommended props",
   "high-confidence": `High-confidence props (≥${HIGH_CONFIDENCE_EDGE_RATIO.toFixed(1)}σ)`,
   "best-bets": "Best bets",
+  "best-bets-current": "Best bets (current line)",
 };
 
 const TEAM_SELECT = { id: true, abbreviation: true, name: true } as const;
@@ -460,6 +463,41 @@ function toPropPick(
   };
 }
 
+/** Same shape as `toPropPick`, but graded against a DailyBestBetCurrent
+ * row's own captured line/lean/odds instead of the frozen pick — that
+ * line/lean can differ from (or even flip sides versus) the frozen one,
+ * so correctness has to be recomputed here from the line-independent
+ * `gradedActualValue` rather than reused from `gradedCorrect`. `null`
+ * for a push (actual value exactly on the current line), same exclusion
+ * convention as every other bucket. */
+function toCurrentPropPick(
+  r: Awaited<ReturnType<typeof propRows>>[number],
+  current: { line: number; lean: "OVER" | "UNDER"; odds: number | null; edgeRatioAtSelection: number },
+): VerificationPick | null {
+  if (r.gradedActualValue === null || r.gradedActualValue === current.line) return null;
+  const correct =
+    current.lean === "OVER"
+      ? r.gradedActualValue > current.line
+      : r.gradedActualValue < current.line;
+  return {
+    id: `prop-current-${r.gameId}-${r.playerId}-${r.statType}`,
+    date: r.game.date.toISOString(),
+    type: "prop",
+    gameEspnId: r.game.espnId,
+    playerId: r.playerId,
+    playerName: r.player.displayName,
+    statType: r.statType,
+    label: r.player.displayName,
+    pickDescription: `${current.lean === "OVER" ? "Over" : "Under"} ${fmtNum(current.line)} ${r.statType.replaceAll("_", " ").toLowerCase()}`,
+    line: fmtNum(current.line),
+    projected: fmtNum(r.projectedValue),
+    actual: fmtNum(r.gradedActualValue),
+    confidence: `${current.edgeRatioAtSelection.toFixed(1)}σ`,
+    odds: formatOdds(current.odds),
+    correct,
+  };
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ bucket: string }> },
@@ -497,6 +535,29 @@ export async function GET(
       picks = await espnPicks();
     } else if (bucket === "espn-spread") {
       picks = await espnSpreadPicks();
+    } else if (bucket === "best-bets-current") {
+      // Every graded prop (not just ones that decided against their own
+      // frozen line — see toCurrentPropPick's comment), grouped by day so
+      // each day's DailyBestBetCurrent snapshot can be looked up once.
+      const rows = await propRows();
+      const rowsByKey = new Map(
+        rows.map((r) => [`${r.gameId}|${r.playerId}|${r.statType}`, r]),
+      );
+      const days = new Set(rows.map((r) => dayKey(r.game.date)));
+      const selected: VerificationPick[] = [];
+      for (const day of days) {
+        const snapshot = await getDailyBestBetCurrentSnapshot(day);
+        if (!snapshot) continue;
+        for (const pick of snapshot) {
+          const row = rowsByKey.get(
+            `${pick.gameId}|${pick.playerId}|${pick.statType}`,
+          );
+          if (!row) continue;
+          const vp = toCurrentPropPick(row, pick);
+          if (vp) selected.push(vp);
+        }
+      }
+      picks = selected;
     } else {
       const rows = (await propRows()).filter((r) => r.gradedCorrect !== null);
       const withEdge = rows.map((r) => ({

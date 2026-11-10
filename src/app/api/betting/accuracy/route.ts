@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { getDailyBestBetSnapshot } from "@/lib/daily-best-bets";
+import { getDailyBestBetCurrentSnapshot } from "@/lib/daily-best-bets-current";
 import {
   computeAccuracy,
   computeAccuracyWithPnl,
@@ -110,6 +111,12 @@ export async function GET() {
           playerId: true,
           gameId: true,
           gradedCorrect: true,
+          // Line-independent actual stat total — unlike `gradedCorrect`
+          // (graded against the frozen `line` below), this is what backs
+          // the "Current" best-bets accuracy, since that selection's own
+          // line/lean (from DailyBestBetCurrent) can differ from the
+          // frozen one.
+          gradedActualValue: true,
           bettable: true,
           projectedValue: true,
           line: true,
@@ -280,6 +287,43 @@ export async function GET() {
     }
     const bestBetsAccuracy = computeAccuracyWithPnl(bestBetsRows);
 
+    // "Current" best bets' track record — reads back DailyBestBetCurrent's
+    // own captured line/lean/odds for each pick rather than
+    // PlayerPropProjection.gradedCorrect, since that's graded against the
+    // frozen line and a Current pick's line/lean can differ (see
+    // DailyBestBetCurrent's schema comment). `actualValueByKey` has to
+    // come from every graded prop row, not just `decidedProps` — a prop
+    // that pushed against the frozen line (excluded from `decidedProps`)
+    // can still have a decided actual value to grade a different Current
+    // line against.
+    const actualValueByKey = new Map(
+      propRows
+        .filter((r) => r.gradedActualValue !== null)
+        .map((r) => [
+          `${r.gameId}|${r.playerId}|${r.statType}`,
+          r.gradedActualValue as number,
+        ]),
+    );
+    const bestBetsCurrentRows: Array<{ correct: boolean | null; odds: number | null }> = [];
+    for (const day of byDay.keys()) {
+      const snapshot = await getDailyBestBetCurrentSnapshot(day);
+      if (!snapshot) continue;
+      for (const pick of snapshot) {
+        const actualValue = actualValueByKey.get(
+          `${pick.gameId}|${pick.playerId}|${pick.statType}`,
+        );
+        if (actualValue === undefined) continue;
+        const correct =
+          actualValue === pick.line
+            ? null // push — excluded, same convention as every other bucket
+            : pick.lean === "OVER"
+              ? actualValue > pick.line
+              : actualValue < pick.line;
+        bestBetsCurrentRows.push({ correct, odds: pick.odds });
+      }
+    }
+    const bestBetsCurrentAccuracy = computeAccuracyWithPnl(bestBetsCurrentRows);
+
     // Stricter than the bettable floor — picks whose edge was at least a
     // full standard deviation of the player's own recent variance.
     const highConfidenceAccuracy = computeAccuracyWithPnl(
@@ -374,6 +418,7 @@ export async function GET() {
         bettableProps: bettablePropAccuracy,
         highConfidenceProps: highConfidenceAccuracy,
         bestBets: bestBetsAccuracy,
+        bestBetsCurrent: bestBetsCurrentAccuracy,
         overall: overallAccuracy,
       },
       espnPredictor: predictorAccuracy,

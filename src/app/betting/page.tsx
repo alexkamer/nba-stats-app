@@ -40,6 +40,13 @@ interface PlayerPropLean {
   // American odds for the side we're actually leaning (e.g. -121) — null
   // when that side's odds weren't captured.
   odds: number | null;
+  // Lean/odds recomputed against today's live market line (`currentLine ??
+  // line`) rather than the frozen one — can point at the other side from
+  // `lean`/`odds` when the market's moved far enough to flip which side our
+  // projection now favors. Only used for the Best Bets strip's "Current"
+  // toggle state.
+  currentLean: "OVER" | "UNDER" | "PUSH";
+  currentOdds: number | null;
   // Whether our projection clears the line by enough relative to the
   // player's own recent variance to be worth calling out (see
   // lib/projections/confidence.ts) — this is what the page surfaces by
@@ -64,6 +71,11 @@ interface PlayerPropLean {
   // the same day.
   isBestBet: boolean;
   bestBetRank: number | null;
+  // Same membership/rank idea as `isBestBet`/`bestBetRank`, but selected
+  // against the live market line and recomputed on every request instead
+  // of locked in — backs the Best Bets strip's "Current" toggle state.
+  isBestBetCurrent: boolean;
+  bestBetRankCurrent: number | null;
 }
 
 interface UpcomingGame {
@@ -121,6 +133,7 @@ interface AccuracySummary {
     bettableProps: AccuracyBucket;
     highConfidenceProps: AccuracyBucket;
     bestBets: AccuracyBucket;
+    bestBetsCurrent: AccuracyBucket;
     overall: AccuracyBucket;
   };
   espnPredictor: AccuracyBucket;
@@ -407,7 +420,8 @@ function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
 
       {(accuracy.ourModel.bettableProps.graded > 0 ||
         accuracy.ourModel.highConfidenceProps.graded > 0 ||
-        accuracy.ourModel.bestBets.graded > 0) && (
+        accuracy.ourModel.bestBets.graded > 0 ||
+        accuracy.ourModel.bestBetsCurrent.graded > 0) && (
         <div className="space-y-2 border-t border-border pt-3">
           <AccuracyGroupLabel>Player props</AccuracyGroupLabel>
           <div className="flex flex-wrap gap-2">
@@ -430,6 +444,13 @@ function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
                 href="/betting/accuracy/best-bets"
                 label="Best bets"
                 summary={accuracy.ourModel.bestBets}
+              />
+            )}
+            {accuracy.ourModel.bestBetsCurrent.graded > 0 && (
+              <AccuracyTile
+                href="/betting/accuracy/best-bets-current"
+                label="Best bets (current line)"
+                summary={accuracy.ourModel.bestBetsCurrent}
               />
             )}
           </div>
@@ -625,6 +646,8 @@ function FilterSelect({
  * across every game, as a horizontal row of scannable ticket chips — meant
  * to be the first thing a visitor reads, ahead of any individual game's
  * own (deliberately quieter) tables. */
+type BestBetsLineMode = "initial" | "current";
+
 function BestBetsStrip({
   games,
   isToday,
@@ -632,21 +655,31 @@ function BestBetsStrip({
   games: UpcomingGame[];
   isToday: boolean;
 }) {
-  // Membership and order both come straight from the server's locked-in
-  // selection (see src/lib/daily-best-bets.ts) rather than being
+  const [lineMode, setLineMode] = useState<BestBetsLineMode>("initial");
+
+  // "Initial" membership and order come straight from the server's
+  // locked-in selection (see src/lib/daily-best-bets.ts) rather than being
   // recomputed here — re-ranking candidates client-side is exactly what
   // let a pick get silently swapped out mid-day in the first place.
+  // "Current" membership/order instead come from the server's live,
+  // never-locked recomputation against today's actual market line
+  // (`isBestBetCurrent`/`bestBetRankCurrent`) — this one's expected to
+  // move as the market does, that's the point of the toggle.
   const picks = games
     .flatMap((game) =>
       game.playerProps
-        .filter((p) => p.isBestBet)
+        .filter((p) =>
+          lineMode === "initial" ? p.isBestBet : p.isBestBetCurrent,
+        )
         .map((p) => ({
           ...p,
           matchup: `${game.awayTeam.abbreviation} @ ${game.homeTeam.abbreviation}`,
-          // Display only (the σ figure below), computed against the live
-          // current line when the market's moved — not used for
-          // membership or order, both of which come from the server's
-          // locked-in selection above and stay pinned to the frozen line.
+          displayLine: lineMode === "initial" ? p.line : p.currentLine ?? p.line,
+          displayLean: lineMode === "initial" ? p.lean : p.currentLean,
+          displayOdds: lineMode === "initial" ? p.odds : p.currentOdds,
+          rank: lineMode === "initial" ? p.bestBetRank : p.bestBetRankCurrent,
+          // Display only (the σ figure below) — not used for membership or
+          // order, both of which are decided server-side above.
           edgeRatio:
             computeEdgeRatio(
               p.projectedValue,
@@ -660,68 +693,85 @@ function BestBetsStrip({
           ),
         })),
     )
-    .sort((a, b) => (a.bestBetRank ?? 0) - (b.bestBetRank ?? 0));
-
-  if (picks.length === 0) return null;
+    .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
 
   return (
     <div>
-      <p className="text-xs font-medium text-foreground/72 mb-2">
-        {isToday ? "Today's" : "That day's"} best bets
-      </p>
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {picks.map((p) => (
-          <Link
-            key={`${p.playerId}-${p.statType}`}
-            href={`/betting/research/${p.playerId}?stat=${p.statType}`}
-            className="w-36 shrink-0 rounded-lg border border-border bg-surface px-3 py-2.5 hover:border-accent transition-colors"
-          >
-            <p className="truncate text-[10px] text-foreground/50">
-              {p.matchup}
-            </p>
-            <p className="truncate text-xs text-foreground/72">
-              {p.playerName}
-            </p>
-            <p className="truncate text-sm font-semibold text-foreground">
-              {formatLine(p.lean, p.line)} {STAT_LABELS[p.statType]}
-            </p>
-            {p.currentLine !== null && (
-              <p
-                className="truncate text-[10px] text-foreground/50"
-                title={`The market's moved to ${formatLine(p.lean, p.currentLine)} since we made this pick — that's not what we're graded against`}
-              >
-                Now {formatLine(p.lean, p.currentLine)}
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-xs font-medium text-foreground/72">
+          {isToday ? "Today's" : "That day's"} best bets
+        </p>
+        <SegmentedToggle
+          value={lineMode}
+          onChange={setLineMode}
+          options={[
+            { value: "initial", label: "Initial" },
+            { value: "current", label: "Current" },
+          ]}
+        />
+      </div>
+      {picks.length === 0 ? (
+        <p className="text-sm text-foreground/60">
+          No {lineMode === "current" ? "current" : ""} picks clear our
+          confidence bar right now.
+        </p>
+      ) : (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {picks.map((p) => (
+            <Link
+              key={`${p.playerId}-${p.statType}`}
+              href={`/betting/research/${p.playerId}?stat=${p.statType}`}
+              className="w-36 shrink-0 rounded-lg border border-border bg-surface px-3 py-2.5 hover:border-accent transition-colors"
+            >
+              <p className="truncate text-[10px] text-foreground/50">
+                {p.matchup}
               </p>
-            )}
-            <div className="mt-1.5 flex items-center justify-between">
-              <span className="text-xs text-foreground/60 tabular-nums">
-                {formatOdds(p.odds)}
-              </span>
-              {p.gradedCorrect !== null ? (
-                <span className="flex items-center gap-1 text-xs text-foreground/60 tabular-nums">
-                  {p.gradedActualValue}
-                  <ResultMark correct={p.gradedCorrect} />
+              <p className="truncate text-xs text-foreground/72">
+                {p.playerName}
+              </p>
+              <p className="truncate text-sm font-semibold text-foreground">
+                {formatLine(p.displayLean, p.displayLine)} {STAT_LABELS[p.statType]}
+              </p>
+              {lineMode === "initial" && p.currentLine !== null && (
+                <p
+                  className="truncate text-[10px] text-foreground/50"
+                  title={`The market's moved to ${formatLine(p.lean, p.currentLine)} since we made this pick — that's not what we're graded against`}
+                >
+                  Now {formatLine(p.lean, p.currentLine)}
+                </p>
+              )}
+              <div className="mt-1.5 flex items-center justify-between">
+                <span className="text-xs text-foreground/60 tabular-nums">
+                  {formatOdds(p.displayOdds)}
                 </span>
-              ) : (
-                <span
-                  className="text-xs font-medium text-accent tabular-nums"
-                  title={
+                {p.gradedCorrect !== null ? (
+                  <span className="flex items-center gap-1 text-xs text-foreground/60 tabular-nums">
+                    {p.gradedActualValue}
+                    <ResultMark correct={p.gradedCorrect} />
+                  </span>
+                ) : (
+                  <span
+                    className="text-xs font-medium text-accent tabular-nums"
+                    title={
+                      lineMode === "initial" &&
+                      p.originalEdgeRatio != null &&
+                      Math.abs(p.originalEdgeRatio - p.edgeRatio) >= 0.05
+                        ? "Was the pick's edge when made; now is its edge at the current line"
+                        : undefined
+                    }
+                  >
+                    {lineMode === "initial" &&
                     p.originalEdgeRatio != null &&
                     Math.abs(p.originalEdgeRatio - p.edgeRatio) >= 0.05
-                      ? "Was the pick's edge when made; now is its edge at the current line"
-                      : undefined
-                  }
-                >
-                  {p.originalEdgeRatio != null &&
-                  Math.abs(p.originalEdgeRatio - p.edgeRatio) >= 0.05
-                    ? `${p.originalEdgeRatio.toFixed(1)}→${p.edgeRatio.toFixed(1)}σ`
-                    : `${p.edgeRatio.toFixed(1)}σ`}
-                </span>
-              )}
-            </div>
-          </Link>
-        ))}
-      </div>
+                      ? `${p.originalEdgeRatio.toFixed(1)}→${p.edgeRatio.toFixed(1)}σ`
+                      : `${p.edgeRatio.toFixed(1)}σ`}
+                  </span>
+                )}
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

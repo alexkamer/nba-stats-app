@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Selects the day's featured "Best Bets" player-prop picks from the pool of bettable props so that each pick represents a distinct player, keeping the displayed picks and their accuracy record from being dominated by correlated stat lines on a single player.
+Selects the day's featured "Best Bets" player-prop picks from the pool of bettable props so that each pick represents a distinct player, keeping the displayed picks and their accuracy record from being dominated by correlated stat lines on a single player. Offers both a frozen pick-time ("Initial") view and a live market-line ("Current") view of that same selection.
 
 ## Requirements
 
@@ -41,3 +41,24 @@ The system SHALL use the same ranked, deduplicated-by-player selection logic bot
 #### Scenario: Computing the historical Best Bets accuracy record
 - **WHEN** the system computes the aggregate Best Bets hit rate across previously graded days
 - **THEN** it re-derives each day's picks using the same ranked, per-player-deduplicated selection logic, rather than using a separately implemented selection rule
+
+### Requirement: Current-line selection variant
+In addition to the frozen pick-time selection above (the "Initial" view), the system SHALL offer a "Current" view: the same ranked, per-player-deduplicated top-N selection, but with edge ratio, lean, and line all recomputed against each prop's live current market line instead of the line frozen at projection time. The two views are independent and can select different props, or the same prop with a different lean, when the market has moved.
+
+#### Scenario: The market has moved since a projection was frozen
+- **WHEN** a prop's live market line differs from the line its projection was frozen against
+- **THEN** the Current view ranks and leans that prop using the live line, independently of what the Initial view shows for the same prop
+
+### Requirement: Current-line selection is recorded without duplicating a prop
+The system SHALL persist each day's Current-view top-N selection so it can be graded later, recording at most one row per (day, player, stat type) no matter how many times that prop's live line changes before the game starts. A later recomputation for a prop already recorded that day SHALL overwrite that same row's line, lean, odds, and rank rather than create an additional row.
+
+#### Scenario: A prop's live line moves during the day after it was already recorded
+- **WHEN** a prop already recorded in a day's Current selection has its live line move (e.g. a 3-pointers-made prop's line drifting from 0.5 to 1.5) and the prop is recomputed
+- **THEN** the system updates that same (day, player, stat type) row's line/lean/odds/rank in place, so the day's Current record still has exactly one row for that prop
+
+### Requirement: Current-line recording stops once a game is final
+The system SHALL NOT update a prop's recorded Current-selection row once that prop's game has reached final status, preserving whatever live line/lean/odds were last captured before the game ended rather than overwriting them with the now-frozen line.
+
+#### Scenario: A game goes final after its props were recorded live
+- **WHEN** a game reaches final status and one or more of its props already have a recorded Current-selection row from earlier that day
+- **THEN** those rows are left unchanged by any later recomputation for that day

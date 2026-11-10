@@ -34,6 +34,8 @@ const METHODOLOGY: Record<string, string> = {
     "A stricter subset of recommended props — only picks with at least a full standard deviation of edge.",
   "best-bets":
     "Each day's single highest-edge recommended prop per player, capped at 8 per day — the same selection the live Best Bets strip makes.",
+  "best-bets-current":
+    "The same daily top-8 selection as Best Bets, but re-ranked and re-graded against the market's actual line at the time each pick was live, not the frozen pick-time one — so a pick whose line moved during the day is graded exactly once, against wherever it last stood before the game went final.",
 };
 
 interface VerificationPick {

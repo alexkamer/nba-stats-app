@@ -194,6 +194,53 @@ by comparing our margin to the market's *implied* margin
 `isBettable` clears the bar; otherwise both sides render plain, since
 there's no confident recommendation to make either way.
 
+## Best Bets (`lib/betting/select-best-bets.ts`, `src/lib/daily-best-bets.ts`, `src/lib/daily-best-bets-current.ts`)
+
+The day's top 8 bettable props by edge ratio, deduplicated to one pick per
+player (their highest-edge one — correlated stat lines on the same player,
+e.g. points and points+rebounds, don't get to occupy two slots). Shown on
+`/betting` as the Best Bets strip, with an "Initial"/"Current" toggle for
+which line that selection and ranking is computed against:
+
+- **Initial** — ranked against each prop's frozen `PlayerPropProjection.line`
+  (the line at the moment the projection was made), and **locked in** the
+  first time any visitor requests a given day (`DailyBestBet`,
+  `src/lib/daily-best-bets.ts`) so an early visitor's picks can't be
+  silently swapped out later the same day by a newly-synced prop or a
+  rule-out.
+- **Current** — ranked against each prop's live `PlayerPropOdds.line`
+  (`currentLine ?? line` in `/api/betting/upcoming`), recomputed fresh on
+  every request, with lean and odds recomputed to match — the pick can even
+  flip sides from the Initial one if the market's moved far enough.
+
+Current is **never locked** — that's the point of the toggle, it's
+"what the market looks like right now." But its daily top-8 is still
+**recorded** for later grading (`DailyBestBetCurrent`), since there's no
+other history of a live line once the market moves past it (`PlayerPropOdds`
+only ever holds the latest value). Two rules keep that record honest:
+
+1. **One row per (day, player, stat type), ever** — a prop already recorded
+   that day gets its row's line/lean/odds/rank **overwritten in place**
+   every time it's recomputed, never duplicated. This is what stops a prop
+   whose line moved mid-day (e.g. a 3PM line drifting from u0.5 to u1.5)
+   from being graded as two separate wins/losses for the same actual
+   result — there's structurally only one row to grade.
+2. **Recording stops once the game goes final** — a FINAL game's props are
+   excluded from the write path entirely, so whatever line/lean/odds were
+   last captured while the game was still live is what's preserved, rather
+   than being overwritten with the now-meaningless frozen fallback a FINAL
+   game's `currentLine` would otherwise collapse to.
+
+One consequence: a day's `DailyBestBetCurrent` row count isn't capped at 8
+the way `DailyBestBet` is. A prop that was in the live top 8 earlier in the
+day and later got edged out by a bigger mover keeps its row — it's graded
+as "a pick that was live best-bet-worthy at some point that day," not
+"whatever was top 8 at one single instant." Grading itself (in
+`/api/betting/accuracy` and its drill-down route) can't reuse
+`PlayerPropProjection.gradedCorrect` for these rows, since that's graded
+against the frozen line — it instead compares the line-independent
+`gradedActualValue` directly against each row's own captured line/lean.
+
 ## Grading (`ingest/grade-predictions.ts`, `lib/accuracy/*`)
 
 Runs once a game reaches `FINAL`. Four independent things get graded per

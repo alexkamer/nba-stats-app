@@ -165,6 +165,7 @@ model Player {
   availabilities  PlayerAvailability[]
   dailyStatLeaderEntries DailyStatLeaderEntry[]
   dailyBestBets   DailyBestBet[]
+  dailyBestBetsCurrent DailyBestBetCurrent[]
 
   @@map("player")
 }
@@ -220,6 +221,7 @@ model Game {
   playerAvailabilities  PlayerAvailability[]
   teamPerformances      TeamGamePerformance[]
   dailyBestBets         DailyBestBet[]
+  dailyBestBetsCurrent  DailyBestBetCurrent[]
 
   @@map("game")
 }
@@ -464,6 +466,43 @@ model DailyBestBet {
 
   @@unique([date, playerId, statType])
   @@map("daily_best_bet")
+}
+
+// The live-market counterpart to DailyBestBet: the day's top-8-by-edge
+// selection against today's actual market line instead of the frozen
+// pick-time one (see the betting-page "Current" toggle). Unlike
+// DailyBestBet, a row here keeps getting overwritten in place — not
+// re-created — every time its prop is still part of the live top 8, right
+// up until the game goes FINAL, so `line`/`lean`/`odds` always hold
+// whatever the market looked like the last time this prop was "current."
+// The `@@unique([date, playerId, statType])` constraint is what prevents a
+// prop whose line moved mid-day (e.g. Tyler Herro's 3PM line drifting from
+// 0.5 to 1.5) from ever being graded twice for the same day — there's
+// structurally only one row per prop per day, holding only its latest
+// captured line/lean/odds. Because that line can differ from the frozen
+// `PlayerPropProjection.line` (and `lean` can even point at the opposite
+// side), grading here can't reuse `PlayerPropProjection.gradedCorrect` the
+// way DailyBestBet does — it's computed instead from
+// `PlayerPropProjection.gradedActualValue` (the line-independent actual
+// stat total) against this row's own captured `line`/`lean`.
+model DailyBestBetCurrent {
+  id                   Int          @id @default(autoincrement())
+  date                 String       // local YYYY-MM-DD this selection belongs to
+  rank                 Int          // 1-based order as of the last time this row was updated
+  gameId               Int          @map("game_id")
+  game                 Game         @relation(fields: [gameId], references: [id])
+  playerId             Int          @map("player_id")
+  player               Player       @relation(fields: [playerId], references: [id])
+  statType             PropStatType @map("stat_type")
+  line                 Float        // live market line captured the last time this prop was in the current top 8
+  lean                 PropSide     // OVER/UNDER captured at the same time — can differ from the frozen pick's lean
+  odds                 Int?         // American odds for `lean`, captured at the same time (no live PlayerPropOdds history to recompute from later)
+  edgeRatioAtSelection Float        @map("edge_ratio_at_selection")
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+
+  @@unique([date, playerId, statType])
+  @@map("daily_best_bet_current")
 }
 
 model Play {

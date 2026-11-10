@@ -27,6 +27,13 @@ The page SHALL present player prop picks (stat, line, projected value, over/unde
 - **WHEN** a listed game has player prop projections
 - **THEN** the page shows each player's prop pick with the line and the system's projected value
 
+### Requirement: Initial/Current line toggle for Best Bets
+The page SHALL let the user toggle the Best Bets strip between the "Initial" selection (frozen pick-time line, locked in once per day) and the "Current" selection (recomputed against the live market line on every load), per best-bets-selection, without affecting which day's games are being viewed.
+
+#### Scenario: User toggles from Initial to Current
+- **WHEN** a user viewing the Best Bets strip switches the toggle from "Initial" to "Current"
+- **THEN** the page replaces the displayed picks, line, lean, and odds with the Current-view selection for the same day
+
 ### Requirement: Accuracy scoreboard
 The page SHALL display the running accuracy record for the system's own picks and for ESPN's predictor.
 
