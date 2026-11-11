@@ -166,6 +166,7 @@ model Player {
   dailyStatLeaderEntries DailyStatLeaderEntry[]
   dailyBestBets   DailyBestBet[]
   dailyBestBetsCurrent DailyBestBetCurrent[]
+  kingOfTheCourtEntries KingOfTheCourtEntry[]
 
   @@map("player")
 }
@@ -609,6 +610,44 @@ model DailyStatLeaderEntry {
 
   @@unique([dailyStatLeaderId, playerId])
   @@map("daily_stat_leader_entry")
+}
+
+// Our own pregame prediction of a calendar date's points+rebounds+assists
+// leader — the forward-looking counterpart to DailyStatLeader above (see
+// king-of-the-court-prediction capability). Frozen the first time it's
+// computed for a date, the same "computed once, never recomputed"
+// convention as GameProjection/PlayerPropProjection, so grading never
+// reflects hindsight (see ingest/generate-projections.ts).
+model KingOfTheCourtLeaderboard {
+  id      Int      @id @default(autoincrement())
+  date    DateTime @unique
+
+  entries KingOfTheCourtEntry[]
+
+  @@map("king_of_the_court_leaderboard")
+}
+
+// One row per candidate player in a date's frozen leaderboard — every
+// rostered, non-OUT player on a team playing that date (not just players
+// with a posted market prop), ranked by projected combined
+// points+rebounds+assists. `rank` lets ties at the top share rank 1
+// instead of needing an arbitrary tiebreak (same reasoning as
+// DailyStatLeaderEntry representing ties structurally). Graded once the
+// date's actual DailyStatLeader is known; null until then.
+model KingOfTheCourtEntry {
+  id             Int                       @id @default(autoincrement())
+  leaderboardId  Int                       @map("leaderboard_id")
+  leaderboard    KingOfTheCourtLeaderboard @relation(fields: [leaderboardId], references: [id])
+  playerId       Int                       @map("player_id")
+  player         Player                    @relation(fields: [playerId], references: [id])
+  projectedValue Float                     @map("projected_value")
+  rank           Int
+
+  gradedAt  DateTime? @map("graded_at")
+  gradedHit Boolean?  @map("graded_hit")
+
+  @@unique([leaderboardId, playerId])
+  @@map("king_of_the_court_entry")
 }
 
 // ---------- Season aggregates ----------

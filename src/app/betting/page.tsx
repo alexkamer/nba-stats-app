@@ -138,6 +138,7 @@ interface AccuracySummary {
   };
   espnPredictor: AccuracyBucket;
   espnPredictorSpread: AccuracyBucket;
+  kingOfTheCourt: AccuracyBucket;
 }
 
 async function fetchUpcoming(date: string): Promise<UpcomingGame[]> {
@@ -160,6 +161,28 @@ async function fetchAccuracy(): Promise<AccuracySummary> {
   const res = await fetch("/api/betting/accuracy");
   if (!res.ok) throw new Error("Failed to load accuracy summary");
   return res.json();
+}
+
+interface KingOfTheCourtEntryRow {
+  playerId: number;
+  playerName: string;
+  headshotUrl: string | null;
+  projectedValue: number;
+  rank: number;
+  // Set once the date's actual leader is known and this entry's rank is 1
+  // (see prediction-accuracy-tracking) — null for a non-rank-1 entry, or
+  // for any entry on a date that hasn't been graded yet.
+  gradedHit: boolean | null;
+}
+
+/** `null` when no leaderboard has been computed for that date (see
+ * king-of-the-court-prediction) — same `/api/betting/upcoming` response
+ * `fetchUpcoming` already reads `games` off of. */
+async function fetchKingOfTheCourt(date: string): Promise<KingOfTheCourtEntryRow[] | null> {
+  const res = await fetch(`/api/betting/upcoming?date=${date}`);
+  if (!res.ok) throw new Error("Failed to load King of the Court leaderboard");
+  const data = await res.json();
+  return data.kingOfTheCourt;
 }
 
 // Every tracked prop market, labeled for display and in column order for
@@ -308,7 +331,7 @@ function AccuracyTile({
   label,
   summary,
 }: {
-  href: string;
+  href?: string;
   label: string;
   summary: AccuracyBucket;
 }) {
@@ -363,7 +386,8 @@ function AccuracyGroupLabel({ children }: { children: ReactNode }) {
 function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
   const nothingGraded =
     accuracy.ourModel.overall.graded === 0 &&
-    accuracy.espnPredictor.graded === 0;
+    accuracy.espnPredictor.graded === 0 &&
+    accuracy.kingOfTheCourt.graded === 0;
   if (nothingGraded) {
     return (
       <p className="text-sm text-foreground/72">
@@ -453,6 +477,18 @@ function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
                 summary={accuracy.ourModel.bestBetsCurrent}
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {accuracy.kingOfTheCourt.graded > 0 && (
+        <div className="space-y-2 border-t border-border pt-3">
+          <AccuracyGroupLabel>King of the Court</AccuracyGroupLabel>
+          <div className="flex flex-wrap gap-2">
+            <AccuracyTile
+              label="King of the Court picks"
+              summary={accuracy.kingOfTheCourt}
+            />
           </div>
         </div>
       )}
@@ -772,6 +808,52 @@ function BestBetsStrip({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Pregame leaderboard of the players projected to put up that date's
+ * highest combined points+rebounds+assists (see
+ * king-of-the-court-prediction) — a ranked card strip, same visual
+ * language as `BestBetsStrip`, since it's the same idea (today's system
+ * pick) just at the whole-day level instead of per-prop. */
+function KingOfTheCourtLeaderboard({
+  entries,
+  isToday,
+}: {
+  entries: KingOfTheCourtEntryRow[];
+  isToday: boolean;
+}) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium text-foreground/72">
+        {isToday ? "Today's" : "That day's"} King of the Court leaderboard
+      </p>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {entries.map((entry) => (
+          <Link
+            key={entry.playerId}
+            href={`/betting/research/${entry.playerId}?stat=POINTS_REBOUNDS_ASSISTS`}
+            className="w-36 shrink-0 rounded-lg border border-border bg-surface px-3 py-2.5 hover:border-accent transition-colors"
+          >
+            <div className="flex items-center gap-1.5">
+              <CircularBadge src={entry.headshotUrl} alt="" size="sm" />
+              <span className="text-xs font-semibold text-foreground/50 tabular-nums">
+                #{entry.rank}
+              </span>
+            </div>
+            <p className="mt-1 truncate text-xs text-foreground">
+              {entry.playerName}
+            </p>
+            <div className="mt-1 flex items-center justify-between">
+              <span className="text-sm font-semibold text-foreground tabular-nums">
+                {entry.projectedValue.toFixed(1)} PRA
+              </span>
+              {entry.rank === 1 && <ResultMark correct={entry.gradedHit} />}
+            </div>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1348,6 +1430,11 @@ export default function BettingPage() {
     queryKey: ["betting", "accuracy"],
     queryFn: fetchAccuracy,
   });
+  const { data: kingOfTheCourt } = useQuery({
+    queryKey: ["betting", "kingOfTheCourt", dateParam],
+    queryFn: () => fetchKingOfTheCourt(dateParam!),
+    enabled: dateParam !== null,
+  });
 
   // Games already arrive in start-time order from the API — "time" needs
   // no re-sort, only "picks" (most recommendations first) does.
@@ -1383,6 +1470,13 @@ export default function BettingPage() {
 
       {games && games.length > 0 && (
         <BestBetsStrip games={games} isToday={isToday} />
+      )}
+
+      {kingOfTheCourt && kingOfTheCourt.length > 0 && (
+        // Top 10 only — the leaderboard can have a full-roster-sized
+        // candidate pool (see king-of-the-court-prediction), far more than
+        // is useful to show in a horizontal strip.
+        <KingOfTheCourtLeaderboard entries={kingOfTheCourt.slice(0, 10)} isToday={isToday} />
       )}
 
       {accuracy && <AccuracyStrip accuracy={accuracy} />}

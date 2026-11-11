@@ -25,6 +25,8 @@ import { computeOpponentFactors, type AllowedStatRow } from "../lib/projections/
 import { computeStdev, isBettable } from "../lib/projections/confidence";
 import { computeTeammateRoleAdjustment } from "../lib/projections/teammate-role-adjustment";
 import { solveTeamRatings, hasEnoughLeagueData, type TeamGameRow, type TeamRating } from "../lib/projections/team-rating";
+import { rankLeaderboard } from "../lib/projections/rank-leaderboard";
+import { selectAvailableCandidates, type KingOfTheCourtCandidateRef } from "../lib/projections/king-of-the-court-candidates";
 import type { PropStatType } from "../lib/espn/prop-types";
 import type { AvailabilityStatus } from "../lib/espn/injury-status-mapping";
 
@@ -537,9 +539,152 @@ async function computeTeammateMultiplier(
   return computeTeammateRoleAdjustment({ values, teammateWasOut, baseline });
 }
 
-async function generatePlayerPropProjections(availabilityByGamePlayer: Map<string, AvailabilityStatus>) {
-  const opponentFactorsByStat = await loadOpponentFactors();
+// King of the Court's projected stat — a combined category, same as any
+// other PropStatType, so it reuses extractStatValue/opponentFactorsByStat
+// without a special case.
+const KOTC_STAT_TYPE: PropStatType = "POINTS_REBOUNDS_ASSISTS";
 
+/** Local (not UTC) YYYY-MM-DD day bucket — same convention
+ * ingest/compute-daily-stat-leaders.ts uses for DailyStatLeader, since
+ * King of the Court grading reads that table directly. */
+function dayKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseDayKey(key: string): Date {
+  const [year, month, day] = key.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+type ScheduledGameRow = { id: number; date: Date; seasonId: number; homeTeamId: number; awayTeamId: number };
+
+// Every rostered, non-OUT player on either team in `game`, paired with the
+// opposing team id their opponent factor should be looked up against — the
+// OUT-filtering itself is the pure, unit-tested selectAvailableCandidates.
+async function loadCandidatesForGame(
+  game: ScheduledGameRow,
+  availabilityByGamePlayer: Map<string, AvailabilityStatus>,
+): Promise<KingOfTheCourtCandidateRef[]> {
+  const candidates: KingOfTheCourtCandidateRef[] = [];
+  for (const [teamId, opponentTeamId] of [
+    [game.homeTeamId, game.awayTeamId],
+    [game.awayTeamId, game.homeTeamId],
+  ] as const) {
+    const rosterIds = await loadTeamRosterIds(teamId);
+    candidates.push(...selectAvailableCandidates(rosterIds, game.id, teamId, opponentTeamId, availabilityByGamePlayer));
+  }
+  return candidates;
+}
+
+// This candidate's projected combined points+rebounds+assists for `game`,
+// using the exact same inputs/functions generatePlayerPropProjections uses
+// for a POINTS_REBOUNDS_ASSISTS prop — `null` when there's no qualifying
+// stat history, same insufficient-data handling as that function.
+async function projectKingOfTheCourtCandidate(
+  candidate: KingOfTheCourtCandidateRef,
+  game: ScheduledGameRow,
+  availabilityByGamePlayer: Map<string, AvailabilityStatus>,
+  opponentFactorsByStat: Map<PropStatType, Map<number, number>>,
+): Promise<number | null> {
+  const gameLog = await loadPlayerGameLog(candidate.playerId);
+  const values = gameLog.map((row) => extractStatValue(KOTC_STAT_TYPE, row));
+  const minutes = gameLog.map((row) => row.minutes ?? 0);
+  const recentValues = values.slice(-RECENT_GAMES_WINDOW);
+  const recentMinutes = minutes.slice(-RECENT_GAMES_WINDOW);
+  const seasonAverage = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null;
+
+  const opponentFactor = opponentFactorsByStat.get(KOTC_STAT_TYPE)?.get(candidate.opponentTeamId) ?? 1;
+  const projectedValue = projectPlayerStat({ seasonAverage, recentValues, recentMinutes, opponentFactor });
+  if (projectedValue === null) return null;
+
+  const rosterIds = await loadTeamRosterIds(candidate.currentTeamId);
+  const outTeammateIds = rosterIds.filter(
+    (id) => id !== candidate.playerId && availabilityByGamePlayer.get(`${game.id}|${id}`) === "OUT",
+  );
+  if (outTeammateIds.length === 0) return projectedValue;
+
+  const multiplier = await computeTeammateMultiplier(
+    candidate.playerId,
+    outTeammateIds,
+    game.seasonId,
+    KOTC_STAT_TYPE,
+    projectedValue,
+  );
+  return projectedValue * multiplier;
+}
+
+// Freezes one leaderboard per calendar date, covering every rostered,
+// non-OUT player on a team playing that date — not gated on a posted
+// market prop the way generatePlayerPropProjections is (design.md
+// "Candidate generation is a new orchestration pass"). Self-healing like
+// that function: only dates without an existing KingOfTheCourtLeaderboard
+// row are processed.
+async function generateKingOfTheCourtLeaderboard(
+  availabilityByGamePlayer: Map<string, AvailabilityStatus>,
+  opponentFactorsByStat: Map<PropStatType, Map<number, number>>,
+) {
+  const scheduledGames: ScheduledGameRow[] = await prisma.game.findMany({
+    where: { status: "SCHEDULED" },
+    select: { id: true, date: true, seasonId: true, homeTeamId: true, awayTeamId: true },
+  });
+  if (scheduledGames.length === 0) return { checked: 0, created: 0 };
+
+  const gamesByDay = new Map<string, ScheduledGameRow[]>();
+  for (const game of scheduledGames) {
+    const key = dayKey(game.date);
+    const list = gamesByDay.get(key);
+    if (list) list.push(game);
+    else gamesByDay.set(key, [game]);
+  }
+
+  const existingLeaderboards = await prisma.kingOfTheCourtLeaderboard.findMany({ select: { date: true } });
+  const existingKeys = new Set(existingLeaderboards.map((l) => dayKey(l.date)));
+
+  let created = 0;
+  for (const [key, games] of gamesByDay) {
+    if (existingKeys.has(key)) continue;
+
+    const projected: { playerId: number; projectedValue: number }[] = [];
+    for (const game of games) {
+      const candidates = await loadCandidatesForGame(game, availabilityByGamePlayer);
+      for (const candidate of candidates) {
+        const projectedValue = await projectKingOfTheCourtCandidate(
+          candidate,
+          game,
+          availabilityByGamePlayer,
+          opponentFactorsByStat,
+        );
+        if (projectedValue !== null) projected.push({ playerId: candidate.playerId, projectedValue });
+      }
+    }
+    if (projected.length === 0) continue; // no candidate had qualifying history yet — retry next run
+
+    const ranked = rankLeaderboard(projected);
+    await prisma.kingOfTheCourtLeaderboard.create({
+      data: {
+        date: parseDayKey(key),
+        entries: {
+          create: ranked.map((entry) => ({
+            playerId: entry.playerId,
+            projectedValue: entry.projectedValue,
+            rank: entry.rank,
+          })),
+        },
+      },
+    });
+    created += 1;
+  }
+
+  return { checked: gamesByDay.size, created };
+}
+
+async function generatePlayerPropProjections(
+  availabilityByGamePlayer: Map<string, AvailabilityStatus>,
+  opponentFactorsByStat: Map<PropStatType, Map<number, number>>,
+) {
   const propOddsRows = await prisma.playerPropOdds.findMany({
     // DOUBLE_DOUBLE/TRIPLE_DOUBLE are yes/no propositions — ESPN gives them
     // only an OVER side with odds and no numeric `line` (confirmed: always
@@ -656,10 +801,15 @@ async function main() {
   const availabilityByGamePlayer = await loadAvailabilityByGamePlayer();
   const games = await generateGameProjections(availabilityByGamePlayer);
   const backfilled = await backfillMissingMarketLines();
-  const props = await generatePlayerPropProjections(availabilityByGamePlayer);
+  // Shared between props and King of the Court so the opponent-strength
+  // query only runs once per run.
+  const opponentFactorsByStat = await loadOpponentFactors();
+  const props = await generatePlayerPropProjections(availabilityByGamePlayer, opponentFactorsByStat);
+  const kingOfTheCourt = await generateKingOfTheCourtLeaderboard(availabilityByGamePlayer, opponentFactorsByStat);
   console.log(
     `generate-projections done in ${((Date.now() - start) / 1000).toFixed(1)}s: ` +
-      `games ${games.created}/${games.checked} projected, props ${props.created}/${props.checked} projected ` +
+      `games ${games.created}/${games.checked} projected, props ${props.created}/${props.checked} projected, ` +
+      `King of the Court leaderboards ${kingOfTheCourt.created}/${kingOfTheCourt.checked} frozen ` +
       `(remaining lacked qualifying history and were skipped, not fabricated), ` +
       `market lines backfilled ${backfilled.updated}/${backfilled.checked}.`,
   );

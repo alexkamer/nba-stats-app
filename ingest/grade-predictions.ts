@@ -18,6 +18,7 @@ import {
   gradeTotalCoverage,
 } from "../lib/accuracy/grade-game";
 import { gradePlayerProp } from "../lib/accuracy/grade-prop";
+import { gradeKingOfTheCourt } from "../lib/accuracy/grade-king-of-the-court";
 import { extractStatValue } from "../lib/projections/extract-prop-stat";
 import type { PropStatType } from "../lib/espn/prop-types";
 
@@ -133,15 +134,58 @@ async function gradePlayerPropProjections() {
   return { checked: rows.length, graded };
 }
 
+// Grades a King of the Court leaderboard once its calendar date's actual
+// leader is known (DailyStatLeader has a row for that date, itself only
+// written once every game on that date is FINAL — see
+// ingest/compute-daily-stat-leaders.ts). A date with pending games simply
+// has no DailyStatLeader row yet, so its leaderboard is skipped and
+// retried on a later run. "Hit" is whether any rank-1 (tied or outright)
+// candidate matches any of the date's recorded leaders (ties kept, same
+// as DailyStatLeader itself — see lib/accuracy/grade-king-of-the-court.ts).
+// Every entry on a graded leaderboard gets `gradedAt` set so the
+// leaderboard isn't re-queried on future runs; only rank-1 entries get a
+// meaningful `gradedHit` (the others were never the prediction).
+async function gradeKingOfTheCourtLeaderboards() {
+  const leaderboards = await prisma.kingOfTheCourtLeaderboard.findMany({
+    where: { entries: { some: { gradedAt: null } } },
+    select: { id: true, date: true, entries: { select: { id: true, playerId: true, rank: true } } },
+  });
+
+  let graded = 0;
+  for (const leaderboard of leaderboards) {
+    const dailyLeader = await prisma.dailyStatLeader.findUnique({
+      where: { date: leaderboard.date },
+      select: { entries: { select: { playerId: true } } },
+    });
+    if (!dailyLeader) continue; // this date's games haven't all gone FINAL yet
+
+    const actualLeaderPlayerIds = dailyLeader.entries.map((e) => e.playerId);
+    const topRankedPlayerIds = leaderboard.entries.filter((e) => e.rank === 1).map((e) => e.playerId);
+    const hit = gradeKingOfTheCourt(topRankedPlayerIds, actualLeaderPlayerIds);
+
+    await Promise.all(
+      leaderboard.entries.map((entry) =>
+        prisma.kingOfTheCourtEntry.update({
+          where: { id: entry.id },
+          data: { gradedAt: new Date(), gradedHit: entry.rank === 1 ? hit : null },
+        }),
+      ),
+    );
+    graded += 1;
+  }
+  return { checked: leaderboards.length, graded };
+}
+
 async function main() {
   const start = Date.now();
   const games = await gradeGameProjections();
   const predictors = await gradePredictorSnapshots();
   const props = await gradePlayerPropProjections();
+  const kingOfTheCourt = await gradeKingOfTheCourtLeaderboards();
   console.log(
     `grade-predictions done in ${((Date.now() - start) / 1000).toFixed(1)}s: ` +
       `games ${games.graded}/${games.checked}, predictor ${predictors.graded}/${predictors.checked}, ` +
-      `props ${props.graded}/${props.checked} graded.`,
+      `props ${props.graded}/${props.checked}, King of the Court ${kingOfTheCourt.graded}/${kingOfTheCourt.checked} graded.`,
   );
   await prisma.$disconnect();
 }

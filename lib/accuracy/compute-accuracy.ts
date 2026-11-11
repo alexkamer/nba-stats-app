@@ -102,3 +102,17 @@ export function accuracyByStatType<T extends { statType: string }>(
 ): Record<string, AccuracySummary> {
   return accuracyByKey(rows, (row) => row.statType, gradedValue);
 }
+
+/** King of the Court's own running accuracy record (see
+ * prediction-accuracy-tracking capability) — a separate bucket from game
+ * and player-prop accuracy, not pooled with them (design.md "Accuracy
+ * record is a new independent source"). Only rank-1 entries represent the
+ * actual prediction being graded; every other entry on a graded
+ * leaderboard also gets a `gradedAt` stamp (see
+ * ingest/grade-predictions.ts) but carries no hit/miss verdict of its own,
+ * so this filters to rank 1 before delegating to `computeAccuracy`. */
+export function computeKingOfTheCourtAccuracy(
+  entries: Array<{ rank: number; gradedHit: boolean | null }>,
+): AccuracySummary {
+  return computeAccuracy(entries.filter((e) => e.rank === 1).map((e) => e.gradedHit));
+}

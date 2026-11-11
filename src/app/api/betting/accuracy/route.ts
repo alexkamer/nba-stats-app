@@ -6,6 +6,7 @@ import {
   computeAccuracyWithPnl,
   accuracyByMethod,
   accuracyByStatType,
+  computeKingOfTheCourtAccuracy,
 } from "@lib/accuracy/compute-accuracy";
 import {
   gradeEspnPredictorSpread,
@@ -38,7 +39,7 @@ function dayKey(date: Date): string {
 // rather than an error.
 export async function GET() {
   try {
-    const [gameRows, predictorRows, propRows] = await Promise.all([
+    const [gameRows, predictorRows, propRows, kingOfTheCourtRows] = await Promise.all([
       prisma.gameProjection.findMany({
         where: { gradedAt: { not: null } },
         select: {
@@ -138,6 +139,10 @@ export async function GET() {
             },
           },
         },
+      }),
+      prisma.kingOfTheCourtEntry.findMany({
+        where: { gradedAt: { not: null } },
+        select: { rank: true, gradedHit: true },
       }),
     ]);
 
@@ -344,6 +349,11 @@ export async function GET() {
     // new grading pass or storage needed (design.md "Market-favorite
     // accuracy baseline"). Distinct from gameAccuracy: this grades the
     // market's own favorite, not our model's pick.
+    // Own independent bucket, not pooled with game/prop accuracy (design.md
+    // "Accuracy record is a new independent source") — a much harder bet
+    // than any single prop, so its hit rate stands on its own.
+    const kingOfTheCourtAccuracy = computeKingOfTheCourtAccuracy(kingOfTheCourtRows);
+
     const marketFavoriteAccuracy = computeAccuracy(
       gameRows
         .filter((r) => r.game.homeScore !== null && r.game.awayScore !== null)
@@ -424,6 +434,10 @@ export async function GET() {
       espnPredictor: predictorAccuracy,
       espnPredictorSpread: espnSpreadAccuracy,
       marketFavorite: marketFavoriteAccuracy,
+      // `unitsPnl: null` added explicitly — King of the Court isn't an
+      // odds-settled bet, so there's never a P/L figure, but the frontend's
+      // shared AccuracyBucket shape expects the field to exist either way.
+      kingOfTheCourt: { ...kingOfTheCourtAccuracy, unitsPnl: null },
       byMethod,
       propsByStatType,
     });

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeAccuracy, accuracyByMethod, accuracyByStatType } from "./compute-accuracy";
+import { computeAccuracy, accuracyByMethod, accuracyByStatType, computeKingOfTheCourtAccuracy } from "./compute-accuracy";
 
 test("computeAccuracy computes the hit rate from graded rows", () => {
   const result = computeAccuracy([true, true, false, true, false]);
@@ -62,4 +62,19 @@ test("accuracyByStatType computes an independent hit rate per stat type", () => 
 test("accuracyByStatType reports a null hit rate for a stat type with zero graded picks rather than dividing by zero", () => {
   const result = accuracyByStatType([{ statType: "POINTS", gradedCorrect: null }], (r) => r.gradedCorrect);
   assert.deepEqual(result.POINTS, { graded: 0, correct: 0, hitRate: null });
+});
+
+test("computeKingOfTheCourtAccuracy only counts rank-1 entries toward the hit rate", () => {
+  const result = computeKingOfTheCourtAccuracy([
+    { rank: 1, gradedHit: true },
+    { rank: 2, gradedHit: null },
+    { rank: 1, gradedHit: false },
+    { rank: 3, gradedHit: null },
+  ]);
+  assert.deepEqual(result, { graded: 2, correct: 1, hitRate: 0.5 });
+});
+
+test("computeKingOfTheCourtAccuracy returns a null hit rate when nothing is graded yet", () => {
+  const result = computeKingOfTheCourtAccuracy([{ rank: 1, gradedHit: null }]);
+  assert.deepEqual(result, { graded: 0, correct: 0, hitRate: null });
 });

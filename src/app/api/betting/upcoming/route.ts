@@ -54,6 +54,26 @@ export async function GET(request: Request) {
     const endOfDay = new Date(startOfDay);
     endOfDay.setDate(endOfDay.getDate() + 1);
 
+    // King of the Court leaderboard for this exact day — `startOfDay` is
+    // the same local-midnight Date convention the leaderboard's own `date`
+    // column is stored under (see ingest/generate-projections.ts's
+    // `parseDayKey`), so a direct `findUnique` is exact, no range query
+    // needed (same reasoning as src/lib/briefing/top-performers.ts).
+    const kingOfTheCourtLeaderboard = await prisma.kingOfTheCourtLeaderboard.findUnique({
+      where: { date: startOfDay },
+      select: {
+        entries: {
+          orderBy: { rank: "asc" },
+          select: {
+            rank: true,
+            projectedValue: true,
+            gradedHit: true,
+            player: { select: { id: true, displayName: true, headshotUrl: true } },
+          },
+        },
+      },
+    });
+
     const games = await prisma.game.findMany({
       where: { date: { gte: startOfDay, lt: endOfDay } },
       orderBy: { date: "asc" },
@@ -358,7 +378,19 @@ export async function GET(request: Request) {
       }),
     }));
 
-    return NextResponse.json({ games: resultWithBestBets });
+    return NextResponse.json({
+      games: resultWithBestBets,
+      kingOfTheCourt: kingOfTheCourtLeaderboard
+        ? kingOfTheCourtLeaderboard.entries.map((e) => ({
+            playerId: e.player.id,
+            playerName: e.player.displayName,
+            headshotUrl: e.player.headshotUrl,
+            projectedValue: e.projectedValue,
+            rank: e.rank,
+            gradedHit: e.gradedHit,
+          }))
+        : null,
+    });
   } catch (error) {
     console.error("GET /api/betting/upcoming failed:", error);
     return NextResponse.json(
