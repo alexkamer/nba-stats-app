@@ -1,8 +1,19 @@
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { CalendarDays, ChevronLeft, LayoutList, Newspaper, ShieldHalf, Dices, Crown, type LucideIcon } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronLeft,
+  LayoutList,
+  Newspaper,
+  ShieldHalf,
+  Dices,
+  Crown,
+  Sunrise,
+  type LucideIcon,
+} from "lucide-react";
 
 export const SECTIONS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: "/briefing", label: "Briefing", icon: Sunrise },
   { href: "/scoreboard", label: "Scoreboard", icon: CalendarDays },
   { href: "/standings", label: "Standings", icon: LayoutList },
   { href: "/teams", label: "Teams", icon: ShieldHalf },

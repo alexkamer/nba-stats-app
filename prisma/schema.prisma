@@ -874,3 +874,29 @@ model NewsArticlePlayer {
   @@id([newsArticleId, playerId])
   @@map("news_article_player")
 }
+
+// ---------- Baseline Briefing ----------
+
+// One agent-generated one-line recap per calendar date (see
+// briefing-summary-generation capability) — generated at most once per
+// date, the first time it's needed, and never regenerated or overwritten
+// afterward, so repeat views of the same date always read back the same
+// text instead of calling the model again.
+enum BriefingSummaryKind {
+  PREVIEW // generated before the viewed date's own games are final — a
+  // forward-looking hype-up of the slate still to come, never frozen
+  // permanently: once the date's games go final, it's replaced by a RECAP.
+  RECAP // generated once the viewed date's own games are final — frozen
+  // forever from that point on, same as every other recap-tier briefing
+  // fact.
+}
+
+model BriefingSummary {
+  id          Int                 @id @default(autoincrement())
+  date        String              @unique // local YYYY-MM-DD this summary covers
+  text        String
+  kind        BriefingSummaryKind @default(RECAP)
+  generatedAt DateTime            @default(now()) @map("generated_at")
+
+  @@map("briefing_summary")
+}
