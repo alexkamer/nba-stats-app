@@ -1,12 +1,14 @@
 import { prisma } from "@/lib/db";
 import { isEspnOnly } from "@/lib/data-source";
-import { getLeagueLeaders } from "@/lib/espn-league-leaders";
+import { getLeagueLeaders, MAX_LEADERS_PER_CATEGORY } from "@/lib/espn-league-leaders";
 import { getActivePlayersLive } from "@/lib/espn-players-list";
 import { getTeamsLive } from "@/lib/espn-teams-list";
 import { NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const limitParam = Number(new URL(request.url).searchParams.get("limit"));
+    const limit = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, MAX_LEADERS_PER_CATEGORY) : 5;
     const categoriesRaw = await getLeagueLeaders();
     const athleteEspnIds = [...new Set(categoriesRaw.flatMap((c) => c.leaders.map((l) => l.athleteEspnId)))];
     const teamEspnIds = [...new Set(categoriesRaw.flatMap((c) => c.leaders.map((l) => l.teamEspnId)))];
@@ -51,6 +53,7 @@ export async function GET() {
           if (!player) return null;
           const team = teamByEspnId.get(entry.teamEspnId) ?? null;
           return {
+            espnId: entry.athleteEspnId,
             displayName: player.displayName,
             headshotUrl: player.headshotUrl,
             teamAbbreviation: team?.abbreviation ?? null,
@@ -58,7 +61,8 @@ export async function GET() {
             displayValue: entry.displayValue,
           };
         })
-        .filter((l): l is NonNullable<typeof l> => l !== null),
+        .filter((l): l is NonNullable<typeof l> => l !== null)
+        .slice(0, limit),
     }));
 
     return NextResponse.json({ categories });

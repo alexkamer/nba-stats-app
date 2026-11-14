@@ -6,7 +6,7 @@ import { parseStreak, type Conference, type LeaderCategory } from "@/components/
 import { L10Dots } from "@/components/ui/shared";
 
 /** Five leader categories side by side: the leader's headshot and figure
- * large, then the next three underneath. Scrolls sideways on phones. */
+ * large, then the next four underneath. Scrolls sideways on phones. */
 export function LeadersStrip({ categories }: { categories?: LeaderCategory[] }) {
   return (
     <div className="-mx-5 flex scroll-px-5 snap-x overflow-x-auto px-5 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-px sm:overflow-visible sm:bg-border sm:px-0 lg:grid-cols-5">
@@ -14,22 +14,29 @@ export function LeadersStrip({ categories }: { categories?: LeaderCategory[] }) 
         const [first, ...rest] = c.leaders;
         return (
           <div key={c.key} className="w-64 shrink-0 snap-start border-r border-border bg-surface p-4 sm:w-auto sm:border-r-0">
-            <h3 className="text-xl">{c.label}</h3>
+            <div className="flex items-baseline justify-between gap-2">
+              <h3 className="text-xl">{c.label}</h3>
+              <Link href={`/leaders?stat=${c.key}`} className="text-sm font-semibold text-accent outline-none hover:underline focus-visible:underline">
+                See all
+              </Link>
+            </div>
             {first && (
-              <div className="mt-3 flex items-center gap-3">
+              <Link href={`/players/${first.espnId}`} className="mt-3 flex items-center gap-3 outline-none hover:text-accent focus-visible:underline">
                 <CircularBadge src={first.headshotUrl} alt="" size="lg" />
                 <div className="min-w-0">
                   <p className="font-display text-5xl font-bold leading-none tabular-nums">{first.displayValue}</p>
                   <p className="mt-1 truncate text-sm font-semibold">{first.displayName}</p>
                 </div>
-              </div>
+              </Link>
             )}
             <ol className="mt-3 space-y-1 border-t border-border pt-3 text-sm">
-              {rest.slice(0, 3).map((l, i) => (
-                <li key={l.displayName} className="flex items-baseline justify-between gap-2">
+              {rest.slice(0, 4).map((l, i) => (
+                <li key={l.espnId} className="flex items-baseline justify-between gap-2">
                   <span className="truncate">
                     <span className="mr-2 text-foreground/45 tabular-nums">{i + 2}</span>
-                    {l.displayName}
+                    <Link href={`/players/${l.espnId}`} className="outline-none hover:text-accent focus-visible:underline">
+                      {l.displayName}
+                    </Link>
                   </span>
                   <span className="font-semibold tabular-nums">{l.displayValue}</span>
                 </li>

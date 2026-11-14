@@ -128,9 +128,14 @@ export function HomeA() {
       <Slate games={games.data} loading={games.isLoading} error={games.isError} />
 
       <section aria-labelledby="leaders-h">
-        <h2 id="leaders-h" className="mb-3 text-2xl">
-          League leaders
-        </h2>
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 id="leaders-h" className="text-2xl">
+            League leaders
+          </h2>
+          <Link href="/leaders" className="text-sm font-semibold text-accent hover:underline">
+            See all leaders
+          </Link>
+        </div>
         {leaders.isError && <ErrorLine what="league leaders" />}
         {leaders.isLoading && <div aria-hidden="true" className="h-64 animate-pulse rounded-lg bg-surface motion-reduce:animate-none" />}
         <div className="rounded-lg sm:overflow-hidden">

@@ -51,7 +51,8 @@ const CATEGORIES: { key: string; label: string }[] = [
   { key: "blocksPerGame", label: "Blocks" },
 ];
 
-const PER_CATEGORY_LIMIT = 5;
+/** Deepest list any caller can ask for; the API route trims it per request. */
+export const MAX_LEADERS_PER_CATEGORY = 25;
 
 async function fetchLeagueLeaders(): Promise<LeagueLeaderCategory[]> {
   const data = await fetchEspnJson<EspnLeaguesLeadersResponse>(
@@ -61,7 +62,7 @@ async function fetchLeagueLeaders(): Promise<LeagueLeaderCategory[]> {
 
   return CATEGORIES.map(({ key, label }) => {
     const category = categoryByName.get(key);
-    const leaders = (category?.leaders ?? []).slice(0, PER_CATEGORY_LIMIT).map((entry) => ({
+    const leaders = (category?.leaders ?? []).slice(0, MAX_LEADERS_PER_CATEGORY).map((entry) => ({
       athleteEspnId: idFromRef(entry.athlete.$ref),
       teamEspnId: idFromRef(entry.team.$ref),
       value: entry.value,
@@ -74,5 +75,5 @@ async function fetchLeagueLeaders(): Promise<LeagueLeaderCategory[]> {
 /** 15-minute cache — per-game averages move slowly enough within a day
  * that a tighter TTL would just re-pay the same ESPN call for no benefit. */
 export function getLeagueLeaders(): Promise<LeagueLeaderCategory[]> {
-  return cachedEspn("league-leaders", 15 * 60 * 1000, fetchLeagueLeaders);
+  return cachedEspn("league-leaders-top25", 15 * 60 * 1000, fetchLeagueLeaders);
 }
