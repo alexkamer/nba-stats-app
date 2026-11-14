@@ -20,9 +20,8 @@ function todayYyyymmdd(): string {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** Today's games for shell-level surfaces (variant A's live list, variant B's
- * ticker). Polls only while `enabled`, so variants without such a surface
- * (and the baseline) cause no scoreboard traffic. Shares its query key with
+/** Today's games for shell-level surfaces (the rail's Tonight list). Polls only
+ * while `enabled`. Shares its query key with
  * the home page's own scoreboard query, so the two dedupe. */
 export function useScoreboardToday(enabled: boolean) {
   // Read "today" in an effect: calling `new Date()` during render would be

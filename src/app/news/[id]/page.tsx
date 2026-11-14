@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Suspense } from "react";
 import { SkeletonArticle } from "@/components/Skeleton";
+import { useBreadcrumbLabel } from "@/components/Breadcrumb";
 
 interface ArticleDetail {
   id: number;
@@ -40,6 +41,8 @@ function NewsArticleContent() {
     queryKey: ["news", id],
     queryFn: () => fetchArticle(id),
   });
+
+  useBreadcrumbLabel(article?.headline);
 
   if (isLoading) return <SkeletonArticle />;
   if (error || !article) return <p className="text-red-600 dark:text-red-400">Failed to load article.</p>;

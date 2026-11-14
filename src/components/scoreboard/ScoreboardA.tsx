@@ -5,7 +5,7 @@ import { useState } from "react";
 import { AlertCircle, CalendarX, ChevronLeft, ChevronRight } from "lucide-react";
 import { CircularBadge } from "@/components/CircularBadge";
 import { isBreak, isUnderway } from "@/lib/game-status";
-import { LiveDot } from "@/components/templates/variants/shared";
+import { LiveDot } from "@/components/ui/shared";
 
 interface SideLite {
   abbreviation: string;
@@ -184,7 +184,7 @@ function Card({ game, accent }: { game: ScoreboardGameLite; accent: string }) {
   );
 }
 
-/** Scoreboard for layout A: a day strip for quick date changes, then a grid
+/** Scoreboard: a day strip for quick date changes, then a grid
  * of game cards with scores at a glance, a compact line score and direct
  * links to the game's tabs. Same data and date handling as the existing page. */
 export function ScoreboardA({

@@ -3,8 +3,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { CircularBadge } from "@/components/CircularBadge";
-import { parseStreak } from "@/components/templates/home-data";
-import { L10Dots } from "@/components/templates/variants/shared";
+import { parseStreak } from "@/components/home/home-data";
+import { L10Dots } from "@/components/ui/shared";
 
 /* The team page's data shapes are private to its page file, so these are the
  * minimal structural types this variant reads. The page passes its own values. */
@@ -87,7 +87,7 @@ function Tile({ label, children, foot }: { label: string; children: ReactNode; f
 
 const num = "font-display text-4xl font-bold leading-none tabular-nums";
 
-/** Entity header for layout A: identity on the left, the season's headline
+/** Entity header: identity on the left, the season's headline
  * numbers as a row of tiles on the right. Sits inside the page's own
  * `FullBleed` + `TabPager`, so tabs behave exactly as before. */
 export function TeamHeaderA({
@@ -206,7 +206,7 @@ function UpNext({ game, teamId }: { game: ScheduleGameLite; teamId: number }) {
   );
 }
 
-/** Home tab for layout A: recent form first (the last games as a strip, with
+/** Home tab: recent form first (the last games as a strip, with
  * the next game leading it), then news beside the division table and the
  * team's statistical leaders. */
 export function TeamHomeA({

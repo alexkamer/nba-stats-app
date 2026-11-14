@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { isBreak } from "@/lib/game-status";
-import { useScoreboardToday, type ScoreboardGame } from "@/components/templates/useScoreboardToday";
+import { useScoreboardToday, type ScoreboardGame } from "@/components/shell/useScoreboardToday";
 
 export interface Standing {
   conferenceRank: number | null;

@@ -1,12 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import { TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
 import { Skeleton, SkeletonRow } from "@/components/Skeleton";
-import { useLayout } from "@/components/templates/layout-context";
-import { DiffA, LastTenA, StandingsGroupA, StandingsHeaderA, StreakA, type StandingsRowA } from "@/components/templates/variants/a/StandingsA";
+import { DiffA, LastTenA, StandingsGroupA, StandingsHeaderA, StreakA, type StandingsRowA } from "@/components/standings/StandingsA";
 
 interface Standing {
   id: number;
@@ -166,7 +164,7 @@ const EXTRA_COLUMNS: Record<PageMode, ExtraColumn[]> = {
   "nba-cup": [],
 };
 
-// Layout A shows the same columns with richer cells: streak and last ten as
+// The page shows the same columns with richer cells: streak and last ten as
 // colored marks and blocks, and the differential colored by sign.
 function extraColumnsA(mode: PageMode): ExtraColumn[] {
   return EXTRA_COLUMNS[mode].map((col) => {
@@ -180,9 +178,6 @@ function extraColumnsA(mode: PageMode): ExtraColumn[] {
 // The play-in tournament started in the 2020-21 season (year 2021 in our
 // convention) — don't draw play-in lines on seasons before it existed.
 const PLAY_IN_START_YEAR = 2021;
-
-// Vertical divider between column groups: Team | W-L-PCT-GB | HOME-AWAY-DIV-CONF | PPG-OPP PPG-DIFF | STRK-L10
-const COLUMN_DIVIDER = "border-l border-border pl-3";
 
 async function fetchStandings(year: number | null): Promise<StandingsResponse> {
   const url = year ? `/api/standings?year=${year}` : "/api/standings";
@@ -198,27 +193,11 @@ async function fetchNbaCupStandings(year: number | null): Promise<NbaCupResponse
   return res.json();
 }
 
-function formatCupStreak(streak: string | null): ReactNode {
-  if (streak === null) return "";
-  const n = Number(streak);
-  if (n === 0) return "";
-  const isLoss = n < 0;
-  const Icon = isLoss ? TrendingDown : TrendingUp;
-  return (
-    <span className={`inline-flex items-center gap-1 ${isLoss ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-      <Icon className="h-3.5 w-3.5" strokeWidth={2} />
-      {isLoss ? `L${-n}` : `W${n}`}
-    </span>
-  );
-}
-
 export default function StandingsPage() {
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("conference");
   const [pageMode, setPageMode] = useState<PageMode>("standings");
   const [selectedCupYear, setSelectedCupYear] = useState<number | null>(null);
-  const { layout, ready } = useLayout();
-  const isA = ready && layout === "a";
   const { data, isLoading, error } = useQuery({
     queryKey: ["standings", selectedYear],
     queryFn: () => fetchStandings(selectedYear),
@@ -268,24 +247,6 @@ export default function StandingsPage() {
     return [{ groupName: "League", standings: ranked }];
   }, [data]);
 
-  const pageModeToggle = (
-    <div className="flex rounded-md border border-border overflow-hidden text-sm w-fit">
-      {PAGE_MODES.map((mode) => (
-        <button
-          key={mode.value}
-          onClick={() => setPageMode(mode.value)}
-          className={`px-3 py-2 ${
-            pageMode === mode.value
-              ? "bg-accent text-accent-foreground font-semibold"
-              : "bg-surface text-foreground/82 hover:text-foreground/92"
-          }`}
-        >
-          {mode.label}
-        </button>
-      ))}
-    </div>
-  );
-
   if (pageMode === "nba-cup") {
     if (cupIsLoading)
       return (
@@ -302,145 +263,54 @@ export default function StandingsPage() {
         </p>
       );
 
-    if (isA) {
-      const cupColumns = [
-        { label: "HOME", divider: true },
-        { label: "AWAY" },
-        { label: "PF", divider: true },
-        { label: "PA" },
-        { label: "DIFF" },
-        { label: "STRK", divider: true },
-      ];
-      return (
-        <div className="space-y-8">
-          <StandingsHeaderA
-            seasonLabel={cupData.season ? seasonLabel(cupData.season.year) : null}
-            modes={PAGE_MODES}
-            mode={pageMode}
-            onMode={setPageMode}
-            views={null}
-            view={viewMode}
-            onView={setViewMode}
-            seasons={cupData.availableSeasons.map((x) => ({ value: x.year, label: seasonLabel(x.year) }))}
-            season={cupData.season?.year ?? null}
-            onSeason={setSelectedCupYear}
-          />
-          <div className="space-y-6">
-            {cupData.groups.map((group) => (
-              <StandingsGroupA
-                key={group.groupName}
-                title={group.groupName}
-                columns={cupColumns}
-                rows={group.standings
-                  .slice()
-                  .sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0))
-                  .map<StandingsRowA>((x) => ({
-                    id: x.id,
-                    rank: x.seed ?? "",
-                    team: x.team,
-                    lead: [x.wins, x.losses, x.winPct?.toFixed(3), x.gamesBehind],
-                    cells: [
-                      x.homeRecord,
-                      x.awayRecord,
-                      x.pointsFor,
-                      x.pointsAgainst,
-                      x.pointDifferential === null ? "" : <span key="d" className={`font-semibold ${x.pointDifferential > 0 ? "text-win" : x.pointDifferential < 0 ? "text-loss" : ""}`}>{`${x.pointDifferential >= 0 ? "+" : ""}${x.pointDifferential}`}</span>,
-                      <StreakA key="s" streak={x.streak === "0" ? null : x.streak} />,
-                    ],
-                    rule: null,
-                    advances: x.seed === 1,
-                  }))}
-              />
-            ))}
-          </div>
-        </div>
-      );
-    }
-
+    const cupColumns = [
+      { label: "HOME", divider: true },
+      { label: "AWAY" },
+      { label: "PF", divider: true },
+      { label: "PA" },
+      { label: "DIFF" },
+      { label: "STRK", divider: true },
+    ];
     return (
       <div className="space-y-8">
-        <div className="space-y-4">
-          <h1 className="text-3xl font-extrabold tracking-tight">
-            NBA Standings
-            {cupData.season && (
-              <span className="text-foreground/72 text-base ml-2">{seasonLabel(cupData.season.year)}</span>
-            )}
-          </h1>
-          {pageModeToggle}
-          {cupData.availableSeasons.length > 0 && (
-            <select
-              value={cupData.season?.year ?? ""}
-              onChange={(e) => setSelectedCupYear(Number(e.target.value))}
-              className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
-            >
-              {cupData.availableSeasons.map((s) => (
-                <option key={s.year} value={s.year}>
-                  {seasonLabel(s.year)}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-        <div className="space-y-8">
+        <StandingsHeaderA
+          seasonLabel={cupData.season ? seasonLabel(cupData.season.year) : null}
+          modes={PAGE_MODES}
+          mode={pageMode}
+          onMode={setPageMode}
+          views={null}
+          view={viewMode}
+          onView={setViewMode}
+          seasons={cupData.availableSeasons.map((x) => ({ value: x.year, label: seasonLabel(x.year) }))}
+          season={cupData.season?.year ?? null}
+          onSeason={setSelectedCupYear}
+        />
+        <div className="space-y-6">
           {cupData.groups.map((group) => (
-            <section key={group.groupName}>
-              <h2 className="text-lg font-medium text-foreground/92 mb-3">{group.groupName}</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm whitespace-nowrap">
-                  <thead>
-                    <tr className="text-left text-foreground/72 border-b border-border">
-                      <th className="py-2 pr-3"></th>
-                      <th className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>W</th>
-                      <th className="py-2 pr-3 text-right">L</th>
-                      <th className="py-2 pr-3 text-right">PCT</th>
-                      <th className="py-2 pr-3 text-right">GB</th>
-                      <th className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>HOME</th>
-                      <th className="py-2 pr-3 text-right">AWAY</th>
-                      <th className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>PF</th>
-                      <th className="py-2 pr-3 text-right">PA</th>
-                      <th className="py-2 pr-3 text-right">DIFF</th>
-                      <th className={`py-2 text-right ${COLUMN_DIVIDER}`}>STRK</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.standings
-                      .slice()
-                      .sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0))
-                      .map((s) => (
-                        <tr key={s.id} className="border-b border-border/60">
-                          <td className="py-2 pr-3">
-                            <Link
-                              href={`/teams/${s.team.id}`}
-                              className="flex items-center gap-2 hover:text-foreground/92"
-                            >
-                              {s.team.logoUrl && (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={s.team.logoUrl} alt="" className="h-5 w-5" />
-                              )}
-                              {s.team.displayName}
-                            </Link>
-                          </td>
-                          <td className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>{s.wins}</td>
-                          <td className="py-2 pr-3 text-right">{s.losses}</td>
-                          <td className="py-2 pr-3 text-right">{s.winPct?.toFixed(3)}</td>
-                          <td className="py-2 pr-3 text-right">{s.gamesBehind}</td>
-                          <td className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>{s.homeRecord}</td>
-                          <td className="py-2 pr-3 text-right">{s.awayRecord}</td>
-                          <td className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>{s.pointsFor}</td>
-                          <td className="py-2 pr-3 text-right">{s.pointsAgainst}</td>
-                          <td className="py-2 pr-3 text-right">
-                            {s.pointDifferential !== null && s.pointDifferential >= 0 ? "+" : ""}
-                            {s.pointDifferential}
-                          </td>
-                          <td className={`py-2 text-right ${COLUMN_DIVIDER}`}>
-                            {formatCupStreak(s.streak)}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+            <StandingsGroupA
+              key={group.groupName}
+              title={group.groupName}
+              columns={cupColumns}
+              rows={group.standings
+                .slice()
+                .sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0))
+                .map<StandingsRowA>((x) => ({
+                  id: x.id,
+                  rank: x.seed ?? "",
+                  team: x.team,
+                  lead: [x.wins, x.losses, x.winPct?.toFixed(3), x.gamesBehind],
+                  cells: [
+                    x.homeRecord,
+                    x.awayRecord,
+                    x.pointsFor,
+                    x.pointsAgainst,
+                    x.pointDifferential === null ? "" : <span key="d" className={`font-semibold ${x.pointDifferential > 0 ? "text-win" : x.pointDifferential < 0 ? "text-loss" : ""}`}>{`${x.pointDifferential >= 0 ? "+" : ""}${x.pointDifferential}`}</span>,
+                    <StreakA key="s" streak={x.streak === "0" ? null : x.streak} />,
+                  ],
+                  rule: null,
+                  advances: x.seed === 1,
+                }))}
+            />
           ))}
         </div>
       </div>
@@ -478,170 +348,50 @@ export default function StandingsPage() {
   // within each conference, not league- or division-wide).
   const showPlayInLines = viewMode === "conference" && (data.season?.year ?? 0) >= PLAY_IN_START_YEAR;
 
-  if (isA) {
-    const columns = extraColumnsA(pageMode);
-    return (
-      <div className="space-y-8">
-        <StandingsHeaderA
-          seasonLabel={data.season ? seasonLabel(data.season.year) : null}
-          modes={PAGE_MODES}
-          mode={pageMode}
-          onMode={setPageMode}
-          views={VIEWS_A}
-          view={viewMode}
-          onView={setViewMode}
-          seasons={data.availableSeasons.map((x) => ({ value: x.year, label: seasonLabel(x.year) }))}
-          season={data.season?.year ?? null}
-          onSeason={setSelectedYear}
-        />
-        <div className="space-y-6">
-          {groups.map((group) => (
-            <StandingsGroupA
-              key={group.groupName}
-              title={group.groupName}
-              columns={columns.map((c) => ({ label: c.label, divider: c.divider }))}
-              rows={group.standings
-                .slice()
-                .sort((a, b) => (a[rankField] ?? 0) - (b[rankField] ?? 0))
-                .map<StandingsRowA>((x) => {
-                  const rank = x[rankField] ?? 0;
-                  return {
-                    id: x.id,
-                    rank: showPlayInLines && rank >= 11 ? "" : rank,
-                    team: x.team,
-                    lead: [x.wins, x.losses, x.winPct?.toFixed(3), x.gamesBehind],
-                    cells: columns.map((c) => c.render(x)),
-                    rule: showPlayInLines ? (rank === 6 ? "after-six" : rank === 10 ? "after-ten" : null) : null,
-                    advances: showPlayInLines && rank > 0 && rank <= 6,
-                  };
-                })}
-            />
-          ))}
-        </div>
-        {showPlayInLines && (
-          <p className="text-sm text-foreground/60">
-            The top six teams in each conference qualify directly (dotted line). Seventh through tenth play in for the last two spots (solid line).
-          </p>
-        )}
-      </div>
-    );
-  }
-
+  const columns = extraColumnsA(pageMode);
   return (
     <div className="space-y-8">
-      <div className="space-y-4">
-        <h1 className="text-3xl font-extrabold tracking-tight">
-          NBA Standings
-          {data.season && <span className="text-foreground/72 text-base ml-2">{seasonLabel(data.season.year)}</span>}
-        </h1>
-        {pageModeToggle}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex rounded-md border border-border overflow-hidden text-sm">
-            {(["league", "conference", "division"] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode)}
-                className={`px-3 py-2 capitalize ${
-                  viewMode === mode
-                    ? "bg-accent text-accent-foreground font-semibold"
-                    : "bg-surface text-foreground/82 hover:text-foreground/92"
-                }`}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
-          {data.availableSeasons.length > 0 && (
-            <select
-              value={data.season?.year ?? ""}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
-            >
-              {data.availableSeasons.map((s) => (
-                <option key={s.year} value={s.year}>
-                  {seasonLabel(s.year)}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-      </div>
-      {/* One table per group, stacked vertically — with this many columns,
-          side-by-side grids get too cramped to read. */}
-      <div className="space-y-8">
+      <StandingsHeaderA
+        seasonLabel={data.season ? seasonLabel(data.season.year) : null}
+        modes={PAGE_MODES}
+        mode={pageMode}
+        onMode={setPageMode}
+        views={VIEWS_A}
+        view={viewMode}
+        onView={setViewMode}
+        seasons={data.availableSeasons.map((x) => ({ value: x.year, label: seasonLabel(x.year) }))}
+        season={data.season?.year ?? null}
+        onSeason={setSelectedYear}
+      />
+      <div className="space-y-6">
         {groups.map((group) => (
-          <section key={group.groupName}>
-            <h2 className="text-lg font-medium text-foreground/92 mb-3">{group.groupName}</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm whitespace-nowrap">
-                <thead>
-                  <tr className="text-left text-foreground/72 border-b border-border">
-                    <th className="py-2 pr-3"></th>
-                    <th className="py-2 pr-3"></th>
-                    <th className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>W</th>
-                    <th className="py-2 pr-3 text-right">L</th>
-                    <th className="py-2 pr-3 text-right">PCT</th>
-                    <th className="py-2 pr-3 text-right">GB</th>
-                    {EXTRA_COLUMNS[pageMode].map((col) => (
-                      <th
-                        key={col.label}
-                        className={`py-2 pr-3 text-right ${col.divider ? COLUMN_DIVIDER : ""}`}
-                      >
-                        {col.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.standings
-                    .slice()
-                    .sort((a, b) => (a[rankField] ?? 0) - (b[rankField] ?? 0))
-                    .map((s) => {
-                      const rank = s[rankField] ?? 0;
-                      const borderClass = showPlayInLines
-                        ? rank === 6
-                          ? "border-b-2 border-dotted border-foreground/40"
-                          : rank === 10
-                            ? "border-b-2 border-solid border-foreground/60"
-                            : "border-b border-border/60"
-                        : "border-b border-border/60";
-                      const hideRank = showPlayInLines && rank >= 11;
-                      return (
-                        <tr key={s.id} className={borderClass}>
-                          <td className="py-2 pr-3 text-foreground/72">{hideRank ? "" : rank}</td>
-                          <td className="py-2 pr-3">
-                            <Link
-                              href={`/teams/${s.team.id}`}
-                              className="flex items-center gap-2 hover:text-foreground/92"
-                            >
-                              {s.team.logoUrl && (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={s.team.logoUrl} alt="" className="h-5 w-5" />
-                              )}
-                              {s.team.displayName}
-                            </Link>
-                          </td>
-                          <td className={`py-2 pr-3 text-right ${COLUMN_DIVIDER}`}>{s.wins}</td>
-                          <td className="py-2 pr-3 text-right">{s.losses}</td>
-                          <td className="py-2 pr-3 text-right">{s.winPct?.toFixed(3)}</td>
-                          <td className="py-2 pr-3 text-right">{s.gamesBehind}</td>
-                          {EXTRA_COLUMNS[pageMode].map((col) => (
-                            <td
-                              key={col.label}
-                              className={`py-2 pr-3 text-right ${col.divider ? COLUMN_DIVIDER : ""}`}
-                            >
-                              {col.render(s)}
-                            </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <StandingsGroupA
+            key={group.groupName}
+            title={group.groupName}
+            columns={columns.map((c) => ({ label: c.label, divider: c.divider }))}
+            rows={group.standings
+              .slice()
+              .sort((a, b) => (a[rankField] ?? 0) - (b[rankField] ?? 0))
+              .map<StandingsRowA>((x) => {
+                const rank = x[rankField] ?? 0;
+                return {
+                  id: x.id,
+                  rank: showPlayInLines && rank >= 11 ? "" : rank,
+                  team: x.team,
+                  lead: [x.wins, x.losses, x.winPct?.toFixed(3), x.gamesBehind],
+                  cells: columns.map((c) => c.render(x)),
+                  rule: showPlayInLines ? (rank === 6 ? "after-six" : rank === 10 ? "after-ten" : null) : null,
+                  advances: showPlayInLines && rank > 0 && rank <= 6,
+                };
+              })}
+          />
         ))}
       </div>
+      {showPlayInLines && (
+        <p className="text-sm text-foreground/60">
+          The top six teams in each conference qualify directly (dotted line). Seventh through tenth play in for the last two spots (solid line).
+        </p>
+      )}
     </div>
   );
 }

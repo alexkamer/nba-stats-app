@@ -8,8 +8,8 @@ import {
   useHomeData,
   useToday,
   type ScoreboardGame,
-} from "@/components/templates/home-data";
-import { LeadersStrip, StandingsTable } from "@/components/templates/variants/sections";
+} from "@/components/home/home-data";
+import { LeadersStrip, StandingsTable } from "@/components/home/sections";
 
 function Panel({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
   return (

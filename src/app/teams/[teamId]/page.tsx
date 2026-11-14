@@ -7,8 +7,7 @@ import { useTheme } from "next-themes";
 import { Fragment, Suspense, useState } from "react";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
 import { FullBleed } from "@/components/FullBleed";
-import { useLayout } from "@/components/templates/layout-context";
-import { TeamHeaderA, TeamHomeA } from "@/components/templates/variants/a/TeamA";
+import { TeamHeaderA, TeamHomeA } from "@/components/team/TeamA";
 import { useBreadcrumbLabel } from "@/components/Breadcrumb";
 import { getTeamAccent } from "@/lib/team-accent";
 import { TeamPerformanceTab } from "@/components/TeamPerformanceTab";
@@ -293,28 +292,6 @@ function formatHeight(heightIn: number | null): string {
   return `${Math.floor(heightIn / 12)}'${heightIn % 12}"`;
 }
 
-function ordinal(n: number | null): string {
-  if (n == null) return "—";
-  const v = n % 100;
-  if (v >= 11 && v <= 13) return `${n}th`;
-  switch (n % 10) {
-    case 1:
-      return `${n}st`;
-    case 2:
-      return `${n}nd`;
-    case 3:
-      return `${n}rd`;
-    default:
-      return `${n}th`;
-  }
-}
-
-function formatStreak(streak: string | null): string {
-  if (!streak) return "—";
-  if (streak.startsWith("-")) return `L${streak.slice(1)}`;
-  return `W${streak}`;
-}
-
 type TeamTab = "home" | "stats" | "schedule" | "performance" | "roster" | "depth" | "injuries" | "transactions";
 
 type LeadersGroup = "offense" | "defense";
@@ -358,8 +335,6 @@ function TeamDetailContent() {
     queryFn: fetchLeagueTeams,
   });
   const { resolvedTheme } = useTheme();
-  const { layout, ready } = useLayout();
-  const isA = ready && layout === "a";
   useBreadcrumbLabel(data?.team.displayName);
 
   if (isLoading) return <SkeletonDetailPage />;
@@ -397,37 +372,18 @@ function TeamDetailContent() {
   // Home tab sidebar: just the next game on deck, then this season's
   // completed games most-recent-first — not the rest of the full schedule.
   const nextGame = upcomingGames[0] ?? null;
-  const orderedSchedule = nextGame ? [nextGame, ...completedGames] : completedGames;
-  const mostRecentGame = completedGames[0] ?? null;
 
   return (
-    <div data-team={isA ? "a" : undefined} className="space-y-8">
+    <div data-team className="space-y-8">
       <FullBleed
         className="bg-surface border-b border-border"
         style={{ borderTopColor: accentColor, borderTopWidth: 4 }}
       >
-        {isA ? (
-          <TeamHeaderA team={team} standing={standing} stats={data.teamSeasonStat} />
-        ) : (
-        <div className="mx-auto max-w-6xl flex items-center gap-4 px-6 py-5 sm:py-6">
-          {team.logoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={team.logoUrl} alt={team.displayName} className="h-16 w-16" />
-          )}
-          <div>
-            <h1 className="text-3xl font-extrabold tracking-tight">{team.displayName}</h1>
-            <p className="text-foreground/82 text-sm">
-              {standing
-                ? `${standing.wins}-${standing.losses} · ${ordinal(standing.divisionRank)} in ${team.division?.name} Division`
-                : `${team.division?.conference.name} · ${team.division?.name} Division`}
-            </p>
-          </div>
-        </div>
-        )}
+        <TeamHeaderA team={team} standing={standing} stats={data.teamSeasonStat} />
         <TabPager tabs={TEAM_TABS} activeTab={activeTab} onChange={setActiveTab} accentColor={accentColor} />
       </FullBleed>
 
-      {activeTab === "home" && (isA ? (
+      {activeTab === "home" && (
         <TeamHomeA
           teamId={team.id}
           divisionName={team.division?.name}
@@ -447,168 +403,7 @@ function TeamDetailContent() {
             />
           }
         />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-[220px_1fr_320px] gap-6">
-          <aside className="self-start rounded-lg border border-border p-4 space-y-3">
-            <h2 className="text-lg font-medium text-foreground/92">
-              {season ? seasonLabel(season.year) : ""} Schedule
-            </h2>
-            {orderedSchedule.length > 0 && <p className="text-xs font-semibold text-foreground/72">Regular Season</p>}
-            <div className="divide-y divide-border">
-              {orderedSchedule.map((game) => {
-                const isHome = game.homeTeamId === team.id;
-                const opponent = isHome ? game.awayTeam : game.homeTeam;
-                const teamScore = isHome ? game.homeScore : game.awayScore;
-                const oppScore = isHome ? game.awayScore : game.homeScore;
-                const won = game.status === "FINAL" && teamScore !== null && oppScore !== null && teamScore > oppScore;
-                const highScore = teamScore !== null && oppScore !== null ? Math.max(teamScore, oppScore) : null;
-                const lowScore = teamScore !== null && oppScore !== null ? Math.min(teamScore, oppScore) : null;
-                return (
-                  <Link
-                    key={game.id}
-                    href={`/games/${game.espnId}`}
-                    className="flex items-center justify-between gap-2 w-full py-3 text-sm hover:text-foreground"
-                  >
-                    <span className="flex items-center gap-1.5 truncate min-w-0">
-                      <span className="text-foreground/72 shrink-0">{isHome ? "vs." : "@"}</span>
-                      {opponent.logoUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={opponent.logoUrl} alt="" className="h-6 w-6 shrink-0" />
-                      )}
-                      <span className="truncate font-semibold text-foreground">{opponent.name}</span>
-                    </span>
-                    <span className="shrink-0 text-right">
-                      {game.status === "FINAL" ? (
-                        <>
-                          <span className={`font-bold ${won ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>{won ? "W" : "L"}</span>{" "}
-                          <span className="font-semibold text-foreground">
-                            {highScore}-{lowScore}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="flex flex-col items-end leading-tight">
-                          <span className="font-semibold text-foreground">
-                            {new Date(game.date).toLocaleDateString(undefined, { month: "numeric", day: "numeric" })}
-                          </span>
-                          <span className="font-semibold text-foreground">
-                            {new Date(game.date).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                          </span>
-                        </span>
-                      )}
-                    </span>
-                  </Link>
-                );
-              })}
-              {orderedSchedule.length === 0 && <p className="text-foreground/72 text-sm p-3">No games found.</p>}
-            </div>
-            <button
-              onClick={() => setActiveTab("schedule")}
-              className="block w-full text-center text-sm text-foreground/82 hover:text-foreground"
-            >
-              Full Schedule
-            </button>
-          </aside>
-
-          <main className="space-y-4">
-            <h2 className="text-lg font-medium text-foreground/92">News</h2>
-            {mostRecentGame && (
-              <Link
-                href={`/games/${mostRecentGame.espnId}`}
-                className="block rounded-lg border border-border bg-surface p-4 hover:border-accent"
-              >
-                <p className="text-xs text-foreground/72 mb-1">Latest game</p>
-                <p className="font-medium">
-                  {mostRecentGame.awayTeam.displayName} {mostRecentGame.awayScore} @ {mostRecentGame.homeTeam.displayName}{" "}
-                  {mostRecentGame.homeScore}
-                </p>
-                <p className="text-foreground/72 text-sm">{new Date(mostRecentGame.date).toLocaleDateString()}</p>
-              </Link>
-            )}
-            <div className="space-y-3">
-              {news.map((article) => (
-                <div key={article.id} className="flex gap-4 rounded-lg border border-border bg-surface p-4">
-                  {article.imageUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element -- external ESPN CDN images
-                    <img src={article.imageUrl} alt="" className="h-20 w-32 object-cover rounded-md shrink-0" />
-                  )}
-                  <div className="space-y-1">
-                    <a
-                      href={article.url ?? "#"}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-medium hover:text-foreground/92"
-                    >
-                      {article.headline}
-                    </a>
-                    {article.description && article.description !== article.headline && (
-                      <p className="text-foreground/82 text-sm">{article.description}</p>
-                    )}
-                    {article.publishedAt && (
-                      <p className="text-foreground/72 text-xs">{new Date(article.publishedAt).toLocaleDateString()}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {news.length === 0 && <p className="text-foreground/72 text-sm">No recent news.</p>}
-            </div>
-          </main>
-
-          <aside className="space-y-6">
-            <div className="space-y-3">
-              <h2 className="text-lg font-medium text-foreground/92">{team.division?.name} Division</h2>
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-foreground/72 border-b border-border">
-                    <th className="py-1.5 pr-2">Team</th>
-                    <th className="py-1.5 pr-2 text-right">W</th>
-                    <th className="py-1.5 pr-2 text-right">L</th>
-                    <th className="py-1.5 pr-2 text-right">PCT</th>
-                    <th className="py-1.5 pr-2 text-right">GB</th>
-                    <th className="py-1.5 text-right">STRK</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {divisionStandings.map((s) => (
-                    <tr
-                      key={s.id}
-                      className={`border-b border-border/60 ${
-                        s.team.id === team.id ? "text-foreground font-semibold" : "text-foreground/82"
-                      }`}
-                    >
-                      <td className="py-1.5 pr-2">
-                        <Link href={`/teams/${s.team.id}`} className="flex items-center gap-1.5 hover:text-foreground">
-                          {s.team.logoUrl && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={s.team.logoUrl} alt="" className="h-4 w-4" />
-                          )}
-                          {s.team.location}
-                        </Link>
-                      </td>
-                      <td className="py-1.5 pr-2 text-right">{s.wins}</td>
-                      <td className="py-1.5 pr-2 text-right">{s.losses}</td>
-                      <td className="py-1.5 pr-2 text-right">{s.winPct?.toFixed(3) ?? "—"}</td>
-                      <td className="py-1.5 pr-2 text-right">{s.gamesBehind ?? "—"}</td>
-                      <td className="py-1.5 text-right">{formatStreak(s.streak)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <Link href="/standings" className="block w-full text-center text-sm text-foreground/82 hover:text-foreground">
-                Full Standings
-              </Link>
-            </div>
-
-            <TeamLeadersCard
-              season={season}
-              visibleLeaders={visibleLeaders}
-              leadersGroup={leadersGroup}
-              setLeadersGroup={setLeadersGroup}
-              accentColor={accentColor}
-              onViewAll={() => setActiveTab("stats")}
-            />
-          </aside>
-        </div>
-      ))}
+      )}
 
       {activeTab === "stats" && (
         <div className="space-y-8">

@@ -5,14 +5,11 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Suspense, useId, useState, type ReactNode } from "react";
-import { TabPager, useTabQueryParam } from "@/components/TabPager";
-import { FullBleed } from "@/components/FullBleed";
 import { useBreadcrumbLabel } from "@/components/Breadcrumb";
 import { getTeamAccent } from "@/lib/team-accent";
 import { GamePerformanceCard, type TeamPerformanceSummary } from "@/components/GamePerformanceCard";
 import { SkeletonDetailPage } from "@/components/Skeleton";
-import { useLayout } from "@/components/templates/layout-context";
-import { GameHeaderA, LatestPlays, LiveStrip, Section, useTabParamRaw, type GameMode } from "@/components/templates/variants/a/GameA";
+import { GameHeaderA, LatestPlays, LiveStrip, Section, useTabParamRaw, type GameMode } from "@/components/game/GameA";
 
 // The API returns one of two shapes depending on whether the game has been
 // ingested as `final` (SPEC.md Sec 4): a DB-backed shape with real internal
@@ -276,25 +273,6 @@ interface Shot {
 
 type TabKey = "gamecast" | "recap" | "boxscore" | "playbyplay" | "teamstats" | "preview" | "odds";
 
-const GAME_TABS: { value: TabKey; label: string }[] = [
-  { value: "gamecast", label: "Gamecast" },
-  { value: "recap", label: "Recap" },
-  { value: "boxscore", label: "Box Score" },
-  { value: "playbyplay", label: "Play-by-Play" },
-  { value: "teamstats", label: "Team Stats" },
-];
-
-// Shown instead of GAME_TABS while a game is still scheduled — recap/box
-// score/play-by-play/team stats have nothing to show before tip-off (see
-// game-pregame-preview spec's tab-visibility requirement). The "gamecast"
-// key is shared with GAME_TABS (its content differs by game state); the
-// "preview"/"odds" keys only ever appear in this set.
-const PREGAME_TABS: { value: TabKey; label: string }[] = [
-  { value: "gamecast", label: "Gamecast" },
-  { value: "preview", label: "Preview" },
-  { value: "odds", label: "Odds" },
-];
-
 function formatSigned(value: number | null): string {
   if (value === null) return "";
   return value > 0 ? `+${value}` : String(value);
@@ -376,15 +354,12 @@ export default function GameDetailPage() {
 
 function GameDetailContent() {
   const { eventId } = useParams<{ eventId: string }>();
-  const { layout, ready } = useLayout();
-  const isA = ready && layout === "a";
   const { data, isLoading, error, dataUpdatedAt } = useQuery({
     queryKey: ["game", eventId],
     queryFn: () => fetchGame(eventId),
-    // Layout A keeps a game that is being played up to date on its own.
-    refetchInterval: isA ? (q) => (q.state.data && gameModeOf(q.state.data) === "live" ? 15_000 : false) : false,
+    // A game that is being played keeps itself up to date.
+    refetchInterval: (q) => (q.state.data && gameModeOf(q.state.data) === "live" ? 15_000 : false),
   });
-  const [activeTab, setActiveTab] = useTabQueryParam<TabKey>("boxscore");
   const [requestedTab, pushTab] = useTabParamRaw<TabKey>();
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === "dark" ? "dark" : "light";
@@ -532,282 +507,183 @@ function GameDetailContent() {
   // while the game is scheduled (route.ts only attaches it in that case).
   // Its presence, not a separate status flag, is what the UI keys off of.
   const preview = source === "live" ? (game as LiveGame).preview ?? null : null;
-  const isScheduled = preview !== null;
-  const visibleTabs = isScheduled ? PREGAME_TABS : GAME_TABS;
-  // `activeTab` reflects the URL's `?tab=` (or its static default) with no
-  // knowledge of which tabs apply to this game — fall back to this game's
-  // first visible tab whenever the requested one isn't actually shown
-  // (e.g. a bookmarked `?tab=boxscore` for a game that's since gone final,
-  // or simply loading a scheduled game with no `?tab=` at all).
-  const displayTab = visibleTabs.some((t) => t.value === activeTab) ? activeTab : visibleTabs[0].value;
-
-  if (isA) {
-    const mode = gameModeOf(data);
-    const tabsA: { value: TabKey; label: string }[] =
-      mode === "pregame"
+  const mode = gameModeOf(data);
+  const tabsA: { value: TabKey; label: string }[] =
+    mode === "pregame"
+      ? [
+          { value: "gamecast", label: "Matchup" },
+          { value: "preview", label: "Preview" },
+          { value: "odds", label: "Odds and props" },
+        ]
+      : mode === "live"
         ? [
-            { value: "gamecast", label: "Matchup" },
-            { value: "preview", label: "Preview" },
-            { value: "odds", label: "Odds and props" },
+            { value: "gamecast", label: "Live" },
+            { value: "boxscore", label: "Box score" },
+            { value: "playbyplay", label: "Play-by-play" },
+            { value: "teamstats", label: "Team stats" },
           ]
-        : mode === "live"
-          ? [
-              { value: "gamecast", label: "Live" },
-              { value: "boxscore", label: "Box score" },
-              { value: "playbyplay", label: "Play-by-play" },
-              { value: "teamstats", label: "Team stats" },
-            ]
-          : [
-              { value: "gamecast", label: "Summary" },
-              { value: "recap", label: "Recap" },
-              { value: "boxscore", label: "Box score" },
-              { value: "playbyplay", label: "Play-by-play" },
-              { value: "teamstats", label: "Team stats" },
-            ];
-    const tabA = tabsA.find((t) => t.value === requestedTab)?.value ?? tabsA[0].value;
-    const headerTeam = (t: ScoreboardTeam, side: "away" | "home") => ({
-      abbreviation: t.abbreviation,
-      displayName: t.displayName,
-      logoUrl: t.logoUrl,
-      accent: t.accent,
-      score: t.score,
-      record: headerExtras?.[side].record ?? null,
-      split: headerExtras?.[side].splitRecord ? `${headerExtras[side].splitRecord} ${side === "away" ? "away" : "home"}` : null,
-    });
-    const start = new Date(game.date);
-    const tipoff =
-      mode === "pregame"
-        ? {
-            time: start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }),
-            date: start.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
-          }
-        : null;
-    const favorite = odds ? (odds.homeIsFavorite ? { t: home, spread: odds.homeSpread } : { t: away, spread: odds.awaySpread }) : null;
-    const context = odds
-      ? [favorite && favorite.spread !== null ? `${favorite.t.abbreviation} ${formatSigned(favorite.spread)}` : null, odds.overUnder !== null ? `total ${odds.overUnder}` : null]
-          .filter(Boolean)
-          .join(", ") || null
+        : [
+            { value: "gamecast", label: "Summary" },
+            { value: "recap", label: "Recap" },
+            { value: "boxscore", label: "Box score" },
+            { value: "playbyplay", label: "Play-by-play" },
+            { value: "teamstats", label: "Team stats" },
+          ];
+  const tabA = tabsA.find((t) => t.value === requestedTab)?.value ?? tabsA[0].value;
+  const headerTeam = (t: ScoreboardTeam, side: "away" | "home") => ({
+    abbreviation: t.abbreviation,
+    displayName: t.displayName,
+    logoUrl: t.logoUrl,
+    accent: t.accent,
+    score: t.score,
+    record: headerExtras?.[side].record ?? null,
+    split: headerExtras?.[side].splitRecord ? `${headerExtras[side].splitRecord} ${side === "away" ? "away" : "home"}` : null,
+  });
+  const start = new Date(game.date);
+  const tipoff =
+    mode === "pregame"
+      ? {
+          time: start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }),
+          date: start.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
+        }
       : null;
+  const favorite = odds ? (odds.homeIsFavorite ? { t: home, spread: odds.homeSpread } : { t: away, spread: odds.awaySpread }) : null;
+  const context = odds
+    ? [favorite && favorite.spread !== null ? `${favorite.t.abbreviation} ${formatSigned(favorite.spread)}` : null, odds.overUnder !== null ? `total ${odds.overUnder}` : null]
+        .filter(Boolean)
+        .join(", ") || null
+    : null;
 
-    const latest = plays.slice(-8).reverse().map((p) => ({
-      key: p.key,
-      when: `Q${p.period ?? ""} ${p.clock ?? ""}`.trim(),
-      text: p.description ?? "",
-      score: p.awayScore !== null && p.homeScore !== null ? `${p.awayScore}-${p.homeScore}` : null,
-      scoring: p.scoringPlay,
-    }));
-    const lastPlay = plays[plays.length - 1];
-    const homeWinProbability = winProbability.length ? winProbability[winProbability.length - 1].homeWinPercentage : null;
-    const gameInfoCard = headerExtras?.gameInfo ? <GameInformationCard date={game.date} gameInfo={headerExtras.gameInfo} /> : null;
-    const matchupsCard = headerExtras?.seasonSeries ? (
-      <MatchupsCard away={away} home={home} awayRecord={headerExtras.away.record} homeRecord={headerExtras.home.record} seasonSeries={headerExtras.seasonSeries} />
-    ) : null;
-    const flow = <ProbabilityGameFlowCard away={away} home={home} plays={plays} winProbability={winProbability} isFinal={mode !== "live"} />;
-    const shotChart = <ShotChartCard away={away} home={home} awayEspnId={awayEspnId} homeEspnId={homeEspnId} shots={shots} />;
-    const leaders = <GameLeaders away={away} home={home} awayPlayerRows={awayPlayerRows} homePlayerRows={homePlayerRows} />;
-    const teamStatsCard = <TeamStatsCard away={away} home={home} awayStats={awayTeamStats} homeStats={homeTeamStats} />;
+  const latest = plays.slice(-8).reverse().map((p) => ({
+    key: p.key,
+    when: `Q${p.period ?? ""} ${p.clock ?? ""}`.trim(),
+    text: p.description ?? "",
+    score: p.awayScore !== null && p.homeScore !== null ? `${p.awayScore}-${p.homeScore}` : null,
+    scoring: p.scoringPlay,
+  }));
+  const lastPlay = plays[plays.length - 1];
+  const homeWinProbability = winProbability.length ? winProbability[winProbability.length - 1].homeWinPercentage : null;
+  const gameInfoCard = headerExtras?.gameInfo ? <GameInformationCard date={game.date} gameInfo={headerExtras.gameInfo} /> : null;
+  const matchupsCard = headerExtras?.seasonSeries ? (
+    <MatchupsCard away={away} home={home} awayRecord={headerExtras.away.record} homeRecord={headerExtras.home.record} seasonSeries={headerExtras.seasonSeries} />
+  ) : null;
+  const flow = <ProbabilityGameFlowCard away={away} home={home} plays={plays} winProbability={winProbability} isFinal={mode !== "live"} />;
+  const shotChart = <ShotChartCard away={away} home={home} awayEspnId={awayEspnId} homeEspnId={homeEspnId} shots={shots} />;
+  const leaders = <GameLeaders away={away} home={home} awayPlayerRows={awayPlayerRows} homePlayerRows={homePlayerRows} />;
+  const teamStatsCard = <TeamStatsCard away={away} home={home} awayStats={awayTeamStats} homeStats={homeTeamStats} />;
 
-    return (
-      <div data-game="a" className="space-y-6">
-        <GameHeaderA
-          away={headerTeam(away, "away")}
-          home={headerTeam(home, "home")}
-          mode={mode}
-          statusDetail={statusDetail}
-          onBreak={mode === "live" && /halftime|end of/i.test(statusDetail ?? "")}
-          tipoff={tipoff}
-          context={context}
-          linescores={headerExtras ? { away: headerExtras.away.linescores, home: headerExtras.home.linescores } : null}
-          periodLabel={periodLabel}
-          tabs={tabsA}
-          activeTab={tabA}
-          onTabChange={pushTab}
-        />
+  return (
+    <div data-game className="space-y-6">
+      <GameHeaderA
+        away={headerTeam(away, "away")}
+        home={headerTeam(home, "home")}
+        mode={mode}
+        statusDetail={statusDetail}
+        onBreak={mode === "live" && /halftime|end of/i.test(statusDetail ?? "")}
+        tipoff={tipoff}
+        context={context}
+        linescores={headerExtras ? { away: headerExtras.away.linescores, home: headerExtras.home.linescores } : null}
+        periodLabel={periodLabel}
+        tabs={tabsA}
+        activeTab={tabA}
+        onTabChange={pushTab}
+      />
 
-        {tabA === "gamecast" && mode === "pregame" && preview && (
-          <div className="grid items-start gap-6 xl:grid-cols-[1fr_22rem]">
-            <div className="min-w-0 space-y-8">
-              {(preview.projection || preview.espnPredictor) && (
-                <Section title="What the numbers say">
-                  <div className="grid gap-6 lg:grid-cols-2">
-                    {preview.projection && <ProjectionSummaryCard away={away} home={home} projection={preview.projection} odds={odds} />}
-                    {preview.espnPredictor && <EspnPredictorCard away={away} home={home} predictor={preview.espnPredictor} />}
-                  </div>
-                </Section>
-              )}
-              <Section title="Likely starters">
-                <div className="grid gap-6 md:grid-cols-2">
-                  <LineupPanel team={away} starters={preview.lineups.away} />
-                  <LineupPanel team={home} starters={preview.lineups.home} />
+      {tabA === "gamecast" && mode === "pregame" && preview && (
+        <div className="grid items-start gap-6 xl:grid-cols-[1fr_22rem]">
+          <div className="min-w-0 space-y-8">
+            {(preview.projection || preview.espnPredictor) && (
+              <Section title="What the numbers say">
+                <div className="grid gap-6 lg:grid-cols-2">
+                  {preview.projection && <ProjectionSummaryCard away={away} home={home} projection={preview.projection} odds={odds} />}
+                  {preview.espnPredictor && <EspnPredictorCard away={away} home={home} predictor={preview.espnPredictor} />}
                 </div>
               </Section>
-              {preview.availability && (
-                <Section title="Injuries and availability">
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <AvailabilityPanel team={away} entries={preview.availability.away} />
-                    <AvailabilityPanel team={home} entries={preview.availability.home} />
-                  </div>
-                </Section>
-              )}
-              <PreviewBlurb article={preview.article} />
-            </div>
-            <aside className="space-y-6 xl:pt-[2.9rem]">
-              {gameInfoCard}
-              {matchupsCard}
-            </aside>
-          </div>
-        )}
-
-        {tabA === "gamecast" && mode === "live" && (
-          <div className="space-y-6">
-            <LiveStrip
-              away={away}
-              home={home}
-              homeWinProbability={homeWinProbability}
-              lastPlay={lastPlay ? { text: lastPlay.description ?? "", when: `Q${lastPlay.period ?? ""} ${lastPlay.clock ?? ""}`.trim() } : null}
-              updatedAt={dataUpdatedAt}
-            />
-            <div className="grid items-start gap-6 xl:grid-cols-[1fr_22rem]">
-              <div className="min-w-0 space-y-6">
-                {flow}
-                <LatestPlays plays={latest} onMore={() => pushTab("playbyplay")} />
-                {shotChart}
+            )}
+            <Section title="Likely starters">
+              <div className="grid gap-6 md:grid-cols-2">
+                <LineupPanel team={away} starters={preview.lineups.away} />
+                <LineupPanel team={home} starters={preview.lineups.home} />
               </div>
-              <aside className="space-y-6">
-                {leaders}
-                {teamStatsCard}
-                <OddsPanel away={away} home={home} odds={odds} />
-                {gameInfoCard}
-              </aside>
-            </div>
+            </Section>
+            {preview.availability && (
+              <Section title="Injuries and availability">
+                <div className="grid gap-6 md:grid-cols-2">
+                  <AvailabilityPanel team={away} entries={preview.availability.away} />
+                  <AvailabilityPanel team={home} entries={preview.availability.home} />
+                </div>
+              </Section>
+            )}
+            <PreviewBlurb article={preview.article} />
           </div>
-        )}
+          <aside className="space-y-6 xl:pt-[2.9rem]">
+            {gameInfoCard}
+            {matchupsCard}
+          </aside>
+        </div>
+      )}
 
-        {tabA === "gamecast" && mode === "final" && (
+      {tabA === "gamecast" && mode === "live" && (
+        <div className="space-y-6">
+          <LiveStrip
+            away={away}
+            home={home}
+            homeWinProbability={homeWinProbability}
+            lastPlay={lastPlay ? { text: lastPlay.description ?? "", when: `Q${lastPlay.period ?? ""} ${lastPlay.clock ?? ""}`.trim() } : null}
+            updatedAt={dataUpdatedAt}
+          />
           <div className="grid items-start gap-6 xl:grid-cols-[1fr_22rem]">
             <div className="min-w-0 space-y-6">
-              {recap && (
-                <section className="rounded-lg bg-surface p-5">
-                  <h2 className="text-xl leading-snug">{recap.headline}</h2>
-                  {recap.description && <p className="mt-2 text-foreground/70">{recap.description}</p>}
-                  <button type="button" onClick={() => pushTab("recap")} className="mt-3 text-sm font-semibold text-accent hover:underline">
-                    Read the full recap
-                  </button>
-                </section>
-              )}
-              {leaders}
               {flow}
+              <LatestPlays plays={latest} onMore={() => pushTab("playbyplay")} />
               {shotChart}
             </div>
             <aside className="space-y-6">
+              {leaders}
               {teamStatsCard}
               <OddsPanel away={away} home={home} odds={odds} />
-              <GamePerformanceCard away={away} home={home} awayPerformance={awayPerformance} homePerformance={homePerformance} />
-              {matchupsCard}
               {gameInfoCard}
             </aside>
           </div>
-        )}
+        </div>
+      )}
 
-        {tabA === "preview" && preview && <PreviewArticleTab away={away} home={home} article={preview.article} gameDate={game.date} />}
-        {tabA === "odds" && preview && <OddsAndPropsTab away={away} home={home} odds={odds} playerProps={preview.playerProps} />}
-        {tabA === "recap" && <RecapTab away={away} home={home} recap={recap} />}
-        {tabA === "teamstats" && <TeamStatsTab away={away} home={home} teamStatsBreakdown={teamStatsBreakdown} />}
-        {tabA === "playbyplay" && <PlayByPlayTab away={away} home={home} plays={plays} />}
-        {tabA === "boxscore" && (
-          <div className="space-y-6">
-            {odds && <OddsTable away={away} home={home} odds={odds} />}
-            {teamRows.every((s) => s.points === null) ? (
-              <p className="text-foreground/72">No box score yet{source === "live" ? `. ${(game as LiveGame).statusDetail}` : ""}.</p>
-            ) : (
-              [away, home].map((team) => {
-                const rows = playerRowsByTeam(team.abbreviation, team.linkId, { sortByPoints: false });
-                const teamStats = teamRows.find((r) => r.abbreviation === team.abbreviation) ?? null;
-                if (rows.length === 0) return null;
-                return <BoxScoreTeamTable key={team.abbreviation} team={team} rows={rows} teamStats={teamStats} />;
-              })
+      {tabA === "gamecast" && mode === "final" && (
+        <div className="grid items-start gap-6 xl:grid-cols-[1fr_22rem]">
+          <div className="min-w-0 space-y-6">
+            {recap && (
+              <section className="rounded-lg bg-surface p-5">
+                <h2 className="text-xl leading-snug">{recap.headline}</h2>
+                {recap.description && <p className="mt-2 text-foreground/70">{recap.description}</p>}
+                <button type="button" onClick={() => pushTab("recap")} className="mt-3 text-sm font-semibold text-accent hover:underline">
+                  Read the full recap
+                </button>
+              </section>
             )}
+            {leaders}
+            {flow}
+            {shotChart}
           </div>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-8">
-      <ScoreboardHeader
-        away={away}
-        home={home}
-        statusDetail={statusDetail}
-        linescores={headerExtras}
-        tabs={visibleTabs}
-        activeTab={displayTab}
-        onTabChange={setActiveTab}
-      />
-
-      {displayTab === "gamecast" &&
-        (isScheduled && preview ? (
-          <PregameGamecastTab
-            away={away}
-            home={home}
-            preview={preview}
-            odds={odds}
-            gameInfo={headerExtras?.gameInfo ?? null}
-            gameDate={game.date}
-            seasonSeries={headerExtras?.seasonSeries ?? null}
-            awayRecord={headerExtras?.away.record ?? null}
-            homeRecord={headerExtras?.home.record ?? null}
-          />
-        ) : (
-          // Full-bleed, same trick as ScoreboardHeader: this grid needs the
-          // whole content area's width for its 3-column layout, not just
-          // <main>'s centered max-w-6xl column.
-          <FullBleed className="px-6">
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr_340px]">
-              <div className="space-y-6">
-                <GameLeaders away={away} home={home} awayPlayerRows={awayPlayerRows} homePlayerRows={homePlayerRows} />
-                <TeamStatsCard away={away} home={home} awayStats={awayTeamStats} homeStats={homeTeamStats} />
-                {headerExtras?.gameInfo && <GameInformationCard date={game.date} gameInfo={headerExtras.gameInfo} />}
-              </div>
-              <div className="space-y-6">
-                <ProbabilityGameFlowCard away={away} home={home} plays={plays} winProbability={winProbability} />
-                <ShotChartCard away={away} home={home} awayEspnId={awayEspnId} homeEspnId={homeEspnId} shots={shots} />
-              </div>
-              <div className="space-y-6">
-                <OddsPanel away={away} home={home} odds={odds} />
-                <GamePerformanceCard away={away} home={home} awayPerformance={awayPerformance} homePerformance={homePerformance} />
-                {headerExtras?.seasonSeries && (
-                  <MatchupsCard
-                    away={away}
-                    home={home}
-                    awayRecord={headerExtras.away.record}
-                    homeRecord={headerExtras.home.record}
-                    seasonSeries={headerExtras.seasonSeries}
-                  />
-                )}
-              </div>
-            </div>
-          </FullBleed>
-        ))}
-
-      {displayTab === "preview" && preview && (
-        <PreviewArticleTab away={away} home={home} article={preview.article} gameDate={game.date} />
-      )}
-      {displayTab === "recap" && <RecapTab away={away} home={home} recap={recap} />}
-      {displayTab === "teamstats" && <TeamStatsTab away={away} home={home} teamStatsBreakdown={teamStatsBreakdown} />}
-
-      {displayTab === "odds" && preview && (
-        <OddsAndPropsTab away={away} home={home} odds={odds} playerProps={preview.playerProps} />
+          <aside className="space-y-6">
+            {teamStatsCard}
+            <OddsPanel away={away} home={home} odds={odds} />
+            <GamePerformanceCard away={away} home={home} awayPerformance={awayPerformance} homePerformance={homePerformance} />
+            {matchupsCard}
+            {gameInfoCard}
+          </aside>
+        </div>
       )}
 
-      {displayTab === "boxscore" && (
-        <>
+      {tabA === "preview" && preview && <PreviewArticleTab away={away} home={home} article={preview.article} gameDate={game.date} />}
+      {tabA === "odds" && preview && <OddsAndPropsTab away={away} home={home} odds={odds} playerProps={preview.playerProps} />}
+      {tabA === "recap" && <RecapTab away={away} home={home} recap={recap} />}
+      {tabA === "teamstats" && <TeamStatsTab away={away} home={home} teamStatsBreakdown={teamStatsBreakdown} />}
+      {tabA === "playbyplay" && <PlayByPlayTab away={away} home={home} plays={plays} />}
+      {tabA === "boxscore" && (
+        <div className="space-y-6">
           {odds && <OddsTable away={away} home={home} odds={odds} />}
-
           {teamRows.every((s) => s.points === null) ? (
-            <p className="text-foreground/72 text-sm">
-              No box score yet{source === "live" ? ` — ${(game as LiveGame).statusDetail}` : ""}.
-            </p>
+            <p className="text-foreground/72">No box score yet{source === "live" ? `. ${(game as LiveGame).statusDetail}` : ""}.</p>
           ) : (
             [away, home].map((team) => {
               const rows = playerRowsByTeam(team.abbreviation, team.linkId, { sortByPoints: false });
@@ -816,10 +692,8 @@ function GameDetailContent() {
               return <BoxScoreTeamTable key={team.abbreviation} team={team} rows={rows} teamStats={teamStats} />;
             })
           )}
-        </>
+        </div>
       )}
-
-      {displayTab === "playbyplay" && <PlayByPlayTab away={away} home={home} plays={plays} />}
     </div>
   );
 }
@@ -1141,70 +1015,6 @@ function AvailabilityPanel({ team, entries }: { team: ScoreboardTeam; entries: A
         </ul>
       )}
     </div>
-  );
-}
-
-// Pregame counterpart to the live Gamecast tab's 3-column FullBleed grid —
-// same layout, with cards that have pregame data in place of the
-// live-only ones (game leaders, this-game team stats, win-probability
-// flow, shot chart) that have nothing to show before tip-off.
-function PregameGamecastTab({
-  away,
-  home,
-  preview,
-  odds,
-  gameInfo,
-  gameDate,
-  seasonSeries,
-  awayRecord,
-  homeRecord,
-}: {
-  away: ScoreboardTeam;
-  home: ScoreboardTeam;
-  preview: GamePreview;
-  odds: NormalizedOdds | null;
-  gameInfo: GameInfo | null;
-  gameDate: string;
-  seasonSeries: SeasonSeries | null;
-  awayRecord: string | null;
-  homeRecord: string | null;
-}) {
-  return (
-    <FullBleed className="px-6">
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr_340px]">
-        <div className="space-y-6">
-          <LineupPanel team={away} starters={preview.lineups.away} />
-          <LineupPanel team={home} starters={preview.lineups.home} />
-        </div>
-        <div className="space-y-6">
-          <PreviewBlurb article={preview.article} />
-          {preview.projection && (
-            <ProjectionSummaryCard away={away} home={home} projection={preview.projection} odds={odds} />
-          )}
-          {preview.espnPredictor && (
-            <EspnPredictorCard away={away} home={home} predictor={preview.espnPredictor} />
-          )}
-          {preview.availability && (
-            <>
-              <AvailabilityPanel team={away} entries={preview.availability.away} />
-              <AvailabilityPanel team={home} entries={preview.availability.home} />
-            </>
-          )}
-        </div>
-        <div className="space-y-6">
-          {gameInfo && <GameInformationCard date={gameDate} gameInfo={gameInfo} />}
-          {seasonSeries && (
-            <MatchupsCard
-              away={away}
-              home={home}
-              awayRecord={awayRecord}
-              homeRecord={homeRecord}
-              seasonSeries={seasonSeries}
-            />
-          )}
-        </div>
-      </div>
-    </FullBleed>
   );
 }
 
@@ -2834,140 +2644,5 @@ function MatchupsCard({
         })}
       </div>
     </div>
-  );
-}
-
-function TeamName({ team }: { team: ScoreboardTeam }) {
-  if (team.linkId) {
-    return (
-      <Link href={`/teams/${team.linkId}`} className="hover:text-foreground/92">
-        {team.displayName}
-      </Link>
-    );
-  }
-  return <>{team.displayName}</>;
-}
-
-function ScoreboardHeader({
-  away,
-  home,
-  statusDetail,
-  linescores,
-  tabs,
-  activeTab,
-  onTabChange,
-}: {
-  away: ScoreboardTeam;
-  home: ScoreboardTeam;
-  statusDetail: string | null;
-  linescores: HeaderExtras | null;
-  tabs: { value: TabKey; label: string }[];
-  activeTab: TabKey;
-  onTabChange: (tab: TabKey) => void;
-}) {
-  const periods = linescores
-    ? Math.max(linescores.away.linescores.length, linescores.home.linescores.length)
-    : 0;
-
-  return (
-    // Full-bleed: this page's <main> caps content at max-w-6xl with side
-    // gutters, but the scoreboard header should span the whole content
-    // area's width like ESPN's real game header, not just the centered
-    // column.
-    <FullBleed className="overflow-hidden border-y border-border bg-background">
-      <div
-        className="h-1 w-full"
-        style={{ background: `linear-gradient(90deg, ${away.accent}, ${home.accent})` }}
-      />
-      <div className="relative">
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: `linear-gradient(90deg, ${away.accent}26 0%, transparent 40%, transparent 60%, ${home.accent}26 100%)`,
-          }}
-        />
-        <div className="relative mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-4 sm:gap-4 sm:px-6 sm:py-6">
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
-          {away.logoUrl && (
-            <img src={away.logoUrl} alt={away.displayName} className="h-9 w-9 shrink-0 object-contain sm:h-14 sm:w-14" />
-          )}
-          <div className="min-w-0">
-            <div className="truncate font-semibold text-foreground leading-tight">
-              <TeamName team={away} />
-            </div>
-            {linescores && (
-              <div className="truncate text-xs text-foreground/72 mt-0.5">
-                {linescores.away.record}
-                {linescores.away.splitRecord ? `, ${linescores.away.splitRecord} Away` : ""}
-              </div>
-            )}
-          </div>
-          <div className="ml-1 shrink-0 text-xl font-bold tabular-nums text-foreground sm:ml-2 sm:text-4xl">
-            {away.score ?? "-"}
-          </div>
-        </div>
-
-        <div className="flex shrink-0 flex-col items-center gap-1 px-1 sm:px-2">
-          {statusDetail && <div className="whitespace-nowrap text-xs font-medium text-foreground/92 sm:text-sm">{statusDetail}</div>}
-          {linescores && periods > 0 && (
-            <table className="hidden text-xs text-foreground/82 sm:table">
-              <thead>
-                <tr className="text-foreground/72">
-                  <th className="px-1.5 font-normal" />
-                  {Array.from({ length: periods }, (_, i) => (
-                    <th key={i} className="px-1.5 font-normal">
-                      {periodLabel(i)}
-                    </th>
-                  ))}
-                  <th className="px-1.5 font-normal">T</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="px-1.5 font-semibold text-foreground/92">{away.abbreviation}</td>
-                  {Array.from({ length: periods }, (_, i) => (
-                    <td key={i} className="px-1.5 text-center">
-                      {linescores.away.linescores[i] ?? ""}
-                    </td>
-                  ))}
-                  <td className="px-1.5 text-center font-semibold text-foreground">{away.score ?? "-"}</td>
-                </tr>
-                <tr>
-                  <td className="px-1.5 font-semibold text-foreground/92">{home.abbreviation}</td>
-                  {Array.from({ length: periods }, (_, i) => (
-                    <td key={i} className="px-1.5 text-center">
-                      {linescores.home.linescores[i] ?? ""}
-                    </td>
-                  ))}
-                  <td className="px-1.5 text-center font-semibold text-foreground">{home.score ?? "-"}</td>
-                </tr>
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-4">
-          <div className="mr-1 shrink-0 text-xl font-bold tabular-nums text-foreground sm:mr-2 sm:text-4xl">
-            {home.score ?? "-"}
-          </div>
-          <div className="min-w-0 text-right">
-            <div className="truncate font-semibold text-foreground leading-tight">
-              <TeamName team={home} />
-            </div>
-            {linescores && (
-              <div className="truncate text-xs text-foreground/72 mt-0.5">
-                {linescores.home.record}
-                {linescores.home.splitRecord ? `, ${linescores.home.splitRecord} Home` : ""}
-              </div>
-            )}
-          </div>
-          {home.logoUrl && (
-            <img src={home.logoUrl} alt={home.displayName} className="h-9 w-9 shrink-0 object-contain sm:h-14 sm:w-14" />
-          )}
-        </div>
-        </div>
-      </div>
-      <TabPager tabs={tabs} activeTab={activeTab} onChange={onTabChange} accentColor={home.accent} />
-    </FullBleed>
   );
 }

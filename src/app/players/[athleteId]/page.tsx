@@ -7,11 +7,9 @@ import { useTheme } from "next-themes";
 import { Suspense, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { SectionCard } from "@/components/SectionCard";
-import { TabPager, useTabQueryParam } from "@/components/TabPager";
-import { FullBleed } from "@/components/FullBleed";
+import { useTabQueryParam } from "@/components/TabPager";
 import { useBreadcrumbLabel } from "@/components/Breadcrumb";
-import { useLayout } from "@/components/templates/layout-context";
-import { FormBars, PlayerHeaderA, SeasonTiles, type FormGame } from "@/components/templates/variants/a/PlayerA";
+import { FormBars, PlayerHeaderA, SeasonTiles, type FormGame } from "@/components/player/PlayerA";
 import { getTeamAccent } from "@/lib/team-accent";
 import { Skeleton, SkeletonDetailPage } from "@/components/Skeleton";
 
@@ -342,8 +340,6 @@ function PlayerDetailContent() {
   const { athleteId } = useParams<{ athleteId: string }>();
   const [activeTab, setActiveTab] = useTabQueryParam<PlayerTab>("overview");
   const { resolvedTheme } = useTheme();
-  const { layout, ready } = useLayout();
-  const isA = ready && layout === "a";
   const { data, isLoading, error } = useQuery({
     queryKey: ["player", athleteId],
     queryFn: () => fetchPlayer(athleteId),
@@ -357,12 +353,10 @@ function PlayerDetailContent() {
 
   const { player, recentGames, seasonRanks, nextGame } = data;
   const seasonStat = player.playerSeasonStats[0];
-  const { accent: accentColor, accentForeground } = getTeamAccent(
+  const { accent: accentColor } = getTeamAccent(
     player.currentTeam?.color,
     resolvedTheme === "dark" ? "dark" : "light",
   );
-  const [firstName, ...lastNameParts] = player.displayName.trim().split(/\s+/);
-  const lastName = lastNameParts.join(" ");
   const age = formatAge(player.birthDate);
 
   const currentYear = seasonStat?.season.year;
@@ -406,9 +400,8 @@ function PlayerDetailContent() {
     : [];
 
   return (
-    <div data-player={isA ? "a" : undefined} className="space-y-8">
-      {isA && (
-        <PlayerHeaderA
+    <div data-player className="space-y-8">
+      <PlayerHeaderA
           name={player.displayName}
           headshotUrl={player.headshotUrl}
           accent={accentColor}
@@ -438,107 +431,8 @@ function PlayerDetailContent() {
           activeTab={activeTab}
           onTabChange={setActiveTab}
         />
-      )}
-      {!isA && (
-      <FullBleed
-        className="bg-surface border-b border-border"
-        style={{ borderTopColor: accentColor, borderTopWidth: 4 }}
-      >
-        <div className="mx-auto max-w-6xl grid grid-cols-1 lg:grid-cols-[1.5fr_0.8fr_1.1fr] gap-6 px-6 py-4">
-          <div className="flex items-stretch gap-5">
-            <div
-              className="relative -my-4 h-[calc(100%+2rem)] w-40 shrink-0 overflow-hidden"
-              style={{ background: `linear-gradient(135deg, ${accentColor}99, var(--surface))` }}
-            >
-              {player.currentTeam?.logoUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={player.currentTeam.logoUrl}
-                  alt=""
-                  className="absolute left-[4%] top-[34%] h-[115%] w-[95%] -translate-y-1/2 object-contain opacity-60"
-                />
-              )}
-              {player.headshotUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={player.headshotUrl}
-                  alt={player.displayName}
-                  className="absolute right-0 bottom-0 h-full w-full object-contain"
-                  style={{ objectPosition: "bottom right" }}
-                />
-              )}
-            </div>
-            <div className="flex flex-col justify-center gap-2 min-w-0">
-              <h1 className="leading-tight">
-                <span className="block text-base font-light tracking-widest text-foreground/92 uppercase">{firstName}</span>
-                <span className="block text-4xl font-bold tracking-wide text-foreground uppercase">{lastName}</span>
-              </h1>
-              <p className="flex items-center gap-1.5 text-sm text-foreground/82 min-w-0">
-                {player.currentTeam ? (
-                  <Link href={`/teams/${player.currentTeam.id}`} className="flex items-center gap-1.5 hover:text-foreground min-w-0">
-                    {player.currentTeam.logoUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={player.currentTeam.logoUrl} alt="" className="h-4 w-4 shrink-0" />
-                    )}
-                    <span className="truncate">{player.currentTeam.displayName}</span>
-                  </Link>
-                ) : (
-                  "Free agent"
-                )}
-                {player.jersey && ` · #${player.jersey}`}
-                {player.position && ` · ${player.position.name}`}
-              </p>
-            </div>
-          </div>
 
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 content-start text-sm">
-            <dt className="text-foreground/72">HT/WT</dt>
-            <dd className="font-semibold text-foreground">
-              {formatHeight(player.heightIn)}
-              {player.weightLb && `, ${player.weightLb} lbs`}
-            </dd>
-            <dt className="text-foreground/72">Birthdate</dt>
-            <dd className="font-semibold text-foreground">
-              {player.birthDate ? new Date(player.birthDate).toLocaleDateString() : "—"}
-              {age != null && ` (${age})`}
-            </dd>
-            <dt className="text-foreground/72">College</dt>
-            <dd className="font-semibold text-foreground">{player.college ?? "—"}</dd>
-            <dt className="text-foreground/72">Draft Info</dt>
-            <dd className="font-semibold text-foreground">
-              {player.draftYear ? `${player.draftYear}: Rd ${player.draftRound ?? "—"}, Pk ${player.draftPick ?? "—"}` : "—"}
-            </dd>
-            <dt className="text-foreground/72">Status</dt>
-            <dd className="flex items-center gap-1.5 font-semibold text-foreground">
-              <span className={`h-2 w-2 rounded-full ${player.active ? "bg-emerald-500" : "bg-foreground/40"}`} />
-              {player.active ? "Active" : "Inactive"}
-            </dd>
-          </dl>
-
-          {seasonStat && (
-            <div className="rounded-md border border-border overflow-hidden self-start">
-              <div
-                className="px-3 py-1.5 text-center text-xs font-semibold"
-                style={{ backgroundColor: accentColor, color: accentForeground }}
-              >
-                {seasonLabel(seasonStat.season.year)} Regular Season Stats
-              </div>
-              <div className="grid grid-cols-4 gap-2 divide-x divide-border px-2 py-3">
-                <HeroStat label="PTS" value={seasonStat.pointsPerGame} rank={seasonRanks.pointsPerGame} />
-                <HeroStat label="REB" value={seasonStat.reboundsPerGame} rank={seasonRanks.reboundsPerGame} />
-                <HeroStat label="AST" value={seasonStat.assistsPerGame} rank={seasonRanks.assistsPerGame} />
-                <HeroStat label="FG%" value={seasonStat.fieldGoalPct} rank={seasonRanks.fieldGoalPct} />
-              </div>
-            </div>
-          )}
-        </div>
-        <NextGameBar nextGame={nextGame} player={player} accentColor={accentColor} />
-        <TabPager tabs={PLAYER_TABS} activeTab={activeTab} onChange={setActiveTab} accentColor={accentColor} />
-      </FullBleed>
-      )}
-
-      {activeTab === "overview" &&
-        (isA ? (
+      {activeTab === "overview" && (
           <div className="space-y-6">
             <div className="grid items-start gap-6 xl:grid-cols-[1fr_26rem]">
               <div className="min-w-0 space-y-6">
@@ -550,93 +444,13 @@ function PlayerDetailContent() {
             <RecentGamesTable games={recentGames} currentYear={seasonStat?.season.year} accentColor={accentColor} />
             <NewsRow athleteId={athleteId} accentColor={accentColor} />
           </div>
-        ) : (
-          <OverviewTab
-            player={player}
-            seasonStat={seasonStat}
-            recentGames={recentGames}
-            athleteId={athleteId}
-            accentColor={accentColor}
-          />
-        ))}
+      )}
 
       {activeTab === "stats" && <StatsTab seasons={player.playerSeasonStats} accentColor={accentColor} />}
       {activeTab === "bio" && <BioTab player={player} athleteId={athleteId} accentColor={accentColor} />}
       {activeTab === "splits" && <SplitsTab athleteId={athleteId} />}
       {activeTab === "gameLog" && <GameLogTab athleteId={athleteId} accentColor={accentColor} />}
       {activeTab === "advanced" && <AdvancedStatsTab athleteId={athleteId} accentColor={accentColor} />}
-    </div>
-  );
-}
-
-function OverviewTab({
-  player,
-  seasonStat,
-  recentGames,
-  athleteId,
-  accentColor,
-}: {
-  player: PlayerDetail["player"];
-  seasonStat: SeasonStatRow | undefined;
-  recentGames: PlayerDetail["recentGames"];
-  athleteId: string;
-  accentColor: string;
-}) {
-  return (
-    <div className="space-y-8">
-      {seasonStat && (
-        <section>
-          <h2 className="text-lg font-medium text-foreground/92 mb-3">{seasonLabel(seasonStat.season.year)} season</h2>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-8 gap-3">
-            <Stat label="GP" value={seasonStat.gamesPlayed ?? "—"} />
-            <Stat label="PPG" value={seasonStat.pointsPerGame?.toFixed(1) ?? "—"} />
-            <Stat label="RPG" value={seasonStat.reboundsPerGame?.toFixed(1) ?? "—"} />
-            <Stat label="APG" value={seasonStat.assistsPerGame?.toFixed(1) ?? "—"} />
-            <Stat label="SPG" value={seasonStat.stealsPerGame?.toFixed(1) ?? "—"} />
-            <Stat label="BPG" value={seasonStat.blocksPerGame?.toFixed(1) ?? "—"} />
-            <Stat label="FG%" value={seasonStat.fieldGoalPct?.toFixed(1) ?? "—"} />
-            <Stat label="3P%" value={seasonStat.threePointPct?.toFixed(1) ?? "—"} />
-          </div>
-        </section>
-      )}
-
-      <RecentGamesTable games={recentGames} currentYear={seasonStat?.season.year} accentColor={accentColor} />
-      <CareerSnapshotCard seasons={player.playerSeasonStats} accentColor={accentColor} />
-      <NewsRow athleteId={athleteId} accentColor={accentColor} />
-    </div>
-  );
-}
-
-function NextGameBar({
-  nextGame,
-  player,
-  accentColor,
-}: {
-  nextGame: PlayerDetail["nextGame"];
-  player: PlayerDetail["player"];
-  accentColor: string;
-}) {
-  if (!nextGame) return null;
-
-  const isHome = player.currentTeam?.abbreviation === nextGame.home.abbreviation;
-  const opponent = isHome ? nextGame.away : nextGame.home;
-  const date = new Date(nextGame.date);
-
-  return (
-    <div className="mx-auto max-w-6xl flex items-center justify-between gap-3 px-6 py-2 border-t border-border text-sm">
-      <p className="text-foreground/82 truncate">
-        <span className="font-semibold text-foreground/92">Next game</span> · {isHome ? "vs" : "@"} {opponent.displayName}{" "}
-        · {date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}{" "}
-        {date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-        {nextGame.broadcast && ` · ${nextGame.broadcast}`}
-      </p>
-      <Link
-        href={`/games/${nextGame.espnId}`}
-        className="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold text-foreground/92 hover:border-foreground/50"
-        style={{ borderColor: accentColor }}
-      >
-        Preview
-      </Link>
     </div>
   );
 }
@@ -1804,24 +1618,6 @@ function StatsGlossary() {
         ))}
       </div>
     </section>
-  );
-}
-
-function HeroStat({
-  label,
-  value,
-  rank,
-}: {
-  label: string;
-  value: number | null;
-  rank: { rank: number; tied: boolean } | null;
-}) {
-  return (
-    <div className="px-1.5 py-2 text-center space-y-1.5">
-      <p className="text-xs text-foreground/72">{label}</p>
-      <p className="text-xl font-bold text-foreground">{value?.toFixed(1) ?? "—"}</p>
-      <p className="text-xs text-foreground/72 whitespace-nowrap">{formatRank(rank)}</p>
-    </div>
   );
 }
 

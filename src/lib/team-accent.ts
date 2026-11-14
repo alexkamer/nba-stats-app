@@ -10,12 +10,16 @@ const FALLBACK_ACCENT: Record<Theme, TeamAccent> = {
   dark: { accent: "#fb923c", accentForeground: "#1c1917" },
 };
 
+// The surfaces accents are drawn on (see --surface in globals.css).
 const BACKGROUND: Record<Theme, string> = {
-  light: "#fafaf9",
-  dark: "#0c0a09",
+  light: "#ffffff",
+  dark: "#121b2d",
 };
 
 const MIN_CONTRAST_RATIO = 2.5;
+// In dark theme a team color that is too dark is lightened toward white until
+// it reads, rather than replaced, so the team keeps its identity.
+const DARK_TARGET_RATIO = 3;
 
 function normalizeHex(input: string): string | null {
   const hex = input.trim().replace(/^#/, "");
@@ -45,6 +49,19 @@ function contrastRatio(hexA: string, hexB: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+function mixWithWhite(hex: string, amount: number): string {
+  const [r, g, b] = hexToRgb(hex).map((c) => Math.round(c + (255 - c) * amount));
+  return `#${[r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function lightenUntilReadable(hex: string, background: string, target: number): string {
+  for (let step = 1; step <= 10; step++) {
+    const candidate = mixWithWhite(hex, step * 0.08);
+    if (contrastRatio(candidate, background) >= target) return candidate;
+  }
+  return mixWithWhite(hex, 0.8);
+}
+
 /**
  * Picks the accent color for a team-scoped page. Falls back to the
  * neutral brand accent when the team has no usable color or the color
@@ -56,10 +73,15 @@ export function getTeamAccent(color: string | null | undefined, theme: Theme): T
   const hex = normalizeHex(color);
   if (!hex) return FALLBACK_ACCENT[theme];
 
-  if (contrastRatio(hex, BACKGROUND[theme]) < MIN_CONTRAST_RATIO) {
+  let accentHex = hex;
+  if (theme === "dark" && contrastRatio(hex, BACKGROUND.dark) < DARK_TARGET_RATIO) {
+    accentHex = lightenUntilReadable(hex, BACKGROUND.dark, DARK_TARGET_RATIO);
+  }
+
+  if (contrastRatio(accentHex, BACKGROUND[theme]) < MIN_CONTRAST_RATIO) {
     return FALLBACK_ACCENT[theme];
   }
 
-  const accentForeground = relativeLuminance(hexToRgb(hex)) > 0.4 ? "#1c1917" : "#ffffff";
-  return { accent: hex, accentForeground };
+  const accentForeground = relativeLuminance(hexToRgb(accentHex)) > 0.4 ? "#1c1917" : "#ffffff";
+  return { accent: accentHex, accentForeground };
 }

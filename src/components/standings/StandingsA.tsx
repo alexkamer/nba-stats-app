@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Segmented } from "@/components/templates/variants/shared";
-import { parseStreak } from "@/components/templates/home-data";
-import { L10Dots } from "@/components/templates/variants/shared";
+import { Segmented } from "@/components/ui/shared";
+import { parseStreak } from "@/components/home/home-data";
+import { L10Dots } from "@/components/ui/shared";
 
 export interface StandingsColumnA {
   label: string;

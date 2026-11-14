@@ -149,7 +149,7 @@ function DayNav({ data }: { data?: BriefingPayload }) {
   );
 }
 
-/** The Briefing in variant C's voice (design D9): one reading column, large
+/** The Briefing in its own quiet voice: one reading column, large
  * quiet type, big numerals, whitespace instead of card chrome. Reads the same
  * `/api/briefing` payload and renders the same sections, in the same order, as
  * the existing page. */

@@ -3,7 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { TabPager } from "@/components/TabPager";
-import { LiveDot } from "@/components/templates/variants/shared";
+import { LiveDot } from "@/components/ui/shared";
 
 export type GameMode = "pregame" | "live" | "final";
 

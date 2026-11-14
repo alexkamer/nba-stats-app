@@ -35,3 +35,10 @@ test("accepts a leading '#' and normalizes case", () => {
   assert.deepEqual(getTeamAccent("#552583", "light"), getTeamAccent("552583", "light"));
   assert.deepEqual(getTeamAccent("552583", "light"), getTeamAccent("552583".toUpperCase(), "light"));
 });
+
+test("a dark team color is lightened, not replaced, in dark theme", () => {
+  const result = getTeamAccent("0c2340", "dark"); // deep navy, near the dark surface
+  assert.notEqual(result.accent, "#ea580c");
+  assert.notEqual(result.accent, "#fb923c");
+  assert.notEqual(result.accent, "#0c2340");
+});

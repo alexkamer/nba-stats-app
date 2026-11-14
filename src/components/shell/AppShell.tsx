@@ -3,15 +3,24 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState, type ReactNode } from "react";
-import { Menu, X } from "lucide-react";
+import { CalendarDays, Crown, Dices, LayoutList, Menu, Newspaper, ShieldHalf, Sunrise, X, type LucideIcon } from "lucide-react";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { CircularBadge } from "@/components/CircularBadge";
-import { SECTIONS } from "@/components/Sidebar";
 import { SiteSearch } from "@/components/SiteSearch";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { gamePhase, gameStatusText } from "@/components/templates/home-data";
-import { useScoreboardToday, type ScoreboardGame } from "@/components/templates/useScoreboardToday";
-import { Wordmark } from "@/components/templates/Wordmark";
+import { gamePhase, gameStatusText } from "@/components/home/home-data";
+import { useScoreboardToday, type ScoreboardGame } from "@/components/shell/useScoreboardToday";
+import { Wordmark } from "@/components/shell/Wordmark";
+
+export const SECTIONS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: "/briefing", label: "Briefing", icon: Sunrise },
+  { href: "/scoreboard", label: "Scoreboard", icon: CalendarDays },
+  { href: "/standings", label: "Standings", icon: LayoutList },
+  { href: "/teams", label: "Teams", icon: ShieldHalf },
+  { href: "/news", label: "News", icon: Newspaper },
+  { href: "/betting", label: "Betting", icon: Dices },
+  { href: "/betting/history", label: "Cover Story", icon: Crown },
+];
 
 /** The section whose href is the longest prefix of the current path wins, so
  * "/betting/history" lights "Cover Story" and not "Betting" as well. */
@@ -208,13 +217,13 @@ function MobileBar() {
   );
 }
 
-/** Briefing pages take variant C's look (design D9): C's tokens are scoped to
- * a wrapper around the page content so the A rail keeps its own palette. */
+/** Briefing pages use their own quiet theme, scoped to a wrapper around the
+ * page content so the rail keeps the app palette. */
 function BriefingScope({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const scoped = pathname === "/briefing" || pathname?.startsWith("/briefing/");
   return scoped ? (
-    <div data-scope="c" className="flex flex-1 flex-col bg-background font-sans text-foreground">
+    <div data-scope="briefing" className="flex flex-1 flex-col bg-background font-sans text-foreground">
       {children}
     </div>
   ) : (
@@ -222,9 +231,9 @@ function BriefingScope({ children }: { children: ReactNode }) {
   );
 }
 
-/** Variant A shell: a fixed left rail that combines navigation with a live
+/** The app shell: a fixed left rail that combines navigation with a live
  * "Tonight" list, so the night's scores are visible from every page. */
-export function ShellA({ children }: { children: ReactNode }) {
+export function AppShell({ children }: { children: ReactNode }) {
   const main = (
     <main className="flex-1 px-5 py-6 lg:px-10 lg:py-8">
       <div className="mx-auto w-full max-w-[1280px] 2xl:max-w-[1500px]">

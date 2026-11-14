@@ -11,7 +11,7 @@ export interface TeamLite {
   division: { name: string; conference: { name: string } } | null;
 }
 
-/** Teams index for layout A: every team grouped under its conference and
+/** Teams index: every team grouped under its conference and
  * division (the way the league actually organizes them), each as a tile with
  * the team's own color down its edge. The performance leaderboard from the
  * existing page is passed in as-is. */

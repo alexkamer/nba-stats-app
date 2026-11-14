@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-inter);
-  --font-display: var(--font-barlow-condensed);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-heading);
   --font-mono: var(--font-geist-mono);
 
   --color-background: var(--background);
@@ -17,31 +17,190 @@
 }
 
 :root {
-  --background: #f7f5f1;
-  --foreground: #16140f;
+  --background: #eaeef3;
+  --foreground: #0d1626;
   --surface: #ffffff;
-  --surface-muted: #efebe3;
-  --border: #e3ded3;
-  --accent: #e8491c;
+  --surface-muted: #f1f4f8;
+  --border: #d7dee7;
+  --accent: #097350;
   --accent-foreground: #ffffff;
   --win: #12805c;
   --loss: #c8323f;
+  --font-body: var(--font-archivo);
+  --font-heading: var(--font-archivo);
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
 }
 
 .dark {
-  --background: #0a0a0b;
-  --foreground: #f3f1eb;
-  --surface: #15141a;
-  --surface-muted: #1d1c23;
-  --border: #2c2a33;
-  --accent: #ff6a3d;
-  --accent-foreground: #16140f;
+  --background: #0b1220;
+  --foreground: #e8eef7;
+  --surface: #121b2d;
+  --surface-muted: #19243a;
+  --border: #243350;
+  --accent: #2fd08f;
+  --accent-foreground: #05140e;
+  --win: #3ccf9a;
+  --loss: #ff6b78;
 }
 
 h1,
 h2,
 h3 {
-  font-family: var(--font-display);
-  letter-spacing: -0.01em;
+  font-family: var(--font-heading);
+  font-stretch: 72%;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
+/* Pages that keep their original small title (text-3xl and friends) get the
+ * same large page title as the recomposed pages, without editing each page. */
+main h1:not([class*="text-4xl"]):not([class*="text-5xl"]):not([class*="text-6xl"]):not([class*="clamp"]):not(.sr-only) {
+  font-size: clamp(2.5rem, 3.4vw, 3.5rem);
+  line-height: 1;
+}
+
+/* The Briefing's own quiet theme (porcelain, cobalt, Geist), scoped to its
+ * content so the rail keeps the app theme. */
+[data-scope="briefing"] {
+  --background: #f6f6f4;
+  --foreground: #1a1a1a;
+  --surface: #ffffff;
+  --surface-muted: #efefec;
+  --border: #e4e4e0;
+  --accent: #2742e8;
+  --accent-foreground: #ffffff;
+  --font-body: var(--font-geist-sans);
+  --font-heading: var(--font-geist-sans);
+  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-geist-sans);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+.dark [data-scope="briefing"] {
+  --background: #101012;
+  --foreground: #ededea;
+  --surface: #17171a;
+  --surface-muted: #1f1f23;
+  --border: #2a2a2f;
+  --accent: #8497ff;
+  --accent-foreground: #0f1020;
+}
+[data-scope="briefing"] :is(h1, h2, h3) {
+  font-stretch: 100%;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+/* The player-research sticky bar bleeds to the page edge with `-mx-6`, which
+ * matches the original 24px page padding. The shell pads 20px (40px on large
+ * screens), so match its bleed to that instead of overflowing by 4px. */
+main [class*="sticky"][class*="-mx-6"] {
+  margin-inline: -1.25rem;
+}
+@media (min-width: 1024px) {
+  main [class*="sticky"][class*="-mx-6"] {
+    margin-inline: -2.5rem;
+  }
+}
+
+/* Game page: the page's older cards (leaders, team stats, odds,
+ * lineups, matchups, shot chart, and so on) are outlined boxes with three
+ * different heading styles. Give them all one look, a flat surface and one
+ * title style, without editing each component. */
+[data-game] .rounded-lg.border {
+  border-color: transparent;
+  background: var(--surface);
+}
+[data-game] .uppercase {
+  text-transform: none;
+  letter-spacing: 0;
+}
+[data-game] .rounded-lg h2 {
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--foreground);
+}
+/* The few headings typed in capitals in the source ("MATCHUPS", "SHOT CHART",
+ * "PROBABILITIES & GAME FLOW") read as sentence case. */
+[data-game] h2[class*="text-xs"][class*="tracking-wide"] {
+  text-transform: lowercase;
+}
+[data-game] h2[class*="text-xs"][class*="tracking-wide"]::first-letter {
+  text-transform: uppercase;
+}
+
+/* Player page: the older section cards and stat boxes are outlined
+ * boxes with a team-colored header rule. Give them the same flat surface the
+ * rest of the app uses. (Selects and inputs are left alone.) */
+[data-player] section.rounded-md.border,
+[data-player] div.rounded-md.border.bg-surface {
+  border-color: transparent;
+  border-radius: 0.5rem;
+}
+[data-player] section.rounded-md.border > div:first-child {
+  border-bottom-color: var(--border) !important;
+}
+[data-player] section.rounded-md.border h2 {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+[data-player] .uppercase {
+  text-transform: none;
+  letter-spacing: 0;
+}
+[data-player] .sticky.left-0 {
+  background: var(--surface);
+}
+
+/* Team page: the tabs that keep their original content (Stats,
+ * Schedule, Performance, Roster, Depth, Injuries, Transactions) get the same
+ * flat cards as the rest of the app, and their pale one-off reds and greens
+ * (light red "Out", pale green lines) use the app's win and loss colors, which
+ * are dark enough to read on a white surface. */
+[data-team] section.rounded-md.border,
+[data-team] div.rounded-md.border.bg-surface,
+[data-team] div.rounded-lg.border {
+  border-color: transparent;
+  background: var(--surface);
+  border-radius: 0.5rem;
+}
+[data-team] section.rounded-md.border > div:first-child {
+  border-bottom-color: var(--border) !important;
+}
+[data-team] section.rounded-md.border h2 {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+[data-team] .uppercase {
+  text-transform: none;
+  letter-spacing: 0;
+}
+[data-team] [class*="text-red-"] {
+  color: var(--loss);
+}
+[data-team] [class*="text-emerald-"],
+[data-team] [class*="text-green-"] {
+  color: var(--win);
+}
+
+/* Everywhere: older pages color wins and losses with Tailwind's pale
+ * reds and greens (for example text-emerald-500), which are too light to read on
+ * a white surface. Use the app's own win and loss colors instead, in light and
+ * dark. */
+main [class*="text-red-"] {
+  color: var(--loss);
+}
+main [class*="text-emerald-"],
+main [class*="text-green-"] {
+  color: var(--win);
+}

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
-import { Segmented } from "@/components/templates/variants/shared";
+import { Segmented } from "@/components/ui/shared";
 
 /** One pick, whatever its kind: a side of the spread, the game total, or a
  * player prop. The betting page converts its data into these so the board can

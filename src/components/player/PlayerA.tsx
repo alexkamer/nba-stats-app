@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { TabPager } from "@/components/TabPager";
-import { LiveDot } from "@/components/templates/variants/shared";
+import { LiveDot } from "@/components/ui/shared";
 
 export interface PlayerTile {
   label: string;
@@ -25,7 +25,7 @@ export interface NextGameLite {
   opponent: string;
 }
 
-/** Identity header for layout A: who the player is on the left, this season's
+/** Identity header: who the player is on the left, this season's
  * headline numbers (with league rank) on the right, then a single line about
  * the next game, which reads differently when that game is already live. */
 export function PlayerHeaderA<T extends string>({

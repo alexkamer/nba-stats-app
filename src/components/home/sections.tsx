@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { CircularBadge } from "@/components/CircularBadge";
-import { parseStreak, type Conference, type LeaderCategory } from "@/components/templates/home-data";
-import { L10Dots } from "@/components/templates/variants/shared";
+import { parseStreak, type Conference, type LeaderCategory } from "@/components/home/home-data";
+import { L10Dots } from "@/components/ui/shared";
 
 /** Five leader categories side by side: the leader's headshot and figure
  * large, then the next three underneath. Scrolls sideways on phones. */

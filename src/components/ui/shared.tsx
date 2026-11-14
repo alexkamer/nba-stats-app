@@ -3,8 +3,8 @@
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
-import type { ScoreboardGame } from "@/components/templates/home-data";
-import { gamePhase } from "@/components/templates/home-data";
+import type { ScoreboardGame } from "@/components/home/home-data";
+import { gamePhase } from "@/components/home/home-data";
 
 export function ErrorLine({ what }: { what: string }) {
   return <p className="text-sm text-loss">Couldn&apos;t load {what}. Refresh the page to try again.</p>;
