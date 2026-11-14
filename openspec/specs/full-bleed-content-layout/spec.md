@@ -5,20 +5,20 @@ Defines how a page section breaks out of the centered content column to span the
 
 ## Requirements
 
-### Requirement: Full-bleed sections span the content area, not persistent navigation chrome
-A page section that breaks out of the centered content column to appear full-width SHALL span only the content area to the right of any persistent navigation sidebar, never rendering under or overlapping that sidebar.
+### Requirement: The team header band is the only full-bleed section
+The team page's header band SHALL span the content area to the right of the persistent rail, flush with the rail's right edge and never under it. Game and player headers SHALL be contained cards inside the content column (per `visual-identity`) and SHALL NOT break out of it.
 
-#### Scenario: Viewing a game's header band on desktop
-- **WHEN** a user views a game detail page at a desktop viewport width, where the sidebar is visible
-- **THEN** the game's full-bleed header band starts flush with the sidebar's right edge and extends to the viewport's right edge, with no part of the band rendered underneath the sidebar
+#### Scenario: Viewing a team header band on desktop
+- **WHEN** a user views a team detail page at a desktop viewport width
+- **THEN** the header band starts at the rail's right edge and extends to the viewport's right edge
 
-#### Scenario: Viewing a team or player header band on desktop
-- **WHEN** a user views a team or player detail page at a desktop viewport width
-- **THEN** that page's full-bleed header band is likewise flush with the sidebar's right edge, not the viewport's left edge
+#### Scenario: Viewing a game or player header on desktop
+- **WHEN** a user views a game or player detail page at a desktop viewport width
+- **THEN** the header sits inside the content column with margins on both sides
 
-### Requirement: Full-bleed sections span the full viewport when no sidebar is shown
-On a viewport width where the sidebar is replaced by the mobile top bar (per `app-shell-navigation`), a full-bleed section SHALL span the full viewport width, since no persistent chrome occupies part of it.
+### Requirement: The team header band spans the viewport on mobile
+On a viewport where the rail is replaced by the mobile bar, the team header band SHALL span the full viewport width.
 
-#### Scenario: Viewing a game header band on mobile
-- **WHEN** a user views a game detail page at a mobile viewport width, where the sidebar is hidden
-- **THEN** the game's full-bleed header band spans the full viewport width edge to edge
+#### Scenario: Viewing a team header band on mobile
+- **WHEN** a user views a team detail page at a mobile viewport width
+- **THEN** the header band spans the viewport edge to edge

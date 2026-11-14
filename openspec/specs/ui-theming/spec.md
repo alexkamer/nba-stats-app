@@ -44,3 +44,10 @@ When a page loads, the system SHALL apply the correct theme (stored preference o
 #### Scenario: Page load with stored dark preference
 - **WHEN** a user with a stored dark preference loads a page
 - **THEN** the page does not visibly flash the light theme before switching to dark
+
+### Requirement: Team accent colors stay legible in dark theme
+A team's accent color used for a bar, strip or text SHALL remain distinguishable from the dark theme's surface; when a team color is too dark, the system SHALL lighten it for display.
+
+#### Scenario: Dark team color in dark theme
+- **WHEN** a user in the dark theme views a chart colored by a dark team color (for example a navy)
+- **THEN** the bars are visibly distinct from the surface behind them
