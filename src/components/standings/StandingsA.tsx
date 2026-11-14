@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Segmented } from "@/components/ui/shared";
 import { parseStreak } from "@/components/home/home-data";
-import { L10Dots } from "@/components/ui/shared";
+import { L10Dots, type L10Game } from "@/components/ui/shared";
 
 export interface StandingsColumnA {
   label: string;
@@ -36,11 +36,11 @@ export function StreakA({ streak }: { streak: string | null }) {
 }
 
 /** Last ten as blocks plus the record. */
-export function LastTenA({ record }: { record: string | null }) {
+export function LastTenA({ record, games }: { record: string | null; games?: L10Game[] }) {
   if (!record) return null;
   return (
     <span className="inline-flex items-center justify-end gap-2">
-      <L10Dots record={record} />
+      <L10Dots record={record} games={games} />
       <span className="w-8 text-right text-foreground/60">{record}</span>
     </span>
   );

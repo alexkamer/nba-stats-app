@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import type { L10Game } from "@/components/ui/shared";
 import { isBreak } from "@/lib/game-status";
 import { useScoreboardToday, type ScoreboardGame } from "@/components/shell/useScoreboardToday";
 
@@ -13,6 +14,7 @@ export interface Standing {
   gamesBehind: number | null;
   streak: string | null;
   lastTen: string | null;
+  lastTenGames?: L10Game[];
   pointsPerGame: number | null;
   oppPointsPerGame: number | null;
   team: { id: number; name: string; displayName: string; abbreviation: string; logoUrl?: string | null; color?: string | null };

@@ -79,7 +79,7 @@ export function StandingsTable({ conf }: { conf: Conference }) {
                 <td className="hidden px-2 py-2 text-right tabular-nums sm:table-cell">{r.winPct?.toFixed(3).replace(/^0/, "")}</td>
                 <td className="hidden px-2 py-2 text-right tabular-nums sm:table-cell">{r.gamesBehind === 0 ? "-" : r.gamesBehind}</td>
                 <td className="hidden px-2 py-2 md:table-cell">
-                  <L10Dots record={r.lastTen} />
+                  <L10Dots record={r.lastTen} games={r.lastTenGames} />
                 </td>
                 <td className={`py-2 pl-2 pr-4 text-right font-bold tabular-nums ${st.dir === "win" ? "text-win" : st.dir === "loss" ? "text-loss" : ""}`}>{st.label}</td>
               </tr>

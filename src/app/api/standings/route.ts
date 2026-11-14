@@ -32,7 +32,7 @@ export async function GET(request: Request) {
       ? availableSeasons.find((s) => s.year === Number(yearParam)) ?? availableSeasons[0]
       : availableSeasons[0];
 
-    const [standings, teamSeasonStats] = await Promise.all([
+    const [standings, teamSeasonStats, finalGames] = await Promise.all([
       prisma.standing.findMany({
         where: { seasonId: season.id },
         include: { team: { include: { division: { include: { conference: true } } } } },
@@ -42,7 +42,37 @@ export async function GET(request: Request) {
         where: { seasonId: season.id },
         select: { teamId: true, pointsPerGame: true, oppPointsPerGame: true },
       }),
+      prisma.game.findMany({
+        where: { seasonId: season.id, status: "FINAL", homeScore: { not: null }, awayScore: { not: null } },
+        select: { espnId: true, date: true, homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true },
+        orderBy: { date: "desc" },
+      }),
     ]);
+
+    // Each team's ten most recent finals, oldest first, so the L10 marks
+    // show the real order the games were played in.
+    const abbrById = new Map(standings.map((s) => [s.teamId, s.team.abbreviation]));
+    const lastTenByTeam = new Map<number, unknown[]>();
+    for (const g of finalGames) {
+      for (const home of [true, false]) {
+        const teamId = home ? g.homeTeamId : g.awayTeamId;
+        const list = lastTenByTeam.get(teamId) ?? [];
+        if (list.length >= 10) continue;
+        const own = (home ? g.homeScore : g.awayScore) as number;
+        const opp = (home ? g.awayScore : g.homeScore) as number;
+        list.unshift({
+          gameId: g.espnId,
+          date: g.date,
+          opponentId: home ? g.awayTeamId : g.homeTeamId,
+          opponentAbbr: abbrById.get(home ? g.awayTeamId : g.homeTeamId) ?? "?",
+          home,
+          own,
+          opp,
+          win: own > opp,
+        });
+        lastTenByTeam.set(teamId, list);
+      }
+    }
 
     // Team espnIds are stable across relocation/rename (e.g. Seattle
     // SuperSonics -> OKC Thunder) — show the era-accurate name/logo for
@@ -61,6 +91,7 @@ export async function GET(request: Request) {
         team: identity ? { ...standing.team, ...identity } : standing.team,
         pointsPerGame: stats?.pointsPerGame ?? null,
         oppPointsPerGame: stats?.oppPointsPerGame ?? null,
+        lastTenGames: lastTenByTeam.get(standing.teamId) ?? [],
       });
       conferenceMap.set(conferenceName, group);
     }

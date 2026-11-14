@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState, type ReactNode } from "react";
 import { TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
 import { Skeleton, SkeletonRow } from "@/components/Skeleton";
+import type { L10Game } from "@/components/ui/shared";
 import { DiffA, LastTenA, StandingsGroupA, StandingsHeaderA, StreakA, type StandingsRowA } from "@/components/standings/StandingsA";
 
 interface Standing {
@@ -21,6 +22,7 @@ interface Standing {
   divRecord: string | null;
   confRecord: string | null;
   lastTen: string | null;
+  lastTenGames?: { gameId: string; date: string; opponentId: number; home: boolean; own: number; opp: number; win: boolean }[];
   threePtRecord: string | null;
   tenPtRecord: string | null;
   vsOverRecord: string | null;
@@ -166,10 +168,10 @@ const EXTRA_COLUMNS: Record<PageMode, ExtraColumn[]> = {
 
 // The page shows the same columns with richer cells: streak and last ten as
 // colored marks and blocks, and the differential colored by sign.
-function extraColumnsA(mode: PageMode): ExtraColumn[] {
+function extraColumnsA(mode: PageMode, abbrById: Map<number, string>): ExtraColumn[] {
   return EXTRA_COLUMNS[mode].map((col) => {
     if (col.label === "STRK") return { ...col, render: (s: Standing) => <StreakA streak={s.streak} /> };
-    if (col.label === "L10") return { ...col, render: (s: Standing) => <LastTenA record={s.lastTen} /> };
+    if (col.label === "L10") return { ...col, render: (s: Standing) => <LastTenA record={s.lastTen} games={s.lastTenGames?.map((g): L10Game => ({ ...g, opponentAbbr: abbrById.get(g.opponentId) ?? "?" }))} /> };
     if (col.label === "DIFF") return { ...col, render: (s: Standing) => <DiffA ppg={s.pointsPerGame} opp={s.oppPointsPerGame} /> };
     return col;
   });
@@ -348,7 +350,8 @@ export default function StandingsPage() {
   // within each conference, not league- or division-wide).
   const showPlayInLines = viewMode === "conference" && (data.season?.year ?? 0) >= PLAY_IN_START_YEAR;
 
-  const columns = extraColumnsA(pageMode);
+  const abbrById = new Map(data.conferences.flatMap((c) => c.standings).map((s) => [s.team.id, s.team.abbreviation] as const));
+  const columns = extraColumnsA(pageMode, abbrById);
   return (
     <div className="space-y-8">
       <StandingsHeaderA

@@ -3,6 +3,7 @@
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
+import Link from "next/link";
 import type { ScoreboardGame } from "@/components/home/home-data";
 import { gamePhase } from "@/components/home/home-data";
 
@@ -24,8 +25,64 @@ export function featuredGame(games?: ScoreboardGame[]): ScoreboardGame | undefin
   return [...games].sort((a, b) => (spreadValue(a) ?? 99) - (spreadValue(b) ?? 99))[0];
 }
 
-/** Ten small blocks for a "9-1" last-ten record: wins then losses. */
-export function L10Dots({ record }: { record: string | null }) {
+export interface L10Game {
+  gameId: string;
+  date: string;
+  opponentAbbr: string;
+  home: boolean;
+  own: number;
+  opp: number;
+  win: boolean;
+}
+
+/** Ten small blocks for a last-ten record. With the games, they run oldest to
+ * newest, each linking to its game with a tooltip; without them (a record
+ * only), wins are grouped first. */
+function L10Block({ g }: { g: L10Game }) {
+  const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
+  const date = new Date(g.date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const label = `${g.win ? "W" : "L"} ${g.own}-${g.opp} ${g.home ? "vs" : "@"} ${g.opponentAbbr}, ${date}`;
+  const show = (e: { currentTarget: HTMLElement }) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setTip({ x: r.left + r.width / 2, y: r.top });
+  };
+  return (
+    <Link
+      href={`/games/${g.gameId}`}
+      aria-label={label}
+      className="-my-1 inline-flex py-1"
+      onMouseEnter={show}
+      onFocus={show}
+      onMouseLeave={() => setTip(null)}
+      onBlur={() => setTip(null)}
+    >
+      <span className={`h-3 w-[5px] rounded-[1px] ${tip ? "opacity-70" : ""} ${g.win ? "bg-win" : "bg-loss/80"}`} />
+      {tip && (
+        <span
+          role="tooltip"
+          style={{ left: tip.x, top: tip.y - 6 }}
+          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded bg-foreground px-2 py-1 text-xs font-semibold text-background shadow-lg"
+        >
+          {label}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+/** Ten small blocks for a last-ten record. With the games, they run oldest to
+ * newest, each linking to its game with a hover label; without them (a record
+ * only), wins are grouped first. */
+export function L10Dots({ record, games }: { record: string | null; games?: L10Game[] }) {
+  if (games?.length) {
+    return (
+      <span className="inline-flex gap-[2px]" role="group" aria-label={`${record ?? "Last ten"} over the last ten games, oldest to newest`}>
+        {games.map((g) => (
+          <L10Block key={g.gameId} g={g} />
+        ))}
+      </span>
+    );
+  }
   const m = record ? /^(\d+)-(\d+)$/.exec(record) : null;
   if (!m) return <span className="text-foreground/40">-</span>;
   const w = parseInt(m[1], 10);
