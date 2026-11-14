@@ -29,6 +29,7 @@ export interface LeagueLeader {
   espnId: string;
   displayName: string;
   headshotUrl: string | null;
+  teamId: number | null;
   teamAbbreviation: string | null;
   teamLogoUrl: string | null;
   displayValue: string;

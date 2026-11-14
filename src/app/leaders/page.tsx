@@ -57,10 +57,17 @@ function LeadersView() {
                 </Link>
               </td>
               <td className="py-2">
-                <span className="flex items-center gap-2 text-foreground/70">
-                  <CircularBadge src={l.teamLogoUrl} alt="" size="sm" />
-                  {l.teamAbbreviation}
-                </span>
+                {l.teamId ? (
+                  <Link href={`/teams/${l.teamId}`} className="inline-flex items-center gap-2 text-foreground/70 outline-none hover:text-accent focus-visible:underline">
+                    <CircularBadge src={l.teamLogoUrl} alt="" size="sm" />
+                    {l.teamAbbreviation}
+                  </Link>
+                ) : (
+                  <span className="inline-flex items-center gap-2 text-foreground/70">
+                    <CircularBadge src={l.teamLogoUrl} alt="" size="sm" />
+                    {l.teamAbbreviation}
+                  </span>
+                )}
               </td>
               <td className="py-2 pl-2 pr-4 text-right font-bold tabular-nums">{l.displayValue}</td>
             </tr>

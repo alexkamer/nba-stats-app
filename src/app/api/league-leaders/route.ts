@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const teamEspnIds = [...new Set(categoriesRaw.flatMap((c) => c.leaders.map((l) => l.teamEspnId)))];
 
     let playerByEspnId: Map<string, { displayName: string; headshotUrl: string | null }>;
-    let teamByEspnId: Map<string, { abbreviation: string; logoUrl: string | null }>;
+    let teamByEspnId: Map<string, { id: number; abbreviation: string; logoUrl: string | null }>;
 
     if (isEspnOnly()) {
       const [players, teams] = await Promise.all([getActivePlayersLive(), getTeamsLive()]);
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       teamByEspnId = new Map(
         teams
           .filter((t) => teamEspnIds.includes(t.espnId))
-          .map((t) => [t.espnId, { abbreviation: t.abbreviation, logoUrl: t.logoUrl }]),
+          .map((t) => [t.espnId, { id: t.id, abbreviation: t.abbreviation, logoUrl: t.logoUrl }]),
       );
     } else {
       const [players, teams] = await Promise.all([
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
         }),
         prisma.team.findMany({
           where: { espnId: { in: teamEspnIds } },
-          select: { espnId: true, abbreviation: true, logoUrl: true },
+          select: { id: true, espnId: true, abbreviation: true, logoUrl: true },
         }),
       ]);
       playerByEspnId = new Map(players.map((p) => [p.espnId, p]));
@@ -56,6 +56,7 @@ export async function GET(request: Request) {
             espnId: entry.athleteEspnId,
             displayName: player.displayName,
             headshotUrl: player.headshotUrl,
+            teamId: team?.id ?? null,
             teamAbbreviation: team?.abbreviation ?? null,
             teamLogoUrl: team?.logoUrl ?? null,
             displayValue: entry.displayValue,
