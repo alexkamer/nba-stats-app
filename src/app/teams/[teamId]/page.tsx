@@ -7,6 +7,8 @@ import { useTheme } from "next-themes";
 import { Fragment, Suspense, useState } from "react";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
 import { FullBleed } from "@/components/FullBleed";
+import { useLayout } from "@/components/templates/layout-context";
+import { TeamHeaderA, TeamHomeA } from "@/components/templates/variants/a/TeamA";
 import { useBreadcrumbLabel } from "@/components/Breadcrumb";
 import { getTeamAccent } from "@/lib/team-accent";
 import { TeamPerformanceTab } from "@/components/TeamPerformanceTab";
@@ -356,6 +358,8 @@ function TeamDetailContent() {
     queryFn: fetchLeagueTeams,
   });
   const { resolvedTheme } = useTheme();
+  const { layout, ready } = useLayout();
+  const isA = ready && layout === "a";
   useBreadcrumbLabel(data?.team.displayName);
 
   if (isLoading) return <SkeletonDetailPage />;
@@ -397,11 +401,14 @@ function TeamDetailContent() {
   const mostRecentGame = completedGames[0] ?? null;
 
   return (
-    <div className="space-y-8">
+    <div data-team={isA ? "a" : undefined} className="space-y-8">
       <FullBleed
         className="bg-surface border-b border-border"
         style={{ borderTopColor: accentColor, borderTopWidth: 4 }}
       >
+        {isA ? (
+          <TeamHeaderA team={team} standing={standing} stats={data.teamSeasonStat} />
+        ) : (
         <div className="mx-auto max-w-6xl flex items-center gap-4 px-6 py-5 sm:py-6">
           {team.logoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -416,10 +423,31 @@ function TeamDetailContent() {
             </p>
           </div>
         </div>
+        )}
         <TabPager tabs={TEAM_TABS} activeTab={activeTab} onChange={setActiveTab} accentColor={accentColor} />
       </FullBleed>
 
-      {activeTab === "home" && (
+      {activeTab === "home" && (isA ? (
+        <TeamHomeA
+          teamId={team.id}
+          divisionName={team.division?.name}
+          completedGames={completedGames}
+          nextGame={nextGame}
+          news={news}
+          divisionStandings={divisionStandings}
+          onFullSchedule={() => setActiveTab("schedule")}
+          leadersCard={
+            <TeamLeadersCard
+              season={season}
+              visibleLeaders={visibleLeaders}
+              leadersGroup={leadersGroup}
+              setLeadersGroup={setLeadersGroup}
+              accentColor={accentColor}
+              onViewAll={() => setActiveTab("stats")}
+            />
+          }
+        />
+      ) : (
         <div className="grid grid-cols-1 md:grid-cols-[220px_1fr_320px] gap-6">
           <aside className="self-start rounded-lg border border-border p-4 space-y-3">
             <h2 className="text-lg font-medium text-foreground/92">
@@ -580,7 +608,7 @@ function TeamDetailContent() {
             />
           </aside>
         </div>
-      )}
+      ))}
 
       {activeTab === "stats" && (
         <div className="space-y-8">

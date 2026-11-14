@@ -8,8 +8,10 @@ import { CircularBadge } from "@/components/CircularBadge";
 import { SectionCard } from "@/components/SectionCard";
 import { Skeleton, SkeletonRow } from "@/components/Skeleton";
 import { useBreadcrumbLabel } from "@/components/Breadcrumb";
+import { useLayout } from "@/components/templates/layout-context";
+import { BriefingC } from "@/components/templates/variants/c/BriefingC";
 
-function todayKey(): string {
+export function todayKey(): string {
   const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -17,7 +19,7 @@ function todayKey(): string {
   return `${y}-${m}-${day}`;
 }
 
-function formatDateHeading(dateKey: string): string {
+export function formatDateHeading(dateKey: string): string {
   const [y, m, d] = dateKey.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(undefined, {
     weekday: "long",
@@ -27,26 +29,26 @@ function formatDateHeading(dateKey: string): string {
   });
 }
 
-interface TeamRef {
+export interface TeamRef {
   id: number;
   abbreviation: string;
   name: string;
   logoUrl: string | null;
 }
-interface FinalGame {
+export interface FinalGame {
   id: number;
   homeScore: number | null;
   awayScore: number | null;
   homeTeam: TeamRef;
   awayTeam: TeamRef;
 }
-interface DailyLeaderEntry {
+export interface DailyLeaderEntry {
   playerId: number;
   pointsReboundsAssists: number;
   hadTripleDouble: boolean;
   player: { id: number; displayName: string; headshotUrl: string | null };
 }
-interface TopScorer {
+export interface TopScorer {
   playerId: number;
   points: number;
   player: { id: number; displayName: string; headshotUrl: string | null };
@@ -57,20 +59,20 @@ interface Headline {
   headline: string;
   url: string | null;
 }
-interface StandingsRow {
+export interface StandingsRow {
   conferenceName: string;
   team: TeamRef;
   conferenceRank: number | null;
   wins: number | null;
   losses: number | null;
 }
-interface InjuryRow {
+export interface InjuryRow {
   playerId: number;
   status: string;
   player: { id: number; displayName: string };
   team: { id: number; abbreviation: string } | null;
 }
-interface ScheduleGame {
+export interface ScheduleGame {
   id: number;
   date: string;
   status: string;
@@ -79,7 +81,7 @@ interface ScheduleGame {
   pick: { projectedHomeScore: number; projectedAwayScore: number; projectedMargin: number } | null;
   market: { spread: number | null; overUnder: number | null } | null;
 }
-interface BestBetPick {
+export interface BestBetPick {
   rank: number;
   statType: string;
   player: { id: number; displayName: string; headshotUrl: string | null };
@@ -87,7 +89,7 @@ interface BestBetPick {
   lean: "OVER" | "UNDER" | null;
   gradedCorrect: boolean | null;
 }
-interface BriefingPayload {
+export interface BriefingPayload {
   date: string;
   isToday: boolean;
   nextDate: string | null;
@@ -111,14 +113,14 @@ interface BriefingPayload {
   };
 }
 
-async function fetchBriefing(dateKey: string | null): Promise<BriefingPayload> {
+export async function fetchBriefing(dateKey: string | null): Promise<BriefingPayload> {
   const url = dateKey ? `/api/briefing?date=${dateKey}` : "/api/briefing";
   const res = await fetch(url);
   if (!res.ok) throw new Error(res.status === 404 ? "No briefing available for that date." : "Failed to load briefing");
   return res.json();
 }
 
-const STAT_LABELS: Record<string, string> = {
+export const STAT_LABELS: Record<string, string> = {
   POINTS: "Points",
   REBOUNDS: "Rebounds",
   ASSISTS: "Assists",
@@ -190,7 +192,7 @@ function GameLine({ game }: { game: FinalGame }) {
  * `null` for `/briefing` (resolves to today client-side, same deferred-
  * today pattern as the home page) or an explicit `YYYY-MM-DD` for
  * `/briefing/[date]`. */
-export function BriefingContent({ dateKey: explicitDateKey }: { dateKey: string | null }) {
+function BaselineBriefingContent({ dateKey: explicitDateKey }: { dateKey: string | null }) {
   const [resolvedToday] = useState(() => todayKey());
   const dateKey = explicitDateKey ?? resolvedToday;
 
@@ -476,4 +478,12 @@ export function BriefingContent({ dateKey: explicitDateKey }: { dateKey: string 
       )}
     </div>
   );
+}
+
+/** Draft switch: layout A renders the Briefing in variant C's quiet style
+ * (see design D9); every other layout keeps the existing page. */
+export function BriefingContent({ dateKey }: { dateKey: string | null }) {
+  const { layout, ready } = useLayout();
+  if (ready && layout === "a") return <BriefingC dateKey={dateKey} />;
+  return <BaselineBriefingContent dateKey={dateKey} />;
 }

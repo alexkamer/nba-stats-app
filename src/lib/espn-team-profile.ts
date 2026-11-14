@@ -8,6 +8,7 @@ import { fetchEspnJson } from "@espn/client";
 import { espnEndpoints } from "@espn/endpoints";
 import { mapPlayerSeasonStat, mapTeamSeasonStat, type EspnStatisticsResponse } from "../../ingest/mappers/season-stats";
 import { cachedEspn } from "./espn-cache";
+import { isUnderway } from "./game-status";
 import { currentSeasonYear, REGULAR_SEASON_TYPE } from "./espn-season";
 import { getActivePlayersLive, type LivePlayer } from "./espn-players-list";
 import { getStandingsLive, getNbaCupStandingsLive } from "./espn-standings-live";
@@ -196,7 +197,7 @@ export async function getTeamProfileLive(teamParam: string) {
       id: -Number(event.id),
       espnId: event.id,
       date: event.date,
-      status: completed ? "FINAL" : competition.status.type.name === "STATUS_IN_PROGRESS" ? "LIVE" : "SCHEDULED",
+      status: completed ? "FINAL" : isUnderway(competition.status.type.name) ? "LIVE" : "SCHEDULED",
       broadcast: null,
       leaders: null,
       odds: null,

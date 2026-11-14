@@ -9,6 +9,9 @@ import { ChevronDown } from "lucide-react";
 import { SectionCard } from "@/components/SectionCard";
 import { TabPager, useTabQueryParam } from "@/components/TabPager";
 import { FullBleed } from "@/components/FullBleed";
+import { useBreadcrumbLabel } from "@/components/Breadcrumb";
+import { useLayout } from "@/components/templates/layout-context";
+import { FormBars, PlayerHeaderA, SeasonTiles, type FormGame } from "@/components/templates/variants/a/PlayerA";
 import { getTeamAccent } from "@/lib/team-accent";
 import { Skeleton, SkeletonDetailPage } from "@/components/Skeleton";
 
@@ -339,10 +342,15 @@ function PlayerDetailContent() {
   const { athleteId } = useParams<{ athleteId: string }>();
   const [activeTab, setActiveTab] = useTabQueryParam<PlayerTab>("overview");
   const { resolvedTheme } = useTheme();
+  const { layout, ready } = useLayout();
+  const isA = ready && layout === "a";
   const { data, isLoading, error } = useQuery({
     queryKey: ["player", athleteId],
     queryFn: () => fetchPlayer(athleteId),
   });
+
+  // Breadcrumb shows the player's name instead of the raw id.
+  useBreadcrumbLabel(data?.player.displayName);
 
   if (isLoading) return <SkeletonDetailPage />;
   if (error || !data) return <p className="text-red-600 dark:text-red-400">Failed to load player.</p>;
@@ -357,8 +365,81 @@ function PlayerDetailContent() {
   const lastName = lastNameParts.join(" ");
   const age = formatAge(player.birthDate);
 
+  const currentYear = seasonStat?.season.year;
+  const seasonGames = (currentYear != null ? recentGames.filter((g) => g.game.season.year === currentYear) : recentGames).slice(0, 10);
+  const formGames: FormGame[] = seasonGames
+    .map((e) => {
+      const isHome = e.team.id === e.game.homeTeam.id;
+      const opp = isHome ? e.game.awayTeam : e.game.homeTeam;
+      const mine = isHome ? e.game.homeScore : e.game.awayScore;
+      const theirs = isHome ? e.game.awayScore : e.game.homeScore;
+      return {
+        key: e.id,
+        points: e.points ?? 0,
+        label: `${isHome ? "vs" : "@"} ${opp.abbreviation}`,
+        date: e.game.date,
+        result: (mine != null && theirs != null ? (mine > theirs ? "W" : "L") : null) as "W" | "L" | null,
+      };
+    })
+    .reverse();
+  const nextForA = nextGame
+    ? {
+        espnId: nextGame.espnId,
+        date: nextGame.date,
+        status: nextGame.status,
+        broadcast: nextGame.broadcast,
+        isHome: player.currentTeam?.abbreviation === nextGame.home.abbreviation,
+        opponent: player.currentTeam?.abbreviation === nextGame.home.abbreviation ? nextGame.away.displayName : nextGame.home.displayName,
+      }
+    : null;
+  const seasonTilesA = seasonStat
+    ? [
+        { label: "Games", value: String(seasonStat.gamesPlayed ?? "-") },
+        { label: "Points", value: seasonStat.pointsPerGame?.toFixed(1) ?? "-" },
+        { label: "Rebounds", value: seasonStat.reboundsPerGame?.toFixed(1) ?? "-" },
+        { label: "Assists", value: seasonStat.assistsPerGame?.toFixed(1) ?? "-" },
+        { label: "Steals", value: seasonStat.stealsPerGame?.toFixed(1) ?? "-" },
+        { label: "Blocks", value: seasonStat.blocksPerGame?.toFixed(1) ?? "-" },
+        { label: "Field goal %", value: seasonStat.fieldGoalPct?.toFixed(1) ?? "-" },
+        { label: "Three-point %", value: seasonStat.threePointPct?.toFixed(1) ?? "-" },
+      ]
+    : [];
+
   return (
-    <div className="space-y-8">
+    <div data-player={isA ? "a" : undefined} className="space-y-8">
+      {isA && (
+        <PlayerHeaderA
+          name={player.displayName}
+          headshotUrl={player.headshotUrl}
+          accent={accentColor}
+          team={player.currentTeam ? { id: player.currentTeam.id, displayName: player.currentTeam.displayName, logoUrl: player.currentTeam.logoUrl } : null}
+          jersey={player.jersey}
+          position={player.position?.name ?? null}
+          active={player.active}
+          facts={[
+            { label: "Height and weight", value: `${formatHeight(player.heightIn)}${player.weightLb ? `, ${player.weightLb} lbs` : ""}` },
+            { label: "Age", value: age != null ? String(age) : "-" },
+            { label: "College", value: player.college ?? "-" },
+            { label: "Draft", value: player.draftYear ? `${player.draftYear}, round ${player.draftRound ?? "-"}, pick ${player.draftPick ?? "-"}` : "-" },
+          ]}
+          seasonLabel={seasonStat ? seasonLabel(seasonStat.season.year) : null}
+          tiles={
+            seasonStat
+              ? [
+                  { label: "Points", value: seasonStat.pointsPerGame?.toFixed(1) ?? "-", note: seasonRanks.pointsPerGame ? `${formatRank(seasonRanks.pointsPerGame)} in the league` : undefined },
+                  { label: "Rebounds", value: seasonStat.reboundsPerGame?.toFixed(1) ?? "-", note: seasonRanks.reboundsPerGame ? `${formatRank(seasonRanks.reboundsPerGame)} in the league` : undefined },
+                  { label: "Assists", value: seasonStat.assistsPerGame?.toFixed(1) ?? "-", note: seasonRanks.assistsPerGame ? `${formatRank(seasonRanks.assistsPerGame)} in the league` : undefined },
+                  { label: "Field goal %", value: seasonStat.fieldGoalPct?.toFixed(1) ?? "-", note: seasonRanks.fieldGoalPct ? `${formatRank(seasonRanks.fieldGoalPct)} in the league` : undefined },
+                ]
+              : []
+          }
+          next={nextForA}
+          tabs={PLAYER_TABS}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+        />
+      )}
+      {!isA && (
       <FullBleed
         className="bg-surface border-b border-border"
         style={{ borderTopColor: accentColor, borderTopWidth: 4 }}
@@ -454,16 +535,30 @@ function PlayerDetailContent() {
         <NextGameBar nextGame={nextGame} player={player} accentColor={accentColor} />
         <TabPager tabs={PLAYER_TABS} activeTab={activeTab} onChange={setActiveTab} accentColor={accentColor} />
       </FullBleed>
-
-      {activeTab === "overview" && (
-        <OverviewTab
-          player={player}
-          seasonStat={seasonStat}
-          recentGames={recentGames}
-          athleteId={athleteId}
-          accentColor={accentColor}
-        />
       )}
+
+      {activeTab === "overview" &&
+        (isA ? (
+          <div className="space-y-6">
+            <div className="grid items-start gap-6 xl:grid-cols-[1fr_26rem]">
+              <div className="min-w-0 space-y-6">
+                {seasonStat && <SeasonTiles title={`${seasonLabel(seasonStat.season.year)} season`} tiles={seasonTilesA} />}
+                <FormBars games={formGames} accent={accentColor} />
+              </div>
+              <CareerSnapshotCard seasons={player.playerSeasonStats} accentColor={accentColor} />
+            </div>
+            <RecentGamesTable games={recentGames} currentYear={seasonStat?.season.year} accentColor={accentColor} />
+            <NewsRow athleteId={athleteId} accentColor={accentColor} />
+          </div>
+        ) : (
+          <OverviewTab
+            player={player}
+            seasonStat={seasonStat}
+            recentGames={recentGames}
+            athleteId={athleteId}
+            accentColor={accentColor}
+          />
+        ))}
 
       {activeTab === "stats" && <StatsTab seasons={player.playerSeasonStats} accentColor={accentColor} />}
       {activeTab === "bio" && <BioTab player={player} athleteId={athleteId} accentColor={accentColor} />}
@@ -1029,7 +1124,8 @@ function SplitsFilterSelect({
 }
 
 function SplitsCategoryTable({ category, labels }: { category: PlayerSplitCategory; labels: string[] }) {
-  if (category.splits.length === 0) return null;
+  // Some categories come back from the data feed with no `splits` list at all.
+  if (!category.splits || category.splits.length === 0) return null;
   return (
     <section className="space-y-2">
       <h3 className="text-lg font-bold tracking-wide text-foreground uppercase">{category.displayName}</h3>

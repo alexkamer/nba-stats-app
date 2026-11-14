@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Clock, AlertCircle, Newspaper, Loader2 } from "lucide-react";
+import { useLayout } from "@/components/templates/layout-context";
 
 interface NewsArticle {
   id: number;
@@ -40,6 +41,8 @@ function timeAgo(iso: string): string {
 export default function NewsPage() {
   const [limit, setLimit] = useState(50);
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
+  const { layout, ready } = useLayout();
+  const isA = ready && layout === "a";
   const { data, isLoading, error } = useQuery({
     queryKey: ["news", limit],
     queryFn: () => fetchNews(limit),
@@ -74,7 +77,7 @@ export default function NewsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-extrabold tracking-tight">News</h1>
+        <h1 className={isA ? "text-5xl leading-none" : "text-3xl font-extrabold tracking-tight"}>News</h1>
         <div className="flex items-center gap-2 text-sm">
           <select
             value={sortOrder}
@@ -130,7 +133,7 @@ export default function NewsPage() {
           <Link
             key={article.id}
             href={`/news/${article.id}`}
-            className="group flex flex-col overflow-hidden rounded-lg border border-border bg-surface transition-transform hover:-translate-y-0.5"
+            className={`group flex flex-col overflow-hidden rounded-lg bg-surface transition-transform hover:-translate-y-0.5 ${isA ? "hover:shadow-[0_0_0_2px_var(--accent)]" : "border border-border"}`}
           >
             {article.imageUrl && (
               <div className="overflow-hidden">

@@ -11,6 +11,8 @@ import {
   isBettable,
 } from "@lib/projections/confidence";
 import { selectBestBets } from "@lib/betting/select-best-bets";
+import { extractStatValue } from "@lib/projections/extract-prop-stat";
+import type { PropStatType } from "@lib/espn/prop-types";
 import { NextResponse } from "next/server";
 
 /** Local (not UTC) YYYY-MM-DD — the same key DailyBestBet rows are stored
@@ -123,6 +125,53 @@ export async function GET(request: Request) {
         },
       },
     });
+
+    // Each player's recent completed games, for the form boxes beside each
+    // prop (how often they cleared a line lately). One query for every
+    // player with a prop today, grouped here. Only games played before the
+    // game being looked at count, so a past day's boxes show the form going
+    // into that game rather than hindsight. 120 days is far more than the
+    // ten games the page shows, and keeps the query bounded.
+    const RECENT_GAMES = 10;
+    const propPlayerIds = [...new Set(games.flatMap((g) => g.playerPropProjections.map((p) => p.playerId)))];
+    const recentRows =
+      propPlayerIds.length === 0
+        ? []
+        : await prisma.playerGameStat.findMany({
+            where: {
+              playerId: { in: propPlayerIds },
+              points: { not: null },
+              game: {
+                status: "FINAL",
+                date: { gte: new Date(startOfDay.getTime() - 120 * 24 * 60 * 60 * 1000), lt: endOfDay },
+              },
+            },
+            orderBy: { game: { date: "desc" } },
+            select: {
+              playerId: true,
+              points: true,
+              rebounds: true,
+              assists: true,
+              threeMade: true,
+              steals: true,
+              blocks: true,
+              minutes: true,
+              game: { select: { date: true } },
+            },
+          });
+    const recentByPlayer = new Map<number, typeof recentRows>();
+    for (const row of recentRows) {
+      const list = recentByPlayer.get(row.playerId) ?? [];
+      list.push(row);
+      recentByPlayer.set(row.playerId, list);
+    }
+    /** Oldest-first, so the boxes read left to right as time moves forward. */
+    const recentFor = (playerId: number, statType: string, before: Date) =>
+      (recentByPlayer.get(playerId) ?? [])
+        .filter((r) => r.game.date < before)
+        .slice(0, RECENT_GAMES)
+        .map((r) => ({ value: extractStatValue(statType as PropStatType, r), date: r.game.date }))
+        .reverse();
 
     const result = games.map((game) => {
       // Frozen availability is only meaningful for games that haven't been
@@ -247,6 +296,7 @@ export async function GET(request: Request) {
               currentOdds: currentOddsRow?.odds ?? null,
               bettable: p.bettable,
               stdev: p.stdev,
+              recent: recentFor(p.playerId, p.statType, game.date),
               gradedCorrect: p.gradedCorrect,
               gradedActualValue: p.gradedActualValue,
               // Game went FINAL and grading ran, but there was no box score

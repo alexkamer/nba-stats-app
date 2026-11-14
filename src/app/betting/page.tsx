@@ -10,6 +10,9 @@ import {
 } from "@lib/projections/confidence";
 import { StatBlock, ComparisonBar } from "@/components/StatBlock";
 import { CircularBadge } from "@/components/CircularBadge";
+import { useLayout } from "@/components/templates/layout-context";
+import { KotcSpotlight, type KotcEntry } from "@/components/templates/variants/a/BettingA";
+import { PickBoard, RecordTiles, type BoardRow, type RecordTile } from "@/components/templates/variants/a/PickBoard";
 
 interface TeamSummary {
   id: number;
@@ -53,6 +56,9 @@ interface PlayerPropLean {
   // default, not every tracked prop.
   bettable: boolean;
   stdev: number | null;
+  // The player's last completed games for this stat, oldest first (see
+  // /api/betting/upcoming) — only games before this one.
+  recent: { value: number; date: string }[];
   // Filled in once the game goes FINAL (see prediction-accuracy-tracking)
   // — null until then, never recomputed afterward, so this is always the
   // actual grading of the pick as it was made, not hindsight.
@@ -1194,6 +1200,7 @@ function GameCard({ game }: { game: UpcomingGame }) {
                 : "No player props match these filters."}
             </p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="text-left text-foreground/72">
@@ -1301,6 +1308,7 @@ function GameCard({ game }: { game: UpcomingGame }) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}
@@ -1400,6 +1408,124 @@ function GameNav({ games }: { games: UpcomingGame[] }) {
   );
 }
 
+
+/** Layout-A pick board: every pick for the slate (a side of each game's
+ * spread, each game's total, every player prop) as one flat list of rows. The
+ * math and the rules for what counts as recommended are the ones GameCard and
+ * BestBetsStrip already use, so the board can't disagree with them. With
+ * `lineMode` "current", props are read against today's live market line. */
+function toBoardRows(games: UpcomingGame[], lineMode: BestBetsLineMode): BoardRow[] {
+  const rows: BoardRow[] = [];
+  for (const game of games) {
+    const matchup = `${game.awayTeam.abbreviation} @ ${game.homeTeam.abbreviation}`;
+    const base = { gameId: game.espnId, matchup, date: game.date, status: game.status };
+    const proj = game.projection;
+    const mkt = game.market;
+
+    const marketMargin = mkt?.spread != null ? -mkt.spread : null;
+    if (proj && mkt && marketMargin !== null) {
+      const sideWon = spreadValueSide(proj.projectedMargin, marketMargin);
+      if (sideWon) {
+        const home = sideWon === "home";
+        const team = home ? game.homeTeam : game.awayTeam;
+        const line = home ? mkt.spread! : -mkt.spread!;
+        const ours = home ? -proj.projectedMargin : proj.projectedMargin;
+        rows.push({
+          id: `${game.espnId}-spread`,
+          kind: "spread",
+          ...base,
+          label: `${team.abbreviation} ${formatSigned(line)}`,
+          market: "Spread",
+          pickText: formatSigned(line),
+          odds: formatOdds(home ? mkt.homeSpreadOdds : mkt.awaySpreadOdds),
+          line,
+          projected: ours,
+          stdev: proj.marginStdev,
+          edge: computeEdgeRatio(proj.projectedMargin, marketMargin, proj.marginStdev),
+          edgeNow: null,
+          recommended: proj.spreadBettable,
+          isBestBet: false,
+          bestBetRank: null,
+          correct: proj.gradedSpreadCorrect,
+          actual: null,
+          nowLine: null,
+          ruledOut: false,
+          dnp: false,
+          playerId: null,
+          statType: null,
+          recent: null,
+        });
+      }
+    }
+
+    if (proj && mkt?.overUnder != null) {
+      const ourTotal = proj.projectedHomeScore + proj.projectedAwayScore;
+      const lean = totalLean(ourTotal, mkt.overUnder);
+      rows.push({
+        id: `${game.espnId}-total`,
+        kind: "total",
+        ...base,
+        label: "Game total",
+        market: "Total",
+        pickText: formatLine(lean, mkt.overUnder),
+        odds: formatOdds(lean === "OVER" ? mkt.overOdds : lean === "UNDER" ? mkt.underOdds : null),
+        line: mkt.overUnder,
+        projected: ourTotal,
+        stdev: proj.totalStdev,
+        edge: computeEdgeRatio(ourTotal, mkt.overUnder, proj.totalStdev),
+        edgeNow: null,
+        recommended: proj.totalBettable,
+        isBestBet: false,
+        bestBetRank: null,
+        correct: proj.gradedTotalCorrect,
+        actual: null,
+        nowLine: null,
+        ruledOut: false,
+        dnp: false,
+        playerId: null,
+        statType: null,
+        recent: null,
+      });
+    }
+
+    for (const p of game.playerProps) {
+      const current = lineMode === "current";
+      const line = current ? p.currentLine ?? p.line : p.line;
+      const lean = current ? p.currentLean : p.lean;
+      const odds = current ? p.currentOdds : p.odds;
+      rows.push({
+        id: `${game.espnId}-${p.playerId}-${p.statType}`,
+        kind: "prop",
+        ...base,
+        label: p.playerName,
+        market: STAT_LABELS[p.statType],
+        pickText: formatLine(lean, line),
+        odds: formatOdds(odds),
+        line,
+        projected: p.projectedValue,
+        stdev: p.stdev,
+        // The edge at the line the pick was made against (what grading and
+        // best-bet membership key off); the live-line edge rides along for
+        // the detail view when the market has moved.
+        edge: computeEdgeRatio(p.projectedValue, line, p.stdev),
+        edgeNow: !current && p.currentLine !== null ? computeEdgeRatio(p.projectedValue, p.currentLine, p.stdev) : null,
+        recommended: isRecommendedProp(p),
+        isBestBet: current ? p.isBestBetCurrent : p.isBestBet,
+        bestBetRank: current ? p.bestBetRankCurrent : p.bestBetRank,
+        correct: p.gradedCorrect,
+        actual: p.gradedActualValue != null ? String(p.gradedActualValue) : null,
+        nowLine: !current && p.currentLine !== null ? formatLine(p.lean, p.currentLine) : null,
+        ruledOut: p.ruledOut,
+        dnp: p.dnp,
+        playerId: p.playerId,
+        statType: p.statType,
+        recent: p.recent,
+      });
+    }
+  }
+  return rows;
+}
+
 export default function BettingPage() {
   // "Today" is only known once this effect runs — computing `new Date()`
   // directly during render is flagged by Next as an unstable prerender
@@ -1409,6 +1535,9 @@ export default function BettingPage() {
   const [today, setToday] = useState<Date | null>(null);
   const [dayOffset, setDayOffset] = useState(0);
   const [sortBy, setSortBy] = useState<"time" | "picks">("time");
+  const { layout, ready } = useLayout();
+  const isA = ready && layout === "a";
+  const [lineMode, setLineMode] = useState<BestBetsLineMode>("initial");
   useEffect(() => {
     setToday(startOfToday());
   }, []);
@@ -1445,6 +1574,77 @@ export default function BettingPage() {
 
   if (!selectedDate) {
     return <p className="text-foreground/82">Loading…</p>;
+  }
+
+  // Layout A: the pick board replaces the per-game cards entirely.
+  if (isA) {
+    const rows = games ? toBoardRows(games, lineMode) : [];
+    const kotc: KotcEntry[] = (kingOfTheCourt ?? []).slice(0, 10).map((e) => ({
+      playerId: e.playerId,
+      playerName: e.playerName,
+      headshotUrl: e.headshotUrl,
+      rank: e.rank,
+      projected: e.projectedValue,
+      hit: e.gradedHit,
+    }));
+    const tile = (label: string, href: string, b: AccuracyBucket): RecordTile => ({
+      label,
+      href,
+      hitRate: b.hitRate,
+      graded: b.graded,
+      correct: b.correct,
+      units: b.unitsPnl,
+    });
+    const tiles: RecordTile[] = accuracy
+      ? [
+          tile("Our model, this season", "/betting/accuracy/model", accuracy.ourModel.overall),
+          tile("Best bets", "/betting/accuracy/best-bets", accuracy.ourModel.bestBets),
+          tile("Recommended props", "/betting/accuracy/recommended", accuracy.ourModel.bettableProps),
+          tile("ESPN's predictor", "/betting/accuracy/espn", accuracy.espnPredictor),
+        ]
+      : [];
+    return (
+      <div className="space-y-10">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-5xl leading-none">Betting</h1>
+            <p className="mt-2 max-w-xl text-foreground/65">
+              {isToday
+                ? "Every pick our model makes today, ranked by how far it sits from the market."
+                : "How that day's picks did, graded against the final result."}
+            </p>
+          </div>
+          <DayNav date={selectedDate} isToday={isToday} onShift={(days) => setDayOffset((o) => o + days)} onJumpToday={() => setDayOffset(0)} />
+        </header>
+
+        {tiles.length > 0 && <RecordTiles tiles={tiles} />}
+
+        {gamesLoading && <div aria-hidden="true" className="h-96 animate-pulse rounded-lg bg-surface motion-reduce:animate-none" />}
+        {gamesError && <p className="text-loss">Couldn&apos;t load betting insights. Refresh the page to try again.</p>}
+        {games && (
+          <PickBoard rows={rows} lineMode={lineMode} onLineMode={setLineMode} />
+        )}
+
+        {kotc.length > 0 && (
+          <section aria-labelledby="kotc-h" className="space-y-3">
+            <h2 id="kotc-h" className="text-3xl">
+              King of the Court
+            </h2>
+            <p className="text-foreground/65">The players projected to put up the most points, rebounds and assists combined.</p>
+            <KotcSpotlight entries={kotc} />
+          </section>
+        )}
+
+        {accuracy && (
+          <details className="rounded-lg bg-surface p-4">
+            <summary className="cursor-pointer text-lg font-semibold">Full track record</summary>
+            <div className="mt-4">
+              <AccuracyStrip accuracy={accuracy} />
+            </div>
+          </details>
+        )}
+      </div>
+    );
   }
 
   return (

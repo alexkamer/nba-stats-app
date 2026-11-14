@@ -6,6 +6,9 @@ import { Fragment, Suspense, useState } from "react";
 import { CircularBadge } from "@/components/CircularBadge";
 import { SectionCard } from "@/components/SectionCard";
 import { Skeleton, SkeletonRow, SkeletonGameCard } from "@/components/Skeleton";
+import { useLayout } from "@/components/templates/layout-context";
+import { isBreak, isUnderway } from "@/lib/game-status";
+import { HOMES } from "@/components/templates/variants";
 
 interface GameCard {
   espnId: string;
@@ -97,6 +100,9 @@ async function fetchLeagueLeaders(): Promise<LeagueLeaderCategory[]> {
 }
 
 export default function HomePage() {
+  const { layout, ready } = useLayout();
+  const Variant = ready && layout !== "base" ? HOMES[layout] : undefined;
+  if (Variant) return <Variant />;
   // Reading today's date would be evaluated during the server prerender
   // instead of per-visit (Next.js breaking change) unless deferred behind
   // Suspense — same pattern as the scoreboard page.
@@ -236,11 +242,11 @@ function HomeContent() {
                 ?.slice()
                 .sort(
                   (a, b) =>
-                    Number(b.statusName === "STATUS_IN_PROGRESS") - Number(a.statusName === "STATUS_IN_PROGRESS"),
+                    Number(isUnderway(b.statusName)) - Number(isUnderway(a.statusName)),
                 )
                 .slice(0, 6)
                 .map((game) => {
-                  const isLive = game.statusName === "STATUS_IN_PROGRESS";
+                  const isLive = isUnderway(game.statusName);
                   const isScheduled = game.statusName === "STATUS_SCHEDULED";
 
                   if (isScheduled) {
@@ -275,7 +281,7 @@ function HomeContent() {
                     >
                       <span className="flex items-center gap-1.5 text-xs font-medium text-foreground/60">
                         {isLive && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
-                        {isLive ? `Q${game.period} ${game.clock ?? ""}` : game.statusDetail}
+                        {isLive && !isBreak(game.statusName) ? `Q${game.period} ${game.clock ?? ""}` : game.statusDetail}
                       </span>
                       <div className="flex items-center justify-between gap-2">
                         <span className="flex min-w-0 items-center gap-2 text-sm font-semibold">

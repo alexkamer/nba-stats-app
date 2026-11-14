@@ -11,6 +11,8 @@ import { useBreadcrumbLabel } from "@/components/Breadcrumb";
 import { getTeamAccent } from "@/lib/team-accent";
 import { GamePerformanceCard, type TeamPerformanceSummary } from "@/components/GamePerformanceCard";
 import { SkeletonDetailPage } from "@/components/Skeleton";
+import { useLayout } from "@/components/templates/layout-context";
+import { GameHeaderA, LatestPlays, LiveStrip, Section, useTabParamRaw, type GameMode } from "@/components/templates/variants/a/GameA";
 
 // The API returns one of two shapes depending on whether the game has been
 // ingested as `final` (SPEC.md Sec 4): a DB-backed shape with real internal
@@ -347,6 +349,17 @@ function formatGameDateTime(dateIso: string): string {
   return `${time}, ${day}`;
 }
 
+/** Which of the three states a game is in. A Preview only exists for a game that
+ * hasn't started; a game that came from the database is final; a live-sourced
+ * game whose status isn't "Final" is being played right now (including
+ * halftime and breaks between periods). */
+function gameModeOf(data: ApiResponse): GameMode {
+  if (data.source === "live" && (data.game as LiveGame).preview) return "pregame";
+  const detail = (data.game as DbGame | LiveGame).headerExtras?.statusDetail ?? (data.source === "live" ? (data.game as LiveGame).statusDetail : null);
+  if (data.source === "db" || /final/i.test(detail ?? "")) return "final";
+  return "live";
+}
+
 async function fetchGame(eventId: string): Promise<ApiResponse> {
   const res = await fetch(`/api/games/${eventId}`);
   if (!res.ok) throw new Error("Failed to load game");
@@ -363,11 +376,16 @@ export default function GameDetailPage() {
 
 function GameDetailContent() {
   const { eventId } = useParams<{ eventId: string }>();
-  const { data, isLoading, error } = useQuery({
+  const { layout, ready } = useLayout();
+  const isA = ready && layout === "a";
+  const { data, isLoading, error, dataUpdatedAt } = useQuery({
     queryKey: ["game", eventId],
     queryFn: () => fetchGame(eventId),
+    // Layout A keeps a game that is being played up to date on its own.
+    refetchInterval: isA ? (q) => (q.state.data && gameModeOf(q.state.data) === "live" ? 15_000 : false) : false,
   });
   const [activeTab, setActiveTab] = useTabQueryParam<TabKey>("boxscore");
+  const [requestedTab, pushTab] = useTabParamRaw<TabKey>();
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === "dark" ? "dark" : "light";
 
@@ -522,6 +540,198 @@ function GameDetailContent() {
   // (e.g. a bookmarked `?tab=boxscore` for a game that's since gone final,
   // or simply loading a scheduled game with no `?tab=` at all).
   const displayTab = visibleTabs.some((t) => t.value === activeTab) ? activeTab : visibleTabs[0].value;
+
+  if (isA) {
+    const mode = gameModeOf(data);
+    const tabsA: { value: TabKey; label: string }[] =
+      mode === "pregame"
+        ? [
+            { value: "gamecast", label: "Matchup" },
+            { value: "preview", label: "Preview" },
+            { value: "odds", label: "Odds and props" },
+          ]
+        : mode === "live"
+          ? [
+              { value: "gamecast", label: "Live" },
+              { value: "boxscore", label: "Box score" },
+              { value: "playbyplay", label: "Play-by-play" },
+              { value: "teamstats", label: "Team stats" },
+            ]
+          : [
+              { value: "gamecast", label: "Summary" },
+              { value: "recap", label: "Recap" },
+              { value: "boxscore", label: "Box score" },
+              { value: "playbyplay", label: "Play-by-play" },
+              { value: "teamstats", label: "Team stats" },
+            ];
+    const tabA = tabsA.find((t) => t.value === requestedTab)?.value ?? tabsA[0].value;
+    const headerTeam = (t: ScoreboardTeam, side: "away" | "home") => ({
+      abbreviation: t.abbreviation,
+      displayName: t.displayName,
+      logoUrl: t.logoUrl,
+      accent: t.accent,
+      score: t.score,
+      record: headerExtras?.[side].record ?? null,
+      split: headerExtras?.[side].splitRecord ? `${headerExtras[side].splitRecord} ${side === "away" ? "away" : "home"}` : null,
+    });
+    const start = new Date(game.date);
+    const tipoff =
+      mode === "pregame"
+        ? {
+            time: start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }),
+            date: start.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
+          }
+        : null;
+    const favorite = odds ? (odds.homeIsFavorite ? { t: home, spread: odds.homeSpread } : { t: away, spread: odds.awaySpread }) : null;
+    const context = odds
+      ? [favorite && favorite.spread !== null ? `${favorite.t.abbreviation} ${formatSigned(favorite.spread)}` : null, odds.overUnder !== null ? `total ${odds.overUnder}` : null]
+          .filter(Boolean)
+          .join(", ") || null
+      : null;
+
+    const latest = plays.slice(-8).reverse().map((p) => ({
+      key: p.key,
+      when: `Q${p.period ?? ""} ${p.clock ?? ""}`.trim(),
+      text: p.description ?? "",
+      score: p.awayScore !== null && p.homeScore !== null ? `${p.awayScore}-${p.homeScore}` : null,
+      scoring: p.scoringPlay,
+    }));
+    const lastPlay = plays[plays.length - 1];
+    const homeWinProbability = winProbability.length ? winProbability[winProbability.length - 1].homeWinPercentage : null;
+    const gameInfoCard = headerExtras?.gameInfo ? <GameInformationCard date={game.date} gameInfo={headerExtras.gameInfo} /> : null;
+    const matchupsCard = headerExtras?.seasonSeries ? (
+      <MatchupsCard away={away} home={home} awayRecord={headerExtras.away.record} homeRecord={headerExtras.home.record} seasonSeries={headerExtras.seasonSeries} />
+    ) : null;
+    const flow = <ProbabilityGameFlowCard away={away} home={home} plays={plays} winProbability={winProbability} isFinal={mode !== "live"} />;
+    const shotChart = <ShotChartCard away={away} home={home} awayEspnId={awayEspnId} homeEspnId={homeEspnId} shots={shots} />;
+    const leaders = <GameLeaders away={away} home={home} awayPlayerRows={awayPlayerRows} homePlayerRows={homePlayerRows} />;
+    const teamStatsCard = <TeamStatsCard away={away} home={home} awayStats={awayTeamStats} homeStats={homeTeamStats} />;
+
+    return (
+      <div data-game="a" className="space-y-6">
+        <GameHeaderA
+          away={headerTeam(away, "away")}
+          home={headerTeam(home, "home")}
+          mode={mode}
+          statusDetail={statusDetail}
+          onBreak={mode === "live" && /halftime|end of/i.test(statusDetail ?? "")}
+          tipoff={tipoff}
+          context={context}
+          linescores={headerExtras ? { away: headerExtras.away.linescores, home: headerExtras.home.linescores } : null}
+          periodLabel={periodLabel}
+          tabs={tabsA}
+          activeTab={tabA}
+          onTabChange={pushTab}
+        />
+
+        {tabA === "gamecast" && mode === "pregame" && preview && (
+          <div className="grid items-start gap-6 xl:grid-cols-[1fr_22rem]">
+            <div className="min-w-0 space-y-8">
+              {(preview.projection || preview.espnPredictor) && (
+                <Section title="What the numbers say">
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    {preview.projection && <ProjectionSummaryCard away={away} home={home} projection={preview.projection} odds={odds} />}
+                    {preview.espnPredictor && <EspnPredictorCard away={away} home={home} predictor={preview.espnPredictor} />}
+                  </div>
+                </Section>
+              )}
+              <Section title="Likely starters">
+                <div className="grid gap-6 md:grid-cols-2">
+                  <LineupPanel team={away} starters={preview.lineups.away} />
+                  <LineupPanel team={home} starters={preview.lineups.home} />
+                </div>
+              </Section>
+              {preview.availability && (
+                <Section title="Injuries and availability">
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <AvailabilityPanel team={away} entries={preview.availability.away} />
+                    <AvailabilityPanel team={home} entries={preview.availability.home} />
+                  </div>
+                </Section>
+              )}
+              <PreviewBlurb article={preview.article} />
+            </div>
+            <aside className="space-y-6 xl:pt-[2.9rem]">
+              {gameInfoCard}
+              {matchupsCard}
+            </aside>
+          </div>
+        )}
+
+        {tabA === "gamecast" && mode === "live" && (
+          <div className="space-y-6">
+            <LiveStrip
+              away={away}
+              home={home}
+              homeWinProbability={homeWinProbability}
+              lastPlay={lastPlay ? { text: lastPlay.description ?? "", when: `Q${lastPlay.period ?? ""} ${lastPlay.clock ?? ""}`.trim() } : null}
+              updatedAt={dataUpdatedAt}
+            />
+            <div className="grid items-start gap-6 xl:grid-cols-[1fr_22rem]">
+              <div className="min-w-0 space-y-6">
+                {flow}
+                <LatestPlays plays={latest} onMore={() => pushTab("playbyplay")} />
+                {shotChart}
+              </div>
+              <aside className="space-y-6">
+                {leaders}
+                {teamStatsCard}
+                <OddsPanel away={away} home={home} odds={odds} />
+                {gameInfoCard}
+              </aside>
+            </div>
+          </div>
+        )}
+
+        {tabA === "gamecast" && mode === "final" && (
+          <div className="grid items-start gap-6 xl:grid-cols-[1fr_22rem]">
+            <div className="min-w-0 space-y-6">
+              {recap && (
+                <section className="rounded-lg bg-surface p-5">
+                  <h2 className="text-xl leading-snug">{recap.headline}</h2>
+                  {recap.description && <p className="mt-2 text-foreground/70">{recap.description}</p>}
+                  <button type="button" onClick={() => pushTab("recap")} className="mt-3 text-sm font-semibold text-accent hover:underline">
+                    Read the full recap
+                  </button>
+                </section>
+              )}
+              {leaders}
+              {flow}
+              {shotChart}
+            </div>
+            <aside className="space-y-6">
+              {teamStatsCard}
+              <OddsPanel away={away} home={home} odds={odds} />
+              <GamePerformanceCard away={away} home={home} awayPerformance={awayPerformance} homePerformance={homePerformance} />
+              {matchupsCard}
+              {gameInfoCard}
+            </aside>
+          </div>
+        )}
+
+        {tabA === "preview" && preview && <PreviewArticleTab away={away} home={home} article={preview.article} gameDate={game.date} />}
+        {tabA === "odds" && preview && <OddsAndPropsTab away={away} home={home} odds={odds} playerProps={preview.playerProps} />}
+        {tabA === "recap" && <RecapTab away={away} home={home} recap={recap} />}
+        {tabA === "teamstats" && <TeamStatsTab away={away} home={home} teamStatsBreakdown={teamStatsBreakdown} />}
+        {tabA === "playbyplay" && <PlayByPlayTab away={away} home={home} plays={plays} />}
+        {tabA === "boxscore" && (
+          <div className="space-y-6">
+            {odds && <OddsTable away={away} home={home} odds={odds} />}
+            {teamRows.every((s) => s.points === null) ? (
+              <p className="text-foreground/72">No box score yet{source === "live" ? `. ${(game as LiveGame).statusDetail}` : ""}.</p>
+            ) : (
+              [away, home].map((team) => {
+                const rows = playerRowsByTeam(team.abbreviation, team.linkId, { sortByPoints: false });
+                const teamStats = teamRows.find((r) => r.abbreviation === team.abbreviation) ?? null;
+                if (rows.length === 0) return null;
+                return <BoxScoreTeamTable key={team.abbreviation} team={team} rows={rows} teamStats={teamStats} />;
+              })
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -2180,21 +2390,27 @@ function ProbabilityGameFlowCard({
   home,
   plays,
   winProbability,
+  isFinal = true,
 }: {
   away: ScoreboardTeam;
   home: ScoreboardTeam;
   plays: (PlayFields & { key: number })[];
   winProbability: WinProbabilityPoint[];
+  // The end-of-game fallback below snaps the chart to the scoreboard's final
+  // score. That's right for a finished game whose play feed was cut short,
+  // and wrong for one still being played, where the play feed always trails
+  // the score by a few seconds and the fallback would draw a fake finish.
+  isFinal?: boolean;
 }) {
   const [tab, setTab] = useState<"winprob" | "gameflow">("winprob");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const scoredPlaysRaw = plays.filter((p) => p.homeScore !== null && p.awayScore !== null);
   if (scoredPlaysRaw.length === 0) return null;
-  const scoredPlays = withFinalScoreFallback(scoredPlaysRaw, home.score, away.score);
+  const scoredPlays = isFinal ? withFinalScoreFallback(scoredPlaysRaw, home.score, away.score) : scoredPlaysRaw;
 
   const probSeriesRaw = buildWinProbabilitySeries(plays, winProbability);
-  const probSeries = withFinalScoreFallback(probSeriesRaw, home.score, away.score, (last) => ({
+  const probSeries = !isFinal ? probSeriesRaw : withFinalScoreFallback(probSeriesRaw, home.score, away.score, (last) => ({
     homeWinPct:
       home.score !== null && away.score !== null
         ? home.score > away.score

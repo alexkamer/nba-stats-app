@@ -7,6 +7,7 @@
  */
 import { fetchEspnJson } from "../../lib/espn/client";
 import { espnEndpoints } from "../../lib/espn/endpoints";
+import { isUnderway } from "./game-status";
 
 interface EspnScheduleTeam {
   id: string;
@@ -60,7 +61,7 @@ export async function getUpcomingGames(teamEspnId: string, seasonYear: number): 
     games.push({
       espnId: event.id,
       date: event.date,
-      status: competition.status.type.name === "STATUS_IN_PROGRESS" ? "LIVE" : "SCHEDULED",
+      status: isUnderway(competition.status.type.name) ? "LIVE" : "SCHEDULED",
       broadcast,
       home: { espnId: home.team.id, abbreviation: home.team.abbreviation, displayName: home.team.displayName },
       away: { espnId: away.team.id, abbreviation: away.team.abbreviation, displayName: away.team.displayName },

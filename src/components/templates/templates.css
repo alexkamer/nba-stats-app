@@ -1,0 +1,320 @@
+/* Per-variant visual identity for the template drafts (design D8).
+ *
+ * Each block re-points the app's existing tokens, so every existing component
+ * picks up the variant without edits:
+ *  - colors:   --background/--foreground/--surface/--surface-muted/--border/--accent
+ *  - fonts:    --font-inter (body/UI), --font-barlow-condensed (display),
+ *              --font-geist-mono (figures). The app's utilities reference these
+ *              names directly, so overriding them reaches `font-sans`,
+ *              `font-display` and `font-mono`.
+ *  - radius:   Tailwind's --radius-* scale
+ *  - results:  --win / --loss, kept apart from --accent so a result color never
+ *              reads as a brand color.
+ * The baseline layout sets no data-layout="a..e", so none of this applies to it. */
+
+/* Result colors are shared defaults; variants override only when needed. */
+html[data-layout] {
+  --win: #12805c;
+  --loss: #c8323f;
+}
+html.dark[data-layout] {
+  --win: #3ccf9a;
+  --loss: #ff6b78;
+}
+
+/* ---------- A: Scores Rail (broadcast scoreboard, light) ---------- */
+html[data-layout="a"] {
+  --background: #eaeef3;
+  --foreground: #0d1626;
+  --surface: #ffffff;
+  --surface-muted: #f1f4f8;
+  --border: #d7dee7;
+  --accent: #097350;
+  --accent-foreground: #ffffff;
+  --font-inter: var(--font-archivo);
+  --font-barlow-condensed: var(--font-archivo);
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+html.dark[data-layout="a"] {
+  --background: #0b1220;
+  --foreground: #e8eef7;
+  --surface: #121b2d;
+  --surface-muted: #19243a;
+  --border: #243350;
+  --accent: #2fd08f;
+  --accent-foreground: #05140e;
+}
+html[data-layout="a"] :is(h1, h2, h3) {
+  font-stretch: 72%;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+/* Pages that keep their original small title (text-3xl and friends) get the
+ * same large page title as the recomposed pages, without editing each page. */
+html[data-layout="a"] main h1:not([class*="text-4xl"]):not([class*="text-5xl"]):not([class*="text-6xl"]):not([class*="clamp"]):not(.sr-only) {
+  font-size: clamp(2.5rem, 3.4vw, 3.5rem);
+  line-height: 1;
+}
+
+/* ---------- B: Ticker + Top Nav (network sports desk) ---------- */
+html[data-layout="b"] {
+  --background: #f5f7fa;
+  --foreground: #101828;
+  --surface: #ffffff;
+  --surface-muted: #eef1f6;
+  --border: #d5dbe6;
+  --accent: #1f4fd8;
+  --accent-foreground: #ffffff;
+  --font-inter: var(--font-barlow);
+  --font-barlow-condensed: var(--font-barlow-sc);
+  --radius-sm: 0px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
+}
+html.dark[data-layout="b"] {
+  --background: #0a1022;
+  --foreground: #edf1fa;
+  --surface: #111a33;
+  --surface-muted: #18234a;
+  --border: #26335c;
+  --accent: #6c93ff;
+  --accent-foreground: #0a1022;
+}
+html[data-layout="b"] :is(h1, h2, h3) {
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ---------- C: Icon Rail + Cmd+K (quiet instrument panel) ---------- */
+html[data-layout="c"],
+[data-scope="c"] {
+  --background: #f6f6f4;
+  --foreground: #1a1a1a;
+  --surface: #ffffff;
+  --surface-muted: #efefec;
+  --border: #e4e4e0;
+  --accent: #2742e8;
+  --accent-foreground: #ffffff;
+  --font-inter: var(--font-geist-sans);
+  --font-barlow-condensed: var(--font-geist-sans);
+  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-geist-sans);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+html.dark[data-layout="c"],
+.dark [data-scope="c"] {
+  --background: #101012;
+  --foreground: #ededea;
+  --surface: #17171a;
+  --surface-muted: #1f1f23;
+  --border: #2a2a2f;
+  --accent: #8497ff;
+  --accent-foreground: #0f1020;
+}
+html[data-layout="c"] :is(h1, h2, h3),
+[data-scope="c"] :is(h1, h2, h3) {
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+/* ---------- D: Dashboard Grid (trading desk) ---------- */
+html[data-layout="d"] {
+  --background: #ecebe8;
+  --foreground: #17181b;
+  --surface: #ffffff;
+  --surface-muted: #f3f2ef;
+  --border: #d8d6d1;
+  --accent: #95580a;
+  --accent-foreground: #ffffff;
+  --font-inter: var(--font-plex-sans);
+  --font-barlow-condensed: var(--font-plex-sans);
+  --font-geist-mono: var(--font-plex-mono);
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+}
+html.dark[data-layout="d"] {
+  --background: #16171a;
+  --foreground: #ececec;
+  --surface: #1f2024;
+  --surface-muted: #27282d;
+  --border: #34353b;
+  --accent: #f2a33a;
+  --accent-foreground: #16171a;
+  --win: #34c38f;
+  --loss: #f0616d;
+}
+html[data-layout="d"] :is(h1, h2, h3) {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- E: Editorial (sports magazine) ---------- */
+html[data-layout="e"] {
+  --background: #fbfaf7;
+  --foreground: #16120e;
+  --surface: #fbfaf7;
+  --surface-muted: #f1eee8;
+  --border: #e1ddd2;
+  --accent: #9a5b24;
+  --accent-foreground: #ffffff;
+  --font-inter: var(--font-inter-tight);
+  --font-barlow-condensed: var(--font-newsreader);
+  --radius-sm: 0px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
+}
+html.dark[data-layout="e"] {
+  --background: #14110e;
+  --foreground: #f2eee6;
+  --surface: #14110e;
+  --surface-muted: #231e19;
+  --border: #352e27;
+  --accent: #d9985a;
+  --accent-foreground: #14110e;
+}
+html[data-layout="e"] :is(h1, h2, h3) {
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+
+/* ---------- shared motion for the drafts ---------- */
+@keyframes tpl-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.tpl-marquee {
+  animation: tpl-marquee 70s linear infinite;
+}
+.tpl-marquee-wrap:hover .tpl-marquee,
+.tpl-marquee-wrap:focus-within .tpl-marquee {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tpl-marquee {
+    animation: none;
+  }
+  .tpl-marquee-wrap {
+    overflow-x: auto;
+  }
+}
+
+/* The player-research sticky bar bleeds to the page edge with `-mx-6`, which
+ * matches the original 24px page padding. Layout A pads 20px (40px on large
+ * screens), so match its bleed to that instead of overflowing by 4px. */
+html[data-layout="a"] main [class*="sticky"][class*="-mx-6"] {
+  margin-inline: -1.25rem;
+}
+@media (min-width: 1024px) {
+  html[data-layout="a"] main [class*="sticky"][class*="-mx-6"] {
+    margin-inline: -2.5rem;
+  }
+}
+
+/* Game page in layout A: the page's older cards (leaders, team stats, odds,
+ * lineups, matchups, shot chart, and so on) are outlined boxes with three
+ * different heading styles. Give them all one look, a flat surface and one
+ * title style, without editing each component. */
+[data-game="a"] .rounded-lg.border {
+  border-color: transparent;
+  background: var(--surface);
+}
+[data-game="a"] .uppercase {
+  text-transform: none;
+  letter-spacing: 0;
+}
+[data-game="a"] .rounded-lg h2 {
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--foreground);
+}
+/* The few headings typed in capitals in the source ("MATCHUPS", "SHOT CHART",
+ * "PROBABILITIES & GAME FLOW") read as sentence case. */
+[data-game="a"] h2[class*="text-xs"][class*="tracking-wide"] {
+  text-transform: lowercase;
+}
+[data-game="a"] h2[class*="text-xs"][class*="tracking-wide"]::first-letter {
+  text-transform: uppercase;
+}
+
+/* Player page in layout A: the older section cards and stat boxes are outlined
+ * boxes with a team-colored header rule. Give them the same flat surface the
+ * rest of layout A uses. (Selects and inputs are left alone.) */
+[data-player="a"] section.rounded-md.border,
+[data-player="a"] div.rounded-md.border.bg-surface {
+  border-color: transparent;
+  border-radius: 0.5rem;
+}
+[data-player="a"] section.rounded-md.border > div:first-child {
+  border-bottom-color: var(--border) !important;
+}
+[data-player="a"] section.rounded-md.border h2 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+[data-player="a"] .uppercase {
+  text-transform: none;
+  letter-spacing: 0;
+}
+[data-player="a"] .sticky.left-0 {
+  background: var(--surface);
+}
+
+/* Team page in layout A: the tabs that keep their original content (Stats,
+ * Schedule, Performance, Roster, Depth, Injuries, Transactions) get the same
+ * flat cards as the rest of layout A, and their pale one-off reds and greens
+ * (light red "Out", pale green lines) use the app's win and loss colors, which
+ * are dark enough to read on a white surface. */
+[data-team="a"] section.rounded-md.border,
+[data-team="a"] div.rounded-md.border.bg-surface,
+[data-team="a"] div.rounded-lg.border {
+  border-color: transparent;
+  background: var(--surface);
+  border-radius: 0.5rem;
+}
+[data-team="a"] section.rounded-md.border > div:first-child {
+  border-bottom-color: var(--border) !important;
+}
+[data-team="a"] section.rounded-md.border h2 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+[data-team="a"] .uppercase {
+  text-transform: none;
+  letter-spacing: 0;
+}
+[data-team="a"] [class*="text-red-"] {
+  color: var(--loss);
+}
+[data-team="a"] [class*="text-emerald-"],
+[data-team="a"] [class*="text-green-"] {
+  color: var(--win);
+}
+
+/* Layout A, everywhere: older pages color wins and losses with Tailwind's pale
+ * reds and greens (for example text-emerald-500), which are too light to read on
+ * a white surface. Use the app's own win and loss colors instead, in light and
+ * dark. */
+html[data-layout="a"] main [class*="text-red-"] {
+  color: var(--loss);
+}
+html[data-layout="a"] main [class*="text-emerald-"],
+html[data-layout="a"] main [class*="text-green-"] {
+  color: var(--win);
+}

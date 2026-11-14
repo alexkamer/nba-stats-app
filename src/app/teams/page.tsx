@@ -7,6 +7,8 @@ import { AlertCircle } from "lucide-react";
 import { TeamPerformanceLeaderboard } from "@/components/TeamPerformanceLeaderboard";
 import { getTeamAccent } from "@/lib/team-accent";
 import { Skeleton } from "@/components/Skeleton";
+import { useLayout } from "@/components/templates/layout-context";
+import { TeamsListA } from "@/components/templates/variants/a/TeamsA";
 
 interface Team {
   id: number;
@@ -28,6 +30,7 @@ async function fetchTeams(): Promise<Team[]> {
 export default function TeamsPage() {
   const { resolvedTheme } = useTheme();
   const { data: teams, isLoading, error } = useQuery({ queryKey: ["teams"], queryFn: fetchTeams });
+  const { layout, ready } = useLayout();
 
   if (isLoading)
     return (
@@ -51,6 +54,11 @@ export default function TeamsPage() {
       </p>
     );
   if (!teams) return null;
+
+  if (ready && layout === "a") {
+    const theme = resolvedTheme === "dark" ? "dark" : "light";
+    return <TeamsListA teams={teams} accentFor={(t) => getTeamAccent(teams.find((x) => x.id === t.id)?.color ?? null, theme).accent} leaderboard={<TeamPerformanceLeaderboard />} />;
+  }
 
   const byConference = new Map<string, Team[]>();
   for (const team of teams) {

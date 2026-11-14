@@ -9,6 +9,9 @@ import { ChevronLeft, ChevronRight, AlertCircle, CalendarX } from "lucide-react"
 import { CircularBadge } from "@/components/CircularBadge";
 import { getTeamAccent } from "@/lib/team-accent";
 import { Skeleton } from "@/components/Skeleton";
+import { useLayout } from "@/components/templates/layout-context";
+import { isBreak, isUnderway } from "@/lib/game-status";
+import { ScoreboardA } from "@/components/templates/variants/a/ScoreboardA";
 
 interface GameCard {
   espnId: string;
@@ -79,10 +82,26 @@ function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
     queryFn: () => fetchScoreboard(date),
   });
 
+  const { layout, ready } = useLayout();
+
   function shiftDay(delta: number) {
     const d = fromYyyymmdd(date);
     d.setDate(d.getDate() + delta);
     setDate(toYyyymmdd(d));
+  }
+
+  if (ready && layout === "a") {
+    return (
+      <ScoreboardA
+        date={date}
+        setDate={setDate}
+        shiftDay={shiftDay}
+        games={games}
+        loading={isLoading}
+        error={!!error}
+        accentFor={(g) => getTeamAccent(g.home.color, theme).accent}
+      />
+    );
   }
 
   return (
@@ -150,7 +169,7 @@ function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
 
       <div className="divide-y divide-border">
         {games?.map((game) => {
-          const isLive = game.statusName === "STATUS_IN_PROGRESS";
+          const isLive = isUnderway(game.statusName);
           const isFinal = game.statusName === "STATUS_FINAL";
           const isScheduled = game.statusName === "STATUS_SCHEDULED";
           const awayWon = isFinal && game.away.score != null && game.home.score != null && game.away.score > game.home.score;
@@ -172,7 +191,7 @@ function ScoreboardContent({ initialDate }: { initialDate: string | null }) {
               <Link href={`/games/${game.espnId}`} className="flex flex-1 flex-col gap-1.5">
                 <span className="flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-foreground/60">
                   {isLive && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
-                  {isLive ? `Q${game.period} ${game.clock ?? ""}` : game.statusDetail}
+                  {isLive && !isBreak(game.statusName) ? `Q${game.period} ${game.clock ?? ""}` : game.statusDetail}
                 </span>
                 <div className="grid items-center gap-x-2 gap-y-1.5" style={{ gridTemplateColumns }}>
                   {periods > 0 && (

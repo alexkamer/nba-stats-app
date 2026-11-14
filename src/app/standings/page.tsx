@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 import { TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
 import { Skeleton, SkeletonRow } from "@/components/Skeleton";
+import { useLayout } from "@/components/templates/layout-context";
+import { DiffA, LastTenA, StandingsGroupA, StandingsHeaderA, StreakA, type StandingsRowA } from "@/components/templates/variants/a/StandingsA";
 
 interface Standing {
   id: number;
@@ -85,7 +87,14 @@ interface NbaCupResponse {
 }
 
 type ViewMode = "league" | "conference" | "division";
+
 type PageMode = "standings" | "expanded" | "vs-division" | "nba-cup";
+
+const VIEWS_A = [
+  { value: "league", label: "League" },
+  { value: "conference", label: "Conference" },
+  { value: "division", label: "Division" },
+] as { value: ViewMode; label: string }[];
 
 const PAGE_MODES: { value: PageMode; label: string }[] = [
   { value: "standings", label: "Standings" },
@@ -157,6 +166,17 @@ const EXTRA_COLUMNS: Record<PageMode, ExtraColumn[]> = {
   "nba-cup": [],
 };
 
+// Layout A shows the same columns with richer cells: streak and last ten as
+// colored marks and blocks, and the differential colored by sign.
+function extraColumnsA(mode: PageMode): ExtraColumn[] {
+  return EXTRA_COLUMNS[mode].map((col) => {
+    if (col.label === "STRK") return { ...col, render: (s: Standing) => <StreakA streak={s.streak} /> };
+    if (col.label === "L10") return { ...col, render: (s: Standing) => <LastTenA record={s.lastTen} /> };
+    if (col.label === "DIFF") return { ...col, render: (s: Standing) => <DiffA ppg={s.pointsPerGame} opp={s.oppPointsPerGame} /> };
+    return col;
+  });
+}
+
 // The play-in tournament started in the 2020-21 season (year 2021 in our
 // convention) — don't draw play-in lines on seasons before it existed.
 const PLAY_IN_START_YEAR = 2021;
@@ -197,6 +217,8 @@ export default function StandingsPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("conference");
   const [pageMode, setPageMode] = useState<PageMode>("standings");
   const [selectedCupYear, setSelectedCupYear] = useState<number | null>(null);
+  const { layout, ready } = useLayout();
+  const isA = ready && layout === "a";
   const { data, isLoading, error } = useQuery({
     queryKey: ["standings", selectedYear],
     queryFn: () => fetchStandings(selectedYear),
@@ -279,6 +301,61 @@ export default function StandingsPage() {
           <AlertCircle className="h-4 w-4" /> Failed to load NBA Cup standings.
         </p>
       );
+
+    if (isA) {
+      const cupColumns = [
+        { label: "HOME", divider: true },
+        { label: "AWAY" },
+        { label: "PF", divider: true },
+        { label: "PA" },
+        { label: "DIFF" },
+        { label: "STRK", divider: true },
+      ];
+      return (
+        <div className="space-y-8">
+          <StandingsHeaderA
+            seasonLabel={cupData.season ? seasonLabel(cupData.season.year) : null}
+            modes={PAGE_MODES}
+            mode={pageMode}
+            onMode={setPageMode}
+            views={null}
+            view={viewMode}
+            onView={setViewMode}
+            seasons={cupData.availableSeasons.map((x) => ({ value: x.year, label: seasonLabel(x.year) }))}
+            season={cupData.season?.year ?? null}
+            onSeason={setSelectedCupYear}
+          />
+          <div className="space-y-6">
+            {cupData.groups.map((group) => (
+              <StandingsGroupA
+                key={group.groupName}
+                title={group.groupName}
+                columns={cupColumns}
+                rows={group.standings
+                  .slice()
+                  .sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0))
+                  .map<StandingsRowA>((x) => ({
+                    id: x.id,
+                    rank: x.seed ?? "",
+                    team: x.team,
+                    lead: [x.wins, x.losses, x.winPct?.toFixed(3), x.gamesBehind],
+                    cells: [
+                      x.homeRecord,
+                      x.awayRecord,
+                      x.pointsFor,
+                      x.pointsAgainst,
+                      x.pointDifferential === null ? "" : <span key="d" className={`font-semibold ${x.pointDifferential > 0 ? "text-win" : x.pointDifferential < 0 ? "text-loss" : ""}`}>{`${x.pointDifferential >= 0 ? "+" : ""}${x.pointDifferential}`}</span>,
+                      <StreakA key="s" streak={x.streak === "0" ? null : x.streak} />,
+                    ],
+                    rule: null,
+                    advances: x.seed === 1,
+                  }))}
+              />
+            ))}
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="space-y-8">
@@ -400,6 +477,55 @@ export default function StandingsPage() {
   // Play-in lines only make sense per-conference (the tournament is seeded
   // within each conference, not league- or division-wide).
   const showPlayInLines = viewMode === "conference" && (data.season?.year ?? 0) >= PLAY_IN_START_YEAR;
+
+  if (isA) {
+    const columns = extraColumnsA(pageMode);
+    return (
+      <div className="space-y-8">
+        <StandingsHeaderA
+          seasonLabel={data.season ? seasonLabel(data.season.year) : null}
+          modes={PAGE_MODES}
+          mode={pageMode}
+          onMode={setPageMode}
+          views={VIEWS_A}
+          view={viewMode}
+          onView={setViewMode}
+          seasons={data.availableSeasons.map((x) => ({ value: x.year, label: seasonLabel(x.year) }))}
+          season={data.season?.year ?? null}
+          onSeason={setSelectedYear}
+        />
+        <div className="space-y-6">
+          {groups.map((group) => (
+            <StandingsGroupA
+              key={group.groupName}
+              title={group.groupName}
+              columns={columns.map((c) => ({ label: c.label, divider: c.divider }))}
+              rows={group.standings
+                .slice()
+                .sort((a, b) => (a[rankField] ?? 0) - (b[rankField] ?? 0))
+                .map<StandingsRowA>((x) => {
+                  const rank = x[rankField] ?? 0;
+                  return {
+                    id: x.id,
+                    rank: showPlayInLines && rank >= 11 ? "" : rank,
+                    team: x.team,
+                    lead: [x.wins, x.losses, x.winPct?.toFixed(3), x.gamesBehind],
+                    cells: columns.map((c) => c.render(x)),
+                    rule: showPlayInLines ? (rank === 6 ? "after-six" : rank === 10 ? "after-ten" : null) : null,
+                    advances: showPlayInLines && rank > 0 && rank <= 6,
+                  };
+                })}
+            />
+          ))}
+        </div>
+        {showPlayInLines && (
+          <p className="text-sm text-foreground/60">
+            The top six teams in each conference qualify directly (dotted line). Seventh through tenth play in for the last two spots (solid line).
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
