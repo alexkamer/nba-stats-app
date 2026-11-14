@@ -611,6 +611,7 @@ export interface LiveGameDetail {
   away: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; alternateColor: string | null };
   teamGameStats: (ReturnType<typeof mapTeamGameStat> & { teamEspnId: string })[];
   playerGameStats: (ReturnType<typeof mapPlayerGameStat> & {
+    playerEspnId: string;
     playerDisplayName: string;
     headshotUrl: string | null;
     jersey: string | null;
@@ -678,6 +679,7 @@ export async function getLiveGameDetail(eventId: string): Promise<LiveGameDetail
       .filter((entry) => entry.athlete?.id)
       .map((entry) => ({
         ...mapPlayerGameStat(entry, keys, 0, 0, 0),
+        playerEspnId: entry.athlete.id,
         playerDisplayName: entry.athlete.displayName,
         headshotUrl: entry.athlete.headshot?.href ?? null,
         jersey: entry.athlete.jersey ?? null,

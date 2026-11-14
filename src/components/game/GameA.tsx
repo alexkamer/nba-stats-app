@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { TabPager } from "@/components/TabPager";
@@ -8,6 +9,8 @@ import { LiveDot } from "@/components/ui/shared";
 export type GameMode = "pregame" | "live" | "final";
 
 export interface HeaderTeam {
+  /** Team page id; the header links to it when present. */
+  linkId?: number | null;
   abbreviation: string;
   displayName: string;
   logoUrl: string | null;
@@ -40,8 +43,8 @@ export function useTabParamRaw<T extends string>(): [string | null, (tab: T) => 
 }
 
 function TeamBlock({ team, align }: { team: HeaderTeam; align: "left" | "right" }) {
-  return (
-    <div className={`flex min-w-0 flex-col items-center gap-2 sm:flex-row sm:gap-4 ${align === "right" ? "sm:flex-row-reverse sm:text-right" : "sm:text-left"}`}>
+  const body = (
+    <>
       {team.logoUrl && (
         // eslint-disable-next-line @next/next/no-img-element -- external ESPN CDN images
         <img src={team.logoUrl} alt="" className="h-12 w-12 shrink-0 object-contain sm:h-[4.5rem] sm:w-[4.5rem]" />
@@ -56,7 +59,15 @@ function TeamBlock({ team, align }: { team: HeaderTeam; align: "left" | "right" 
           {team.split ? `, ${team.split}` : ""}
         </p>
       </div>
-    </div>
+    </>
+  );
+  const layout = `flex min-w-0 flex-col items-center gap-2 sm:flex-row sm:gap-4 ${align === "right" ? "sm:flex-row-reverse sm:text-right" : "sm:text-left"}`;
+  return team.linkId ? (
+    <Link href={`/teams/${team.linkId}`} className={`${layout} outline-none hover:text-accent focus-visible:underline`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={layout}>{body}</div>
   );
 }
 

@@ -9,6 +9,7 @@ import { useBreadcrumbLabel } from "@/components/Breadcrumb";
 import { getTeamAccent } from "@/lib/team-accent";
 import { GamePerformanceCard, type TeamPerformanceSummary } from "@/components/GamePerformanceCard";
 import { SkeletonDetailPage } from "@/components/Skeleton";
+import { Segmented } from "@/components/ui/shared";
 import { GameHeaderA, LatestPlays, LiveStrip, Section, useTabParamRaw, type GameMode } from "@/components/game/GameA";
 
 // The API returns one of two shapes depending on whether the game has been
@@ -101,6 +102,7 @@ interface SeasonSeries {
 // confirmed-starters field pre-tipoff), always labeled "Projected".
 interface ProjectedStarter {
   espnId: string;
+  linkId?: number | null;
   displayName: string;
   position: string | null;
 }
@@ -168,11 +170,12 @@ interface DbGame {
 interface LiveGame {
   date: string;
   statusDetail: string;
-  home: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; alternateColor: string | null };
-  away: { espnId: string; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; alternateColor: string | null };
+  home: { espnId: string; linkId?: number | null; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; alternateColor: string | null };
+  away: { espnId: string; linkId?: number | null; abbreviation: string; displayName: string; score: number | null; logoUrl: string | null; color: string | null; alternateColor: string | null };
   teamGameStats: (TeamStatFields & { teamEspnId: string })[];
   playerGameStats: (PlayerStatFields & {
     teamEspnId: string;
+    linkId?: number | null;
     playerDisplayName: string;
     headshotUrl: string | null;
     jersey: string | null;
@@ -392,7 +395,7 @@ function GameDetailContent() {
           accent: getTeamAccent((game as DbGame).homeTeam.color, theme).accent,
         }
       : {
-          linkId: null,
+          linkId: (game as LiveGame).home.linkId ?? null,
           abbreviation: (game as LiveGame).home.abbreviation,
           displayName: (game as LiveGame).home.displayName,
           score: (game as LiveGame).home.score,
@@ -410,7 +413,7 @@ function GameDetailContent() {
           accent: getTeamAccent((game as DbGame).awayTeam.color, theme).accent,
         }
       : {
-          linkId: null,
+          linkId: (game as LiveGame).away.linkId ?? null,
           abbreviation: (game as LiveGame).away.abbreviation,
           displayName: (game as LiveGame).away.displayName,
           score: (game as LiveGame).away.score,
@@ -456,7 +459,7 @@ function GameDetailContent() {
             const targetEspnId = teamAbbreviation === liveHome.abbreviation ? liveHome.espnId : liveAway.espnId;
             return (game as LiveGame).playerGameStats
               .filter((p) => p.teamEspnId === targetEspnId)
-              .map((p, i) => ({ key: i, linkId: null, name: p.playerDisplayName, positionAbbr: p.position, ...p }));
+              .map((p, i) => ({ key: i, name: p.playerDisplayName, positionAbbr: p.position, ...p, linkId: p.linkId ?? null }));
           })();
     return sortByPoints ? [...rows].sort((a, b) => (b.points ?? 0) - (a.points ?? 0)) : rows;
   };
@@ -531,6 +534,7 @@ function GameDetailContent() {
           ];
   const tabA = tabsA.find((t) => t.value === requestedTab)?.value ?? tabsA[0].value;
   const headerTeam = (t: ScoreboardTeam, side: "away" | "home") => ({
+    linkId: t.linkId,
     abbreviation: t.abbreviation,
     displayName: t.displayName,
     logoUrl: t.logoUrl,
@@ -707,6 +711,19 @@ interface ScoreboardTeam {
   accent: string;
 }
 
+/** A team's abbreviation as a link to its page (plain text when the team has no
+ * page id, e.g. a live-only game). */
+function TeamText({ team, label }: { team: ScoreboardTeam; label?: string }) {
+  const text = label ?? team.abbreviation;
+  return team.linkId ? (
+    <Link href={`/teams/${team.linkId}`} className="hover:text-accent hover:underline">
+      {text}
+    </Link>
+  ) : (
+    <>{text}</>
+  );
+}
+
 // No image here — article.images from ESPN's summary payload are generic
 // cross-promotional thumbnails, frequently unrelated to the actual game
 // (design.md). A team-colored score banner stands in for the hero image
@@ -746,12 +763,12 @@ function ArticleTab({
         >
           <div className="flex flex-col items-center gap-1">
             {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-12 w-12 object-contain" />}
-            <span className="text-sm font-semibold text-foreground">{away.abbreviation}</span>
+            <span className="text-sm font-semibold text-foreground"><TeamText team={away} /></span>
           </div>
           {banner}
           <div className="flex flex-col items-center gap-1">
             {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-12 w-12 object-contain" />}
-            <span className="text-sm font-semibold text-foreground">{home.abbreviation}</span>
+            <span className="text-sm font-semibold text-foreground"><TeamText team={home} /></span>
           </div>
         </div>
       </div>
@@ -847,14 +864,14 @@ function TeamStatsTab({
             <th className="py-2.5 pr-2 w-28 text-right border-b border-border">
               <span className="inline-flex items-center justify-end gap-2">
                 {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-5 w-5 object-contain" />}
-                {away.abbreviation}
+                <TeamText team={away} />
               </span>
             </th>
             <th className="py-2.5 px-3 border-b border-border" />
             <th className="py-2.5 pl-2 w-28 text-left border-b border-border">
               <span className="inline-flex items-center gap-2">
                 {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-5 w-5 object-contain" />}
-                {home.abbreviation}
+                <TeamText team={home} />
               </span>
             </th>
           </tr>
@@ -895,7 +912,7 @@ function ProjectionSummaryCard({
   const side = (team: ScoreboardTeam, score: number, winPct: number | null) => (
     <div className="flex flex-col items-center gap-1">
       {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-10 w-10 object-contain" />}
-      <span className="text-sm font-semibold text-foreground">{team.abbreviation}</span>
+      <span className="text-sm font-semibold text-foreground"><TeamText team={team} /></span>
       <span className="text-xl font-bold tabular-nums text-foreground">{score.toFixed(1)}</span>
       {winPct !== null && <span className="text-xs text-foreground/72">{winPct.toFixed(0)}% to win</span>}
     </div>
@@ -957,13 +974,13 @@ function EspnPredictorCard({
       <div className="flex items-center justify-around gap-4">
         <div className="flex flex-col items-center gap-1">
           {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-8 w-8 object-contain" />}
-          <span className="text-sm font-semibold text-foreground">{away.abbreviation}</span>
+          <span className="text-sm font-semibold text-foreground"><TeamText team={away} /></span>
           <span className="text-lg font-bold tabular-nums text-foreground">{predictor.awayWinPct.toFixed(1)}%</span>
         </div>
         <span className="text-xs text-foreground/72">TO WIN</span>
         <div className="flex flex-col items-center gap-1">
           {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-8 w-8 object-contain" />}
-          <span className="text-sm font-semibold text-foreground">{home.abbreviation}</span>
+          <span className="text-sm font-semibold text-foreground"><TeamText team={home} /></span>
           <span className="text-lg font-bold tabular-nums text-foreground">{predictor.homeWinPct.toFixed(1)}%</span>
         </div>
       </div>
@@ -977,12 +994,12 @@ function LineupPanel({ team, starters }: { team: ScoreboardTeam; starters: Proje
     <div className="rounded-lg border border-border p-4">
       <div className="flex items-center gap-2 mb-3">
         {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-5 w-5 object-contain" />}
-        <h3 className="text-sm font-semibold text-foreground/92">{team.abbreviation} Projected Starters</h3>
+        <h3 className="text-sm font-semibold text-foreground/92"><TeamText team={team} /> Projected Starters</h3>
       </div>
       <ul className="space-y-1.5 text-sm text-foreground/92">
         {starters.map((starter) => (
           <li key={starter.espnId} className="flex items-center justify-between">
-            <span>{starter.displayName}</span>
+            {starter.linkId ? <Link href={`/players/${starter.linkId}`} className="hover:text-accent">{starter.displayName}</Link> : <span>{starter.displayName}</span>}
             {starter.position && <span className="text-xs text-foreground/72">{starter.position}</span>}
           </li>
         ))}
@@ -997,7 +1014,7 @@ function AvailabilityPanel({ team, entries }: { team: ScoreboardTeam; entries: A
     <div className="rounded-lg border border-border p-4">
       <div className="flex items-center gap-2 mb-3">
         {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-5 w-5 object-contain" />}
-        <h3 className="text-sm font-semibold text-foreground/92">{team.abbreviation} Availability</h3>
+        <h3 className="text-sm font-semibold text-foreground/92"><TeamText team={team} /> Availability</h3>
       </div>
       {flagged.length === 0 ? (
         <p className="text-sm text-foreground/72">No reported availability concerns.</p>
@@ -1006,7 +1023,7 @@ function AvailabilityPanel({ team, entries }: { team: ScoreboardTeam; entries: A
           {flagged.map((entry) => (
             <li key={entry.playerId}>
               <div className="flex items-center justify-between">
-                <span className="font-medium text-foreground/92">{entry.displayName}</span>
+                <Link href={`/players/${entry.playerId}`} className="font-medium text-foreground/92 hover:text-accent">{entry.displayName}</Link>
                 <span className="text-xs font-semibold text-foreground/72">{AVAILABILITY_STATUS_LABEL[entry.status]}</span>
               </div>
               {entry.comment && <p className="mt-0.5 text-xs text-foreground/72">{entry.comment}</p>}
@@ -1309,7 +1326,7 @@ function BoxScoreTeamTable({
     <section>
       <div className="mb-3 flex items-center gap-2">
         {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-7 w-7 object-contain" />}
-        <h2 className="text-lg font-medium text-foreground/92">{team.displayName}</h2>
+        <h2 className="text-lg font-medium text-foreground/92"><TeamText team={team} label={team.displayName} /></h2>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] border-collapse whitespace-nowrap text-sm">
@@ -1379,12 +1396,47 @@ function BoxScoreTeamTable({
   );
 }
 
-function PeriodPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+type PlayKind = "scoring" | "misses" | "blocks" | "rebounds" | "turnovers" | "fouls" | "freethrows" | "subs" | "timeouts" | "other";
+
+const PLAY_KINDS: { value: PlayKind; label: string }[] = [
+  { value: "scoring", label: "Scoring" },
+  { value: "misses", label: "Misses" },
+  { value: "blocks", label: "Blocks" },
+  { value: "rebounds", label: "Rebounds" },
+  { value: "turnovers", label: "Turnovers" },
+  { value: "fouls", label: "Fouls" },
+  { value: "freethrows", label: "Free throws" },
+  { value: "subs", label: "Subs" },
+  { value: "timeouts", label: "Timeouts" },
+];
+
+/** Buckets a play by its description, since the feed has no play type of its
+ * own. A play can belong to two (a made free throw is "scoring" and
+ * "freethrows"). */
+function playKinds(description: string | null, scored: boolean): Set<PlayKind> {
+  const d = (description ?? "").toLowerCase();
+  const kinds = new Set<PlayKind>();
+  if (scored) kinds.add("scoring");
+  if (/free throw/.test(d)) kinds.add("freethrows");
+  if (/\bmisses\b/.test(d)) kinds.add("misses");
+  if (/\bblocks\b/.test(d)) kinds.add("blocks");
+  if (/rebound/.test(d)) kinds.add("rebounds");
+  if (/turnover|traveling|bad pass|lost ball|steals/.test(d)) kinds.add("turnovers");
+  if (/foul/.test(d)) kinds.add("fouls");
+  if (/enters the game|substitution/.test(d)) kinds.add("subs");
+  if (/timeout/.test(d)) kinds.add("timeouts");
+  if (kinds.size === 0) kinds.add("other");
+  return kinds;
+}
+
+function KindChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
+      type="button"
+      aria-pressed={active}
       onClick={onClick}
-      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-        active ? "bg-accent text-accent-foreground" : "border border-border text-foreground/72 hover:text-foreground"
+      className={`rounded-full px-3 py-1 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent ${
+        active ? "bg-foreground text-background" : "bg-surface-muted text-foreground/70 hover:text-foreground"
       }`}
     >
       {children}
@@ -1401,61 +1453,161 @@ function PlayByPlayTab({
   home: ScoreboardTeam;
   plays: (PlayFields & { key: number; side: "home" | "away" | null })[];
 }) {
-  const [periodFilter, setPeriodFilter] = useState<number | "all">("all");
+  const [periodFilter, setPeriodFilter] = useState<string>("all");
+  const [teamFilter, setTeamFilter] = useState<"all" | "away" | "home">("all");
+  const [kindFilter, setKindFilter] = useState<PlayKind[]>([]);
+  const [query, setQuery] = useState("");
 
   if (plays.length === 0) {
     return <p className="text-foreground/72 text-sm">Play-by-play is not available for this game.</p>;
   }
 
-  const periodsPresent = Array.from(new Set(plays.map((p) => p.period).filter((p): p is number => p !== null))).sort(
+  // Points each play added, measured against the previous play's score, so
+  // scoring plays can show "+2" / "+3" and the score only appears when it moves.
+  const rows = plays.map((p, i) => {
+    const before = i > 0 ? plays[i - 1] : null;
+    const gained = Math.max((p.awayScore ?? 0) - (before?.awayScore ?? 0), (p.homeScore ?? 0) - (before?.homeScore ?? 0), 0);
+    const scored = p.scoringPlay || gained > 0;
+    return {
+      ...p,
+      scored,
+      gained,
+      kinds: playKinds(p.description, scored),
+      marker: /^(end|start) of/i.test((p.description ?? "").trim()),
+    };
+  });
+
+  const periodsPresent = Array.from(new Set(rows.map((p) => p.period).filter((p): p is number => p !== null))).sort(
     (a, b) => a - b,
   );
+  const q = query.trim().toLowerCase();
+  const filtering = teamFilter !== "all" || kindFilter.length > 0 || q !== "";
+  const matches = (p: (typeof rows)[number]) =>
+    !p.marker &&
+    (teamFilter === "all" || p.side === teamFilter) &&
+    (kindFilter.length === 0 || kindFilter.some((k) => p.kinds.has(k))) &&
+    (q === "" || (p.description ?? "").toLowerCase().includes(q));
+
   const groups = periodsPresent
-    .filter((period) => periodFilter === "all" || period === periodFilter)
-    .map((period) => ({ period, items: plays.filter((p) => p.period === period) }));
+    .filter((period) => periodFilter === "all" || String(period) === periodFilter)
+    .map((period) => {
+      const inPeriod = rows.filter((p) => p.period === period);
+      const last = inPeriod[inPeriod.length - 1];
+      return {
+        period,
+        items: filtering ? inPeriod.filter(matches) : inPeriod,
+        endScore: last ? `${last.awayScore ?? 0}-${last.homeScore ?? 0}` : null,
+      };
+    })
+    .filter((g) => !filtering || g.items.length > 0);
+  const shown = groups.reduce((n, g) => n + g.items.length, 0);
+  const teamFor = (side: "home" | "away" | null) => (side === "home" ? home : side === "away" ? away : null);
+  const toggleKind = (k: PlayKind) => setKindFilter((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
+  const reset = () => {
+    setPeriodFilter("all");
+    setTeamFilter("all");
+    setKindFilter([]);
+    setQuery("");
+  };
 
   return (
-    <section>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <h2 className="mr-2 text-lg font-medium text-foreground/92">Play-by-Play</h2>
-        <div className="flex flex-wrap gap-1.5">
-          <PeriodPill active={periodFilter === "all"} onClick={() => setPeriodFilter("all")}>
-            All
-          </PeriodPill>
-          {periodsPresent.map((period) => (
-            <PeriodPill key={period} active={periodFilter === period} onClick={() => setPeriodFilter(period)}>
-              {ordinalPeriodLabel(period - 1)}
-            </PeriodPill>
+    <section className="space-y-5">
+      <h2 className="text-2xl">Play-by-play</h2>
+
+      <div className="space-y-3 rounded-lg bg-surface p-4">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <Segmented
+            label="Period"
+            value={periodFilter}
+            options={[{ value: "all", label: "All" }, ...periodsPresent.map((p) => ({ value: String(p), label: p <= 4 ? `Q${p}` : ordinalPeriodLabel(p - 1) }))]}
+            onChange={setPeriodFilter}
+          />
+          <Segmented
+            label="Team"
+            value={teamFilter}
+            options={[
+              { value: "all", label: "Both" },
+              { value: "away", label: away.abbreviation },
+              { value: "home", label: home.abbreviation },
+            ]}
+            onChange={setTeamFilter}
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search a player or play"
+            aria-label="Search plays"
+            className="min-w-[12rem] flex-1 rounded-md bg-surface-muted px-3 py-1.5 text-sm outline-none placeholder:text-foreground/45 focus-visible:ring-2 focus-visible:ring-accent"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Play type">
+          {PLAY_KINDS.map((k) => (
+            <KindChip key={k.value} active={kindFilter.includes(k.value)} onClick={() => toggleKind(k.value)}>
+              {k.label}
+            </KindChip>
           ))}
         </div>
+        {(filtering || periodFilter !== "all") && (
+          <div className="flex items-center justify-between border-t border-border pt-3 text-sm text-foreground/60">
+            <span>{filtering ? `${shown} matching play${shown === 1 ? "" : "s"}` : "Filtered by period"}</span>
+            <button type="button" onClick={reset} className="font-semibold text-accent outline-none hover:underline focus-visible:underline">
+              Clear filters
+            </button>
+          </div>
+        )}
       </div>
+
+      {filtering && shown === 0 && <p className="text-foreground/65">No plays match these filters.</p>}
+
       <div className="space-y-6">
-        {groups.map(({ period, items }) => (
-          <div key={period}>
-            <div className="mb-2 text-sm font-semibold uppercase tracking-wide text-foreground/62">
-              {ordinalPeriodLabel(period - 1)} Quarter
+        {groups.map(({ period, items, endScore }) => (
+          <div key={period} className="overflow-hidden rounded-lg bg-surface">
+            <div className="flex items-baseline justify-between border-b border-border px-4 py-2.5">
+              <h3 className="text-lg">{period <= 4 ? `${ordinalPeriodLabel(period - 1)} quarter` : ordinalPeriodLabel(period - 1)}</h3>
+              {endScore && (
+                <span className="text-sm text-foreground/60">
+                  {away.abbreviation} {endScore.split("-")[0]} <span className="text-foreground/35">&middot;</span> {home.abbreviation} {endScore.split("-")[1]}
+                </span>
+              )}
             </div>
-            <div className="space-y-1">
-              {items.map((play) => (
-                <div
-                  key={play.key}
-                  className={`flex items-center gap-3 rounded-md py-1.5 pl-3 pr-3 text-sm ${
-                    play.scoringPlay ? "bg-surface-muted" : ""
-                  }`}
-                  style={{
-                    borderLeft: `3px solid ${
-                      play.side === "home" ? home.accent : play.side === "away" ? away.accent : "transparent"
-                    }`,
-                  }}
-                >
-                  <span className="w-14 shrink-0 tabular-nums text-foreground/72">{play.clock}</span>
-                  <span className="flex-1">{play.description}</span>
-                  <span className="w-16 shrink-0 text-right tabular-nums text-foreground/72">
-                    {play.awayScore}-{play.homeScore}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <ol>
+              {items.map((play) => {
+                if (play.marker) {
+                  return (
+                    <li key={play.key} className="border-b border-border/60 bg-surface-muted px-4 py-1.5 text-center text-xs font-semibold uppercase tracking-wide text-foreground/55 last:border-b-0">
+                      {play.description}
+                    </li>
+                  );
+                }
+                const team = teamFor(play.side);
+                return (
+                  <li
+                    key={play.key}
+                    className={`grid grid-cols-[3.25rem_1.5rem_1fr_auto] items-center gap-x-3 border-b border-border/60 px-4 py-2 text-[15px] last:border-b-0 sm:grid-cols-[3.75rem_1.75rem_1fr_3rem_5.5rem] ${
+                      play.scored ? "" : "text-foreground/65"
+                    }`}
+                    style={play.scored && team ? { boxShadow: `inset 3px 0 0 ${team.accent}` } : undefined}
+                  >
+                    <span className="font-mono text-sm tabular-nums text-foreground/55">{play.clock}</span>
+                    <span className="flex justify-center">
+                      {team?.logoUrl ? <img src={team.logoUrl} alt={team.abbreviation} title={team.displayName} className="h-5 w-5 object-contain" /> : null}
+                    </span>
+                    <span className={`min-w-0 ${play.scored ? "font-semibold text-foreground" : ""}`}>{play.description}</span>
+                    <span className="hidden text-right text-sm font-bold tabular-nums text-accent sm:block">{play.scored && play.gained > 0 ? `+${play.gained}` : ""}</span>
+                    <span className="text-right font-mono text-sm tabular-nums">
+                      {play.scored ? (
+                        <>
+                          <span className={play.side === "away" ? "font-bold text-foreground" : "text-foreground/55"}>{play.awayScore}</span>
+                          <span className="text-foreground/30">-</span>
+                          <span className={play.side === "home" ? "font-bold text-foreground" : "text-foreground/55"}>{play.homeScore}</span>
+                        </>
+                      ) : null}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
           </div>
         ))}
       </div>
@@ -1563,10 +1715,10 @@ function GameLeaders({
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-6 w-6 object-contain" />}
-          <span className="text-sm font-bold text-foreground">{away.abbreviation}</span>
+          <span className="text-sm font-bold text-foreground"><TeamText team={away} /></span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-foreground">{home.abbreviation}</span>
+          <span className="text-sm font-bold text-foreground"><TeamText team={home} /></span>
           {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-6 w-6 object-contain" />}
         </div>
       </div>
@@ -1691,10 +1843,10 @@ function TeamStatsCard({
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-6 w-6 object-contain" />}
-          <span className="text-sm font-medium text-foreground/92">{away.abbreviation}</span>
+          <span className="text-sm font-medium text-foreground/92"><TeamText team={away} /></span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-foreground/92">{home.abbreviation}</span>
+          <span className="text-sm font-medium text-foreground/92"><TeamText team={home} /></span>
           {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-6 w-6 object-contain" />}
         </div>
       </div>
@@ -1876,13 +2028,13 @@ function OddsPanel({ away, home, odds }: { away: ScoreboardTeam; home: Scoreboar
             </thead>
             <tbody>
               <tr className={`border-b border-border/60 ${!odds.homeIsFavorite ? "font-semibold text-foreground" : "text-foreground/92"}`}>
-                <td className="py-2">{away.abbreviation}</td>
+                <td className="py-2"><TeamText team={away} /></td>
                 <td className={`py-2 text-right ${winningCell(awayCovered)}`}>{formatSigned(odds.awaySpread)}</td>
                 <td className={`py-2 text-right ${winningCell(overHit)}`}>{odds.overUnder !== null ? `o${odds.overUnder}` : "-"}</td>
                 <td className={`py-2 text-right ${winningCell(awayWon)}`}>{formatSigned(odds.awayMoneyline)}</td>
               </tr>
               <tr className={odds.homeIsFavorite ? "font-semibold text-foreground" : "text-foreground/92"}>
-                <td className="py-2">{home.abbreviation}</td>
+                <td className="py-2"><TeamText team={home} /></td>
                 <td className={`py-2 text-right ${winningCell(homeCovered)}`}>{formatSigned(odds.homeSpread)}</td>
                 <td className={`py-2 text-right ${winningCell(underHit)}`}>{odds.overUnder !== null ? `u${odds.overUnder}` : "-"}</td>
                 <td className={`py-2 text-right ${winningCell(homeWon)}`}>{formatSigned(odds.homeMoneyline)}</td>
@@ -1980,7 +2132,7 @@ function TeamProbabilityRow({ team }: { team: ScoreboardTeam }) {
   return (
     <div className="flex items-center gap-2">
       {team.logoUrl && <img src={team.logoUrl} alt={team.displayName} className="h-6 w-6 object-contain" />}
-      <span className="text-sm font-medium text-foreground/92">{team.abbreviation}</span>
+      <span className="text-sm font-medium text-foreground/92"><TeamText team={team} /></span>
       <span className="h-0.5 w-4 rounded" style={{ backgroundColor: team.accent }} />
     </div>
   );
@@ -2309,7 +2461,7 @@ function ProbabilityGameFlowCard({
               {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-6 w-6 object-contain" />}
               <div>
                 <div className="font-semibold text-foreground">{away.score}</div>
-                <div className="text-xs text-foreground/72">{away.abbreviation}</div>
+                <div className="text-xs text-foreground/72"><TeamText team={away} /></div>
               </div>
             </div>
             <div className="text-center">
@@ -2319,7 +2471,7 @@ function ProbabilityGameFlowCard({
             <div className="flex items-center gap-2">
               <div className="text-right">
                 <div className="font-semibold text-foreground">{home.score}</div>
-                <div className="text-xs text-foreground/72">{home.abbreviation}</div>
+                <div className="text-xs text-foreground/72"><TeamText team={home} /></div>
               </div>
               {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-6 w-6 object-contain" />}
             </div>
@@ -2584,7 +2736,7 @@ function MatchupsCard({
       <div className="flex items-center justify-around px-4 py-4">
         <div className="flex flex-col items-center gap-1">
           {away.logoUrl && <img src={away.logoUrl} alt={away.displayName} className="h-9 w-9 object-contain" />}
-          <span className="text-xs text-foreground/82">{away.abbreviation}</span>
+          <span className="text-xs text-foreground/82"><TeamText team={away} /></span>
         </div>
         <div className="text-center">
           <div className="text-xs text-foreground/82">{seasonSeries.summary}</div>
@@ -2592,7 +2744,7 @@ function MatchupsCard({
         </div>
         <div className="flex flex-col items-center gap-1">
           {home.logoUrl && <img src={home.logoUrl} alt={home.displayName} className="h-9 w-9 object-contain" />}
-          <span className="text-xs text-foreground/82">{home.abbreviation}</span>
+          <span className="text-xs text-foreground/82"><TeamText team={home} /></span>
         </div>
       </div>
       <div className="divide-y divide-border/60 border-t border-border/60">
