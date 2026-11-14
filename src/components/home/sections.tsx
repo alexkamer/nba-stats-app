@@ -21,7 +21,7 @@ export function LeadersStrip({ categories }: { categories?: LeaderCategory[] }) 
               </Link>
             </div>
             {first && (
-              <Link href={`/players/${first.espnId}`} className="mt-3 flex items-center gap-3 outline-none hover:text-accent focus-visible:underline">
+              <Link href={`/players/${first.id}`} className="mt-3 flex items-center gap-3 outline-none hover:text-accent focus-visible:underline">
                 <CircularBadge src={first.headshotUrl} alt="" size="lg" />
                 <div className="min-w-0">
                   <p className="font-display text-5xl font-bold leading-none tabular-nums">{first.displayValue}</p>
@@ -31,10 +31,10 @@ export function LeadersStrip({ categories }: { categories?: LeaderCategory[] }) 
             )}
             <ol className="mt-3 space-y-1 border-t border-border pt-3 text-sm">
               {rest.slice(0, 4).map((l, i) => (
-                <li key={l.espnId} className="flex items-baseline justify-between gap-2">
+                <li key={l.id} className="flex items-baseline justify-between gap-2">
                   <span className="truncate">
                     <span className="mr-2 text-foreground/45 tabular-nums">{i + 2}</span>
-                    <Link href={`/players/${l.espnId}`} className="outline-none hover:text-accent focus-visible:underline">
+                    <Link href={`/players/${l.id}`} className="outline-none hover:text-accent focus-visible:underline">
                       {l.displayName}
                     </Link>
                   </span>

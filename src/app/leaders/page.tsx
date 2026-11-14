@@ -48,10 +48,10 @@ function LeadersView() {
         </thead>
         <tbody>
           {category.leaders.map((l, i) => (
-            <tr key={l.espnId} className="border-b border-border/60 last:border-b-0">
+            <tr key={l.id} className="border-b border-border/60 last:border-b-0">
               <td className="py-2 pl-4 font-semibold text-foreground/50 tabular-nums">{i + 1}</td>
               <td className="py-2">
-                <Link href={`/players/${l.espnId}`} className="flex items-center gap-3 font-semibold outline-none hover:text-accent focus-visible:underline">
+                <Link href={`/players/${l.id}`} className="flex items-center gap-3 font-semibold outline-none hover:text-accent focus-visible:underline">
                   <CircularBadge src={l.headshotUrl} alt="" size="md" />
                   {l.displayName}
                 </Link>

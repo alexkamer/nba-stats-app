@@ -28,6 +28,7 @@ export interface TeamRef {
 }
 export interface FinalGame {
   id: number;
+  espnId: string;
   homeScore: number | null;
   awayScore: number | null;
   homeTeam: TeamRef;
@@ -65,6 +66,7 @@ export interface InjuryRow {
 }
 export interface ScheduleGame {
   id: number;
+  espnId: string;
   date: string;
   status: string;
   homeTeam: TeamRef;

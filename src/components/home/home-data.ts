@@ -26,7 +26,7 @@ export interface Conference {
 }
 
 export interface LeagueLeader {
-  espnId: string;
+  id: number;
   displayName: string;
   headshotUrl: string | null;
   teamId: number | null;

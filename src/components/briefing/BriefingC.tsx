@@ -15,6 +15,60 @@ import {
 } from "@/components/BriefingContent";
 import { CircularBadge } from "@/components/CircularBadge";
 
+const LINK = "outline-none hover:text-accent hover:underline focus-visible:underline";
+
+function PlayerLink({ id, children }: { id: number; children: React.ReactNode }) {
+  return (
+    <Link href={`/players/${id}`} className={LINK}>
+      {children}
+    </Link>
+  );
+}
+
+function TeamLink({ id, children }: { id: number; children: React.ReactNode }) {
+  return (
+    <Link href={`/teams/${id}`} className={LINK}>
+      {children}
+    </Link>
+  );
+}
+
+/** The summary is model-written plain text, so link the player and team names
+ * it mentions (the ones present elsewhere in the payload) after the fact. */
+function LinkedSummary({ text, data }: { text: string; data: BriefingPayload }) {
+  const hrefs = new Map<string, string>();
+  const team = (t: { id: number; name: string }) => hrefs.set(t.name, `/teams/${t.id}`);
+  const player = (p: { id: number; displayName: string }) => hrefs.set(p.displayName, `/players/${p.id}`);
+  const games = [...data.yesterdaysScores.games, ...(data.pastSlate?.games ?? []), ...(data.schedule ?? [])];
+  games.forEach((g) => {
+    team(g.homeTeam);
+    team(g.awayTeam);
+  });
+  data.standings?.forEach((s) => team(s.team));
+  data.topPerformers.leaders.forEach((l) => player(l.player));
+  data.topPerformers.topScorers.forEach((s) => player(s.player));
+  data.injuryReport?.forEach((r) => player(r.player));
+  [data.bestBets.picks, data.bestBets.priorDay.picks].forEach((ps) => ps?.forEach((p) => player(p.player)));
+
+  const names = [...hrefs.keys()].sort((a, b) => b.length - a.length);
+  if (names.length === 0) return <>{text}</>;
+  const pattern = new RegExp(`(?<!\\w)(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(?!\\w)`, "g");
+  return (
+    <>
+      {text.split(pattern).map((part, i) => {
+        const href = hrefs.get(part);
+        return href ? (
+          <Link key={i} href={href} className="underline decoration-foreground/25 underline-offset-4 outline-none hover:text-accent hover:decoration-accent focus-visible:decoration-accent">
+            {part}
+          </Link>
+        ) : (
+          part
+        );
+      })}
+    </>
+  );
+}
+
 function Section({ title, note, children }: { title: string; note?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section aria-label={title}>
@@ -47,10 +101,15 @@ function Results({ games }: { games: FinalGame[] }) {
             ].map(({ t, s, won }) => (
               <span key={t.id} className={`flex items-center gap-3 text-xl ${won ? "font-semibold" : "text-foreground/50"}`}>
                 <CircularBadge src={t.logoUrl} alt="" size="sm" />
-                <span className="flex-1 truncate">{t.name}</span>
+                <span className="flex-1 truncate">
+                  <TeamLink id={t.id}>{t.name}</TeamLink>
+                </span>
                 <span className="font-display text-3xl tabular-nums">{s ?? "-"}</span>
               </span>
             ))}
+            <Link href={`/games/${g.espnId}`} className="text-sm font-semibold text-accent outline-none hover:underline focus-visible:underline sm:col-span-2">
+              Box score
+            </Link>
           </li>
         );
       })}
@@ -66,7 +125,9 @@ function Picks({ picks, empty }: { picks: BestBetPick[] | null; empty: string })
         <li key={`${p.player.id}-${p.statType}`} className="flex items-center gap-3 py-3 text-lg">
           <CircularBadge src={p.player.headshotUrl} alt="" size="sm" />
           <span className="flex-1 truncate">
-            <span className="font-medium">{p.player.displayName}</span>
+            <span className="font-medium">
+              <PlayerLink id={p.player.id}>{p.player.displayName}</PlayerLink>
+            </span>
             <span className="ml-2 text-foreground/55">{STAT_LABELS[p.statType] ?? p.statType}</span>
           </span>
           <span className="font-mono text-base tabular-nums">
@@ -96,8 +157,12 @@ function Injuries({ rows }: { rows: NonNullable<BriefingPayload["injuryReport"]>
         {shown.map((r) => (
           <li key={r.playerId} className="flex items-baseline justify-between gap-3 border-b border-border/70 py-2.5">
             <span className="truncate text-lg">
-              {r.player.displayName}
-              {r.team && <span className="ml-2 text-sm text-foreground/50">{r.team.abbreviation}</span>}
+              <PlayerLink id={r.player.id}>{r.player.displayName}</PlayerLink>
+              {r.team && (
+                <span className="ml-2 text-sm text-foreground/50">
+                  <TeamLink id={r.team.id}>{r.team.abbreviation}</TeamLink>
+                </span>
+              )}
             </span>
             <span className={`shrink-0 text-sm font-semibold ${r.status === "OUT" ? "text-loss" : "text-foreground/60"}`}>
               {r.status === "OUT" ? "Out" : r.status.charAt(0) + r.status.slice(1).toLowerCase()}
@@ -190,7 +255,7 @@ export function BriefingC({ dateKey }: { dateKey: string | null }) {
           <DayNav data={data} />
         </div>
         <p className="mt-5 text-xl text-foreground/55">{data ? formatDateHeading(data.date) : " "}</p>
-        {data?.summary && <p className="mt-8 max-w-[34ch] text-balance text-[26px] leading-[1.25] sm:max-w-[40ch] sm:text-3xl">{data.summary}</p>}
+        {data?.summary && <p className="mt-8 max-w-[34ch] text-balance text-[26px] leading-[1.25] sm:max-w-[40ch] sm:text-3xl"><LinkedSummary text={data.summary} data={data} /></p>}
       </header>
 
       {isLoading && (
@@ -218,7 +283,7 @@ export function BriefingC({ dateKey }: { dateKey: string | null }) {
                     <div className="pb-1">
                       <p className="flex items-center gap-2 text-xl font-medium">
                         <CircularBadge src={topLeader.player.headshotUrl} alt="" size="md" />
-                        {topLeader.player.displayName}
+                        <PlayerLink id={topLeader.player.id}>{topLeader.player.displayName}</PlayerLink>
                       </p>
                       <p className="mt-1 text-foreground/55">
                         Points, rebounds and assists{topLeader.hadTripleDouble ? ", with a triple-double" : ""}
@@ -233,8 +298,12 @@ export function BriefingC({ dateKey }: { dateKey: string | null }) {
                         <span className="w-5 font-mono text-sm text-foreground/40">{i + 1}</span>
                         <CircularBadge src={s.player.headshotUrl} alt="" size="sm" />
                         <span className="flex-1 truncate font-medium">
-                          {s.player.displayName}
-                          {s.team && <span className="ml-2 text-foreground/50">{s.team.abbreviation}</span>}
+                          <PlayerLink id={s.player.id}>{s.player.displayName}</PlayerLink>
+                          {s.team && (
+                            <span className="ml-2 text-foreground/50">
+                              <TeamLink id={s.team.id}>{s.team.abbreviation}</TeamLink>
+                            </span>
+                          )}
                         </span>
                         <span className="font-display text-2xl tabular-nums">{s.points}</span>
                       </li>
@@ -299,7 +368,7 @@ export function BriefingC({ dateKey }: { dateKey: string | null }) {
                               <span className="font-mono text-sm text-foreground/40">{s.conferenceRank}</span>
                               <span className="flex items-center gap-2.5 truncate">
                                 <CircularBadge src={s.team.logoUrl} alt="" size="sm" />
-                                {s.team.name}
+                                <TeamLink id={s.team.id}>{s.team.name}</TeamLink>
                               </span>
                               <span className="font-mono text-base tabular-nums">
                                 {s.wins}-{s.losses}
@@ -324,22 +393,23 @@ export function BriefingC({ dateKey }: { dateKey: string | null }) {
                     <li key={g.id} className="py-4">
                       <p className="flex items-center gap-3 text-xl font-medium">
                         <CircularBadge src={g.awayTeam.logoUrl} alt="" size="sm" />
-                        {g.awayTeam.name}
+                        <TeamLink id={g.awayTeam.id}>{g.awayTeam.name}</TeamLink>
                         <span className="text-foreground/35">at</span>
                         <CircularBadge src={g.homeTeam.logoUrl} alt="" size="sm" />
-                        {g.homeTeam.name}
+                        <TeamLink id={g.homeTeam.id}>{g.homeTeam.name}</TeamLink>
                       </p>
-                      {(g.pick || g.market) && (
-                        <p className="mt-1.5 flex flex-wrap gap-x-6 gap-y-1 pl-9 text-base text-foreground/55">
-                          {g.pick && (
-                            <span>
-                              Our projection {g.pick.projectedAwayScore.toFixed(0)} to {g.pick.projectedHomeScore.toFixed(0)}
-                            </span>
-                          )}
-                          {g.market?.spread != null && <span>Spread {g.market.spread}</span>}
-                          {g.market?.overUnder != null && <span>Total {g.market.overUnder}</span>}
-                        </p>
-                      )}
+                      <p className="mt-1.5 flex flex-wrap gap-x-6 gap-y-1 pl-9 text-base text-foreground/55">
+                        <Link href={`/games/${g.espnId}`} className="font-semibold text-accent outline-none hover:underline focus-visible:underline">
+                          Game page
+                        </Link>
+                        {g.pick && (
+                          <span>
+                            Our projection {g.pick.projectedAwayScore.toFixed(0)} to {g.pick.projectedHomeScore.toFixed(0)}
+                          </span>
+                        )}
+                        {g.market?.spread != null && <span>Spread {g.market.spread}</span>}
+                        {g.market?.overUnder != null && <span>Total {g.market.overUnder}</span>}
+                      </p>
                     </li>
                   ))}
                 </ul>
