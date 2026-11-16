@@ -141,6 +141,10 @@ interface AccuracySummary {
   espnPredictor: AccuracyBucket;
   espnPredictorSpread: AccuracyBucket;
   kingOfTheCourt: AccuracyBucket;
+  byMethod: Record<
+    "game" | "spread" | "total" | "props" | "bettableProps" | "bestBets" | "bestBetsCurrent",
+    Record<string, { graded: number; correct: number; hitRate: number | null }>
+  >;
 }
 
 async function fetchUpcoming(date: string): Promise<UpcomingGame[]> {
@@ -454,6 +458,82 @@ function AccuracyStrip({ accuracy }: { accuracy: AccuracySummary }) {
   );
 }
 
+const METHOD_CATEGORY_LABELS: Record<keyof AccuracySummary["byMethod"], string> = {
+  game: "Game picks",
+  spread: "Spread picks",
+  total: "Total picks",
+  props: "Player props",
+  bettableProps: "Recommended player props",
+  bestBets: "Best Bets",
+  bestBetsCurrent: "Best Bets (current line)",
+};
+
+/** Each accuracy category's hit rate broken out by projection-methodology
+ * version (the `method` tag frozen onto each graded row) — a different axis
+ * from AccuracyStrip above (prediction source), this one tracks how a
+ * change to the projection methodology itself performed in real outcomes,
+ * before vs. after. Method tags are rendered as-is (e.g.
+ * "v3-season-scoped") rather than through a display-name lookup, since
+ * they already read fine and a lookup table would need updating every time
+ * a change bumps the tag (see add-methodology-accuracy-breakdown design.md). */
+function MethodologyBreakdown({ byMethod }: { byMethod: AccuracySummary["byMethod"] }) {
+  const categories = (Object.keys(METHOD_CATEGORY_LABELS) as (keyof AccuracySummary["byMethod"])[]).filter(
+    (category) => Object.values(byMethod[category] ?? {}).filter((m) => m.graded > 0).length >= 2,
+  );
+
+  if (categories.length === 0) {
+    return (
+      <p className="text-sm text-foreground/72">
+        No category has graded picks under more than one methodology version yet — this
+        fills in once a methodology change has graded results to compare against its
+        predecessor.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4 rounded-lg border border-border bg-surface p-4">
+      {categories.map((category) => {
+        const methods = Object.entries(byMethod[category])
+          .filter(([, m]) => m.graded > 0)
+          .sort(([a], [b]) => a.localeCompare(b));
+        return (
+          <div key={category} className="space-y-2">
+            <AccuracyGroupLabel>{METHOD_CATEGORY_LABELS[category]}</AccuracyGroupLabel>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[420px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-foreground/72">
+                    <th className="py-1.5 pr-3 font-normal">Method</th>
+                    <th className="py-1.5 pr-3 text-right font-normal">Hit rate</th>
+                    <th className="py-1.5 text-right font-normal">Graded</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {methods.map(([tag, m]) => (
+                    <tr key={tag} className="border-b border-border/60 last:border-b-0">
+                      <td className="py-1.5 pr-3 font-mono text-xs text-foreground/85">{tag}</td>
+                      <td
+                        className="py-1.5 pr-3 text-right tabular-nums"
+                        style={{ color: m.hitRate !== null ? hitRateColor(m.hitRate) : undefined }}
+                      >
+                        {m.hitRate !== null ? `${(m.hitRate * 100).toFixed(0)}%` : "—"}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums text-foreground/72">
+                        {m.correct}/{m.graded}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** The page's one hero element: the day's highest-confidence player props
  * across every game, as a horizontal row of scannable ticket chips — meant
  * to be the first thing a visitor reads, ahead of any individual game's
@@ -749,8 +829,12 @@ export default function BettingPage() {
       {accuracy && (
         <details className="rounded-lg bg-surface p-4">
           <summary className="cursor-pointer text-lg font-semibold">Full track record</summary>
-          <div className="mt-4">
+          <div className="mt-4 space-y-4">
             <AccuracyStrip accuracy={accuracy} />
+            <div className="space-y-2">
+              <AccuracyGroupLabel>Methodology history</AccuracyGroupLabel>
+              <MethodologyBreakdown byMethod={accuracy.byMethod} />
+            </div>
           </div>
         </details>
       )}

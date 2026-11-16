@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Predictions Work — NBA Stats App</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #161d2e;
+    --panel-2: #1c2538;
+    --border: #2a3450;
+    --text: #e8ecf5;
+    --text-dim: #9aa6bf;
+    --accent: #5aa9ff;
+    --accent-2: #39d6b4;
+    --warn: #ff9f5a;
+    --bad: #ff6b6b;
+    --good: #39d6b4;
+    --mono: "SF Mono", Consolas, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: 1.9rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .subtitle { color: var(--text-dim); font-size: 1rem; margin-bottom: 36px; }
+  .tag {
+    display: inline-block; font-family: var(--mono); font-size: 0.75rem;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 2px 8px; color: var(--accent-2);
+    margin-left: 8px;
+  }
+  h2 {
+    font-size: 1.25rem; margin: 48px 0 16px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px;
+  }
+  .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 50%; background: var(--accent);
+    color: #04101f; font-size: 0.8rem; font-weight: 700; flex-shrink: 0;
+  }
+  p { color: var(--text); }
+  .dim { color: var(--text-dim); }
+  code {
+    font-family: var(--mono); background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 6px; font-size: 0.85em; color: var(--accent-2);
+  }
+
+  /* pipeline diagram */
+  .pipeline {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    margin: 20px 0 8px; font-size: 0.85rem;
+  }
+  .pipe-box {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; flex: 1 1 140px; text-align: center;
+  }
+  .pipe-box .t { font-weight: 600; margin-bottom: 2px; }
+  .pipe-box .d { color: var(--text-dim); font-size: 0.78rem; }
+  .pipe-arrow { color: var(--accent); font-size: 1.3rem; flex: 0 0 auto; }
+
+  /* accordion */
+  details {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    margin-bottom: 10px; overflow: hidden;
+  }
+  summary {
+    cursor: pointer; padding: 14px 18px; font-weight: 600; list-style: none;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary .arrow { color: var(--text-dim); transition: transform 0.15s ease; font-size: 0.8rem; }
+  details[open] summary .arrow { transform: rotate(90deg); }
+  .detail-body { padding: 0 18px 18px; color: var(--text-dim); font-size: 0.93rem; }
+  .detail-body .formula {
+    font-family: var(--mono); background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px; margin: 10px 0; color: var(--text);
+    font-size: 0.85rem; overflow-x: auto; white-space: pre;
+  }
+  .detail-body .clamp { color: var(--warn); }
+  .detail-body .good { color: var(--good); }
+  .detail-body .bad { color: var(--bad); }
+
+  /* fix callout */
+  .fixbox {
+    background: linear-gradient(135deg, rgba(90,169,255,0.08), rgba(57,214,180,0.08));
+    border: 1px solid var(--accent); border-radius: 10px; padding: 16px 18px; margin: 10px 0;
+  }
+  .fixbox .label {
+    font-family: var(--mono); font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--accent); margin-bottom: 6px; display: block;
+  }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  td.num { font-family: var(--mono); text-align: right; }
+  tr.old td.num { color: var(--bad); }
+  tr.new td.num { color: var(--good); }
+
+  .pill-row { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+  .pill {
+    flex: 1 1 140px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; text-align: center;
+  }
+  .pill .big { font-family: var(--mono); font-size: 1.3rem; font-weight: 700; }
+  .pill .small { color: var(--text-dim); font-size: 0.75rem; margin-top: 4px; }
+  .pill.bad .big { color: var(--bad); }
+  .pill.good .big { color: var(--good); }
+
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 0.82rem; }
+  footer a { color: var(--accent); text-decoration: none; }
+
+  @media (max-width: 600px) {
+    .pipeline { flex-direction: column; }
+    .pipe-arrow { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>How Predictions Are Made<span class="tag">method: v4-tuned-minutes-trend</span></h1>
+  <p class="subtitle">A walkthrough of the player-prop &amp; opponent-adjustment pipeline, as it works today — and what changed on Nov 16, 2026.</p>
+
+  <h2>The pipeline</h2>
+  <div class="pipeline">
+    <div class="pipe-box"><div class="t">Sync odds &amp; injuries</div><div class="d">market lines, prop lines, availability</div></div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-box"><div class="t">Generate projections</div><div class="d">computed once, frozen pre-game</div></div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-box"><div class="t">Compare to market</div><div class="d">edge ratio → Best Bets</div></div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-box"><div class="t">Grade at FINAL</div><div class="d">no recompute, no hindsight</div></div>
+  </div>
+  <p class="dim" style="font-size:0.85rem">No ML model — this is a small, inspectable statistical blend of recent form, season average, minutes trend, opponent strength, and availability. Every projection is written once and never recomputed, so a pick can't quietly change after it's made.</p>
+
+  <h2><span class="step-num">1</span> Recent form + season average</h2>
+  <details open>
+    <summary>Blend a player's recent games with their <em>current-season</em> average <span class="arrow">▶</span></summary>
+    <div class="detail-body">
+      <p>For the stat being projected (points, rebounds, a combo like points+rebounds, etc.), take the player's last 10 games and their current-season average, and blend:</p>
+      <div class="formula">blended = <span class="good">0.6</span> × recentAverage(last 10 games)
+         + <span class="good">0.4</span> × seasonAverage(<u>this season only</u>)
+
+(only once there are ≥3 recent games — below that, season average alone)</div>
+      <p>This is computed from <code>loadPlayerSeasonGameLog(playerId, seasonId)</code> — scoped to one specific season. A missed game never has a box-score row, so it's automatically excluded from the recent-games window with no extra filtering.</p>
+    </div>
+  </details>
+
+  <h2><span class="step-num">2</span> Minutes trend</h2>
+  <details>
+    <summary>Dampen the projection if minutes are trending down <span class="arrow">▶</span></summary>
+    <div class="detail-body">
+      <div class="formula">trendMultiplier = avg(last 3 games' minutes) / avg(all recent games' minutes)
+clamped to <span class="clamp">[0.9×, 1.1×]</span></div>
+      <p>A player whose minutes have dropped recently gets scaled down; one blowout or garbage-time game can't swing it past the clamp. Tightened from an original <code>[0.7×, 1.3×]</code> after a hyperparameter sweep against 4 seasons of historical outcomes showed the tighter bound minimized prediction error for every tracked stat — see <code>tune-minutes-trend-clamp</code> (<code>method: "v4-tuned-minutes-trend"</code>).</p>
+    </div>
+  </details>
+
+  <h2><span class="step-num">3</span> Opponent factor</h2>
+  <details>
+    <summary>Adjust for how much the specific opponent tends to allow in that stat <span class="arrow">▶</span></summary>
+    <div class="detail-body">
+      <div class="formula">opponentFactor = opponentTeam's allowed-average(<u>this season only</u>) / league average(<u>this season only</u>)
+clamped to <span class="clamp">[0.85×, 1.15×]</span>, neutral (1×) below 5 games of history</div>
+      <p>"What a team allows" is just what its opponents have scored against them, derived from already-ingested box scores — no new data source. Not computed for double-double/triple-double props, since those are achievement flags, not a stat a team "allows."</p>
+    </div>
+  </details>
+
+  <h2><span class="step-num">4</span> Teammate role-bump</h2>
+  <details>
+    <summary>Bump a player's projection when a teammate he shares minutes with is OUT <span class="arrow">▶</span></summary>
+    <div class="detail-body">
+      <p>Pool every game this season where <em>any</em> of tonight's absent teammates already sat out, and compare the player's average in those games to his own baseline projection. One combined multiplier — not one per absent teammate multiplied together (that compounds without bound when several teammates are out at once).</p>
+      <div class="formula">multiplier = avg(stat in games resembling tonight's absences) / baseline
+clamped to <span class="clamp">[0.85×, 1.3×]</span>, neutral (1×) below 2 qualifying games</div>
+    </div>
+  </details>
+
+  <h2><span class="step-num">5</span> Confidence &amp; Best Bets</h2>
+  <details>
+    <summary>How a projection becomes a recommended pick <span class="arrow">▶</span></summary>
+    <div class="detail-body">
+      <div class="formula">edgeRatio = |projectedValue − marketLine| / stdev(recent games)
+bettable  = edgeRatio ≥ <span class="good">0.75</span>
+Best Bets = top 8 bettable picks, ranked by edgeRatio, one per player</div>
+      <p><code>stdev</code> is the population standard deviation of the player's recent values for that stat — so a pick "beating the line by a lot relative to how volatile the player normally is" ranks above a pick beating the line by the same raw amount for a much steadier player.</p>
+    </div>
+  </details>
+
+  <h2>What changed on Nov 16, 2026</h2>
+  <p>Two of the inputs above — season average and opponent factor — were quietly pulling in data from <strong>every season on record</strong> (player box scores back to 2012, team box scores back to 2003) instead of just the current one. Both were found, measured with a backtest against real historical outcomes, and fixed the same day.</p>
+
+  <div class="fixbox">
+    <span class="label">Bug 1 — season average</span>
+    <p>A veteran player's "season average" quietly included his entire career. Example: Andre Drummond's points+rebounds average came out to <strong>22.66</strong> (career, 1,008 games back to 2012) instead of <strong>11.23</strong> (his actual 13 games this season) — nearly double, from years as a high-minutes starter that no longer reflect his current bench role.</p>
+  </div>
+
+  <div class="fixbox">
+    <span class="label">Bug 2 — opponent factor</span>
+    <p>A team's "how much do they allow" factor blended in 24 seasons of history. The league's scoring pace has risen roughly 10 points/game since 2003, so blending in that older, slower era systematically made every opponent factor skew too low. A backtest across 9,846 historical team-games showed this wasn't subtle:</p>
+    <table>
+      <tr><th>Stat</th><th>Old (unscoped) bias</th><th>Fixed (season-scoped) bias</th></tr>
+      <tr class="old"><td>Points</td><td class="num">−11 to −15</td><td></td></tr>
+      <tr class="new"><td></td><td></td><td class="num">−0.1 to +0.7</td></tr>
+      <tr class="old"><td>Points+Rebounds+Assists</td><td class="num">−12 to −13</td><td></td></tr>
+      <tr class="new"><td></td><td></td><td class="num">≈ 0</td></tr>
+    </table>
+    <p class="dim" style="font-size:0.8rem">Bias = average (predicted − actual). The old method wasn't just noisier, it was predicting too low on every single stat, every season, every stage of the season.</p>
+  </div>
+
+  <h3 style="margin-top:28px; font-size:1rem;">A real example — tonight's games</h3>
+  <p>Draymond Green, POINTS prop, before and after the fix (same game, regenerated once the fix shipped):</p>
+  <div class="pill-row">
+    <div class="pill bad"><div class="big">3.78</div><div class="small">old model projection</div></div>
+    <div class="pill good"><div class="big">3.27</div><div class="small">new model projection</div></div>
+    <div class="pill"><div class="big">6.5</div><div class="small">market line</div></div>
+  </div>
+  <p class="dim" style="font-size:0.85rem">Both leaned UNDER the line, but the fixed model's number moved further from Draymond's inflated career norm and closer to his actual diminished role this season.</p>
+
+  <h2>What's frozen, and what isn't</h2>
+  <p>Every projection is tagged with a <code>method</code> string and never recomputed once written — the buggy version is <code>v2-availability-aware</code>, the season-scoping fix is <code>v3-season-scoped</code>, and the tightened minutes-trend clamp is <code>v4-tuned-minutes-trend</code>. All three coexist in history on purpose: it's what lets the accuracy page compare each era's track record honestly, instead of silently merging different methodologies into one number.</p>
+
+  <footer>
+    Full technical reference: <a href="./PREDICTIONS.md">docs/PREDICTIONS.md</a> ·
+    Change history: <code>openspec/changes/archive/2026-11-16-*</code>
+  </footer>
+
+</div>
+</body>
+</html>

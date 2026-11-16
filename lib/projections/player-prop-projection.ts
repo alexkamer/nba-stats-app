@@ -25,9 +25,13 @@ const RECENT_FORM_WEIGHT = 0.6;
 // trend, vs. the whole recent window used for the stat blend above.
 const TREND_WINDOW_GAMES = 3;
 // Trend multiplier is clamped so a tiny sample (e.g. one blowout-garbage-time
-// game) can't swing the projection wildly.
-const MIN_TREND_MULTIPLIER = 0.7;
-const MAX_TREND_MULTIPLIER = 1.3;
+// game) can't swing the projection wildly. Tightened from [0.7, 1.3] to
+// [0.9, 1.1] in tune-minutes-trend-clamp: a hyperparameter sweep against
+// 105,067 scored player-games across the last 4 completed regular seasons
+// found MAE minimized at this tighter bound for every tracked stat type,
+// with no exceptions (scripts/sweep-projection-hyperparameters.ts).
+const MIN_TREND_MULTIPLIER = 0.9;
+const MAX_TREND_MULTIPLIER = 1.1;
 
 function average(values: number[]): number | null {
   if (values.length === 0) return null;

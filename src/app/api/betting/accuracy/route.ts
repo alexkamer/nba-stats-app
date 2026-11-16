@@ -267,7 +267,7 @@ export async function GET() {
       if (group) group.push(row);
       else byDay.set(key, [row]);
     }
-    const bestBetsRows: Array<{ correct: boolean | null; odds: number | null }> =
+    const bestBetsRows: Array<{ correct: boolean | null; odds: number | null; method: string }> =
       [];
     for (const [day, dayProps] of byDay.entries()) {
       const snapshot = await getDailyBestBetSnapshot(day);
@@ -280,6 +280,7 @@ export async function GET() {
             bestBetsRows.push({
               correct: row.gradedCorrect,
               odds: propPickOdds(row),
+              method: row.method,
             });
         }
       } else {
@@ -287,6 +288,7 @@ export async function GET() {
           bestBetsRows.push({
             correct: row.gradedCorrect,
             odds: propPickOdds(row),
+            method: row.method,
           });
       }
     }
@@ -309,22 +311,28 @@ export async function GET() {
           r.gradedActualValue as number,
         ]),
     );
-    const bestBetsCurrentRows: Array<{ correct: boolean | null; odds: number | null }> = [];
+    // DailyBestBetCurrent has no method column of its own (see
+    // add-best-bets-methodology-breakdown design.md) — looked up by the
+    // same join key actualValueByKey already uses.
+    const methodByKey = new Map(
+      propRows.map((r) => [`${r.gameId}|${r.playerId}|${r.statType}`, r.method]),
+    );
+    const bestBetsCurrentRows: Array<{ correct: boolean | null; odds: number | null; method: string }> = [];
     for (const day of byDay.keys()) {
       const snapshot = await getDailyBestBetCurrentSnapshot(day);
       if (!snapshot) continue;
       for (const pick of snapshot) {
-        const actualValue = actualValueByKey.get(
-          `${pick.gameId}|${pick.playerId}|${pick.statType}`,
-        );
-        if (actualValue === undefined) continue;
+        const key = `${pick.gameId}|${pick.playerId}|${pick.statType}`;
+        const actualValue = actualValueByKey.get(key);
+        const method = methodByKey.get(key);
+        if (actualValue === undefined || method === undefined) continue;
         const correct =
           actualValue === pick.line
             ? null // push — excluded, same convention as every other bucket
             : pick.lean === "OVER"
               ? actualValue > pick.line
               : actualValue < pick.line;
-        bestBetsCurrentRows.push({ correct, odds: pick.odds });
+        bestBetsCurrentRows.push({ correct, odds: pick.odds, method });
       }
     }
     const bestBetsCurrentAccuracy = computeAccuracyWithPnl(bestBetsCurrentRows);
@@ -405,6 +413,8 @@ export async function GET() {
         propRows.filter((r) => r.bettable),
         (r) => r.gradedCorrect,
       ),
+      bestBets: accuracyByMethod(bestBetsRows, (r) => r.correct),
+      bestBetsCurrent: accuracyByMethod(bestBetsCurrentRows, (r) => r.correct),
     };
 
     // Retrospective breakdown for the betting-history-page capability

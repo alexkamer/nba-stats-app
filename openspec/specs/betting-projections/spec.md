@@ -33,7 +33,7 @@ The system SHALL compare its game projection to the available market line (sprea
 - **THEN** the system still exposes its own projection, without a market comparison
 
 ### Requirement: Player prop projection
-The system SHALL compute a projected value for a player's tracked stat (points, rebounds, assists, etc.) for an upcoming game, using that player's recent game logs and season averages, when that player is not frozen as unavailable for the game.
+The system SHALL compute a projected value for a player's tracked stat (points, rebounds, assists, etc.) for an upcoming game, using that player's recent game logs and current-season averages, when that player is not frozen as unavailable for the game.
 
 #### Scenario: Player has recent game-log data
 - **WHEN** a player is on a scheduled game's roster, has recent game logs on record, and is not frozen as unavailable for that game
@@ -46,6 +46,14 @@ The system SHALL compute a projected value for a player's tracked stat (points, 
 #### Scenario: Player's own recent-form window excludes games he missed
 - **WHEN** computing a player's recent per-game values for a tracked stat
 - **THEN** games in which that player did not play are excluded from that window, rather than counted as a zero or low value
+
+#### Scenario: Player has game logs from prior seasons on record
+- **WHEN** a player has game logs on record from one or more prior seasons in addition to the current season
+- **THEN** the player's season average is computed only from the current season's games, excluding any prior-season games from the average
+
+#### Scenario: Opponent has team-game history from prior seasons on record
+- **WHEN** the opponent team has `TeamGameStat` history on record from one or more prior seasons in addition to the current season
+- **THEN** the opponent-adjustment factor applied to the projection is computed only from the current season's team-game history, excluding any prior-season games from both the team's own allowed-stat average and the league average it's compared against
 
 ### Requirement: Prop pick vs market line
 The system SHALL compare its player-stat projection to the published prop line for that stat and surface an over or under lean.
@@ -71,3 +79,18 @@ The system SHALL adjust a player's prop projection to reflect an expected increa
 #### Scenario: A minutes-sharing teammate is unavailable
 - **WHEN** a player's prop projection is computed for a game in which a teammate he has historically shared minutes with is frozen as unavailable
 - **THEN** the projection reflects the empirically observed change in that player's production from this season's prior games the absent teammate missed, rather than using the unadjusted recent-form blend alone
+
+### Requirement: Minutes trend adjustment
+The system SHALL adjust a player's prop projection by a multiplier reflecting whether his minutes over his last 3 games are trending up or down relative to his whole recent-form window, bounded within an empirically validated range so a single blowout or garbage-time game cannot swing the projection beyond what historical outcomes support.
+
+#### Scenario: Recent minutes are trending down
+- **WHEN** a player's average minutes over his last 3 games are lower than his average minutes over his whole recent-form window
+- **THEN** the projection is scaled down relative to what it would be without this adjustment
+
+#### Scenario: Recent minutes are trending up
+- **WHEN** a player's average minutes over his last 3 games are higher than his average minutes over his whole recent-form window
+- **THEN** the projection is scaled up relative to what it would be without this adjustment
+
+#### Scenario: Trend multiplier is bounded
+- **WHEN** the ratio of a player's last-3-games minutes average to his whole recent-form window's minutes average exceeds the system's validated bound in either direction
+- **THEN** the multiplier applied is clamped at that bound rather than scaling the projection further

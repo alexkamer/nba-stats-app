@@ -103,21 +103,45 @@ and no recent games — never fabricated.
 
 ## Player prop projections (`lib/projections/player-prop-projection.ts`)
 
-Same recency blend (60% recent / 40% season, same ≥3-game threshold) on the
-player's raw per-game value for the tracked stat, then two adjustments
-applied in sequence:
+Same recency blend (60% recent / 40% **current-season** average, same
+≥3-game threshold) on the player's raw per-game value for the tracked stat,
+then two adjustments applied in sequence:
 
 1. **Minutes trend** — last-3-games average minutes vs. the whole recent
-   window, as a multiplier clamped to 0.7×–1.3× (so one blowout/garbage-time
-   game can't swing the projection).
+   window, as a multiplier clamped to 0.9×–1.1× (so one blowout/garbage-time
+   game can't swing the projection). Tightened from an original 0.7×–1.3×
+   in `tune-minutes-trend-clamp`, once a hyperparameter sweep against four
+   seasons of historical outcomes
+   (`scripts/sweep-projection-hyperparameters.ts`) showed the tighter bound
+   minimized prediction error for every tracked stat type.
 2. **Opponent factor** (`lib/projections/opponent-factor.ts`) — how much
    more/less than league average the specific opponent tends to allow in
-   that stat, derived from already-ingested `TeamGameStat` rows (what a
-   team "allowed" in a game is just what its opponent put up that game).
-   Clamped to 0.85×–1.15×, and neutral (1×) for any team with fewer than 5
-   games of history. Not computed for `DOUBLE_DOUBLE`/`TRIPLE_DOUBLE` — those
-   are per-player achievement flags, not a stat a team "allows" in the same
-   sense.
+   that stat, derived from already-ingested **current-season** `TeamGameStat`
+   rows (what a team "allowed" in a game is just what its opponent put up
+   that game). Clamped to 0.85×–1.15×, and neutral (1×) for any team with
+   fewer than 5 games of history. Not computed for
+   `DOUBLE_DOUBLE`/`TRIPLE_DOUBLE` — those are per-player achievement flags,
+   not a stat a team "allows" in the same sense.
+
+**Both "season average" and "opponent factor" are scoped to the current
+season only** — `loadPlayerSeasonGameLog(playerId, seasonId)` and
+`loadOpponentFactorsForSeason(seasonId)` in `ingest/generate-projections.ts`.
+This wasn't always true: through `method: "v2-availability-aware"`, both
+queries pulled every season on record (back to 2003 for teams, 2012 for
+players), so a long-tenured veteran's or a historically-strong defense's
+multi-season history silently diluted the current-season signal — e.g. a
+player whose role shrank this season still got a "season average" closer to
+his career norm. Fixed in `openspec/changes/archive/2026-11-16-fix-player-projection-season-scope`
+and `openspec/changes/archive/2026-11-16-fix-opponent-factor-season-scope`,
+each validated by a walk-forward backtest against real historical
+outcomes before shipping — see those changes' `design.md` and the sibling
+`openspec/changes/archive/2026-11-16-*backtest*` changes. Projections made
+under that old behavior are tagged `method: "v2-availability-aware"`; the
+season-scoped fix is `method: "v3-season-scoped"`. A further tuning pass,
+`openspec/changes/archive/2026-11-16-tune-minutes-trend-clamp`, tightened
+the minutes-trend clamp (above) and is tagged `method: "v4-tuned-minutes-trend"`.
+Frozen rows are never recomputed, so all three tags coexist in history by
+design (see `lib/accuracy/compute-accuracy.ts`'s `accuracyByMethod`).
 
 A player frozen `OUT` for the game gets **no projection at all** — not
 generated, not just hidden on the page (`ingest/generate-projections.ts`).

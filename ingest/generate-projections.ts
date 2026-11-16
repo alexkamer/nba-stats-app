@@ -39,9 +39,18 @@ import type { AvailabilityStatus } from "../lib/espn/injury-status-mapping";
 // PROP_METHOD bumped here too — retroactively, since the availability
 // change shipped OUT-skip + teammate-role-bump without ever giving props
 // their own distinct tag, leaving every prop since then indistinguishable
-// from the original pre-availability v1 rows.
+// from the original pre-availability v1 rows. Bumped again by
+// fix-player-projection-season-scope: projections before this tag used a
+// season average contaminated by prior-season history, which
+// backtest-projection-methodology measured as a materially different
+// (worse) methodology — mixing the two under one tag would hide that
+// regression from accuracyByMethod. Bumped again by
+// tune-minutes-trend-clamp: a tighter, empirically-validated minutes-trend
+// clamp changes projection values, not just a bug fix, so it gets its own
+// tag too rather than assuming the offline backtest's result transfers
+// perfectly to live outcomes.
 const GAME_METHOD = "v2-opponent-rating";
-const PROP_METHOD = "v2-availability-aware";
+const PROP_METHOD = "v4-tuned-minutes-trend";
 const RECENT_GAMES_WINDOW = 10;
 
 // Every team's own most-recent RECENT_GAMES_WINDOW final games, paired
@@ -130,9 +139,17 @@ const OPPONENT_ADJUSTABLE_STATS: PropStatType[] = [
 // How much more/less than league average each team allows per tracked stat,
 // derived from already-ingested TeamGameStat rows (what a team "allowed" in
 // a game is just what its opponent put up that game) — no new ingest needed.
-async function loadOpponentFactors(): Promise<Map<PropStatType, Map<number, number>>> {
+// Scoped and cached per season (same shape as loadPlayerSeasonGameLog) so a
+// team's history from other seasons never leaks into the league-average or
+// per-team baseline this factor is computed from (see
+// openspec/changes/fix-opponent-factor-season-scope).
+const opponentFactorsCache = new Map<number, Map<PropStatType, Map<number, number>>>();
+async function loadOpponentFactorsForSeason(seasonId: number): Promise<Map<PropStatType, Map<number, number>>> {
+  const cached = opponentFactorsCache.get(seasonId);
+  if (cached) return cached;
+
   const teamGameStats = await prisma.teamGameStat.findMany({
-    where: { game: { status: "FINAL" } },
+    where: { game: { status: "FINAL", seasonId } },
     select: {
       gameId: true,
       teamId: true,
@@ -165,6 +182,7 @@ async function loadOpponentFactors(): Promise<Map<PropStatType, Map<number, numb
     }
     factorsByStat.set(statType, computeOpponentFactors(rows));
   }
+  opponentFactorsCache.set(seasonId, factorsByStat);
   return factorsByStat;
 }
 
@@ -203,9 +221,14 @@ async function loadTeamProjectionInput(teamId: number, seasonId: number): Promis
 }
 
 // Rostered players on `teamId` frozen OUT for `gameId`, with their recent
-// per-game scoring (see game-projection.ts "Team offense adjustment") —
-// reuses `loadPlayerGameLog`'s cache so this doesn't re-query a player
-// whose log the prop-projection pass already pulled this run.
+// per-game scoring (see game-projection.ts "Team offense adjustment") — the
+// last caller of `loadPlayerGameLog` (prop/KOTC projections now use the
+// season-scoped `loadPlayerSeasonGameLog` instead; see
+// openspec/changes/fix-player-projection-season-scope). Only reads the
+// recency slice below, never a season average, so the unscoped log is fine
+// here — kept as its own query rather than switched to the season-scoped
+// loader to avoid changing this adjustment's early-season recency-padding
+// behavior as a side effect of an unrelated fix.
 async function loadUnavailableScorers(
   teamId: number,
   gameId: number,
@@ -418,9 +441,13 @@ async function backfillMissingMarketLines() {
   return { checked: pending.length, updated };
 }
 
-// Caches a player's full game-log rows (ordered oldest -> newest, matching
-// lib/projections/player-prop-projection.ts's documented order) so
-// multiple prop stat types for the same player don't re-query it.
+// Caches a player's full, unscoped-across-seasons game-log rows (ordered
+// oldest -> newest, matching lib/projections/player-prop-projection.ts's
+// documented order). Used only by `loadUnavailableScorers` below, which
+// reads just the recency slice (never a season average) — see that
+// function's comment and openspec/changes/fix-player-projection-season-scope
+// for why prop/KOTC projections use the season-scoped
+// `loadPlayerSeasonGameLog` instead.
 const playerGameLogCache = new Map<number, RawPlayerGameRow[]>();
 
 async function loadPlayerGameLog(playerId: number): Promise<RawPlayerGameRow[]> {
@@ -587,15 +614,15 @@ async function projectKingOfTheCourtCandidate(
   candidate: KingOfTheCourtCandidateRef,
   game: ScheduledGameRow,
   availabilityByGamePlayer: Map<string, AvailabilityStatus>,
-  opponentFactorsByStat: Map<PropStatType, Map<number, number>>,
 ): Promise<number | null> {
-  const gameLog = await loadPlayerGameLog(candidate.playerId);
+  const gameLog = await loadPlayerSeasonGameLog(candidate.playerId, game.seasonId);
   const values = gameLog.map((row) => extractStatValue(KOTC_STAT_TYPE, row));
   const minutes = gameLog.map((row) => row.minutes ?? 0);
   const recentValues = values.slice(-RECENT_GAMES_WINDOW);
   const recentMinutes = minutes.slice(-RECENT_GAMES_WINDOW);
   const seasonAverage = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null;
 
+  const opponentFactorsByStat = await loadOpponentFactorsForSeason(game.seasonId);
   const opponentFactor = opponentFactorsByStat.get(KOTC_STAT_TYPE)?.get(candidate.opponentTeamId) ?? 1;
   const projectedValue = projectPlayerStat({ seasonAverage, recentValues, recentMinutes, opponentFactor });
   if (projectedValue === null) return null;
@@ -624,7 +651,6 @@ async function projectKingOfTheCourtCandidate(
 // row are processed.
 async function generateKingOfTheCourtLeaderboard(
   availabilityByGamePlayer: Map<string, AvailabilityStatus>,
-  opponentFactorsByStat: Map<PropStatType, Map<number, number>>,
 ) {
   const scheduledGames: ScheduledGameRow[] = await prisma.game.findMany({
     where: { status: "SCHEDULED" },
@@ -655,7 +681,6 @@ async function generateKingOfTheCourtLeaderboard(
           candidate,
           game,
           availabilityByGamePlayer,
-          opponentFactorsByStat,
         );
         if (projectedValue !== null) projected.push({ playerId: candidate.playerId, projectedValue });
       }
@@ -683,7 +708,6 @@ async function generateKingOfTheCourtLeaderboard(
 
 async function generatePlayerPropProjections(
   availabilityByGamePlayer: Map<string, AvailabilityStatus>,
-  opponentFactorsByStat: Map<PropStatType, Map<number, number>>,
 ) {
   const propOddsRows = await prisma.playerPropOdds.findMany({
     // DOUBLE_DOUBLE/TRIPLE_DOUBLE are yes/no propositions — ESPN gives them
@@ -729,12 +753,15 @@ async function generatePlayerPropProjections(
     if (status === "OUT") continue;
 
     const statType = representative.statType as PropStatType;
-    // loadPlayerGameLog only returns PlayerGameStat rows, which only exist
-    // for games the player actually appeared in — a missed game has no
-    // row, so it's already excluded from recentValues/recentMinutes below
-    // without any extra filtering (satisfies the "recent-form window
-    // excludes missed games" requirement as existing behavior).
-    const gameLog = await loadPlayerGameLog(representative.playerId);
+    // loadPlayerSeasonGameLog only returns PlayerGameStat rows for the
+    // game's own season, which only exist for games the player actually
+    // appeared in — a missed game has no row, so it's already excluded
+    // from recentValues/recentMinutes below without any extra filtering
+    // (satisfies the "recent-form window excludes missed games"
+    // requirement as existing behavior). Scoping to the current season
+    // keeps prior-season history out of seasonAverage (betting-projections
+    // "Player has game logs from prior seasons on record").
+    const gameLog = await loadPlayerSeasonGameLog(representative.playerId, representative.game.seasonId);
     const values = gameLog.map((row) => extractStatValue(statType, row));
     const minutes = gameLog.map((row) => row.minutes ?? 0);
     const recentValues = values.slice(-RECENT_GAMES_WINDOW);
@@ -745,6 +772,7 @@ async function generatePlayerPropProjections(
     const currentTeamId = representative.player.currentTeamId;
     const opponentTeamId =
       currentTeamId === homeTeamId ? awayTeamId : currentTeamId === awayTeamId ? homeTeamId : null;
+    const opponentFactorsByStat = await loadOpponentFactorsForSeason(representative.game.seasonId);
     const opponentFactor =
       opponentTeamId !== null ? opponentFactorsByStat.get(statType)?.get(opponentTeamId) ?? 1 : 1;
 
@@ -801,11 +829,8 @@ async function main() {
   const availabilityByGamePlayer = await loadAvailabilityByGamePlayer();
   const games = await generateGameProjections(availabilityByGamePlayer);
   const backfilled = await backfillMissingMarketLines();
-  // Shared between props and King of the Court so the opponent-strength
-  // query only runs once per run.
-  const opponentFactorsByStat = await loadOpponentFactors();
-  const props = await generatePlayerPropProjections(availabilityByGamePlayer, opponentFactorsByStat);
-  const kingOfTheCourt = await generateKingOfTheCourtLeaderboard(availabilityByGamePlayer, opponentFactorsByStat);
+  const props = await generatePlayerPropProjections(availabilityByGamePlayer);
+  const kingOfTheCourt = await generateKingOfTheCourtLeaderboard(availabilityByGamePlayer);
   console.log(
     `generate-projections done in ${((Date.now() - start) / 1000).toFixed(1)}s: ` +
       `games ${games.created}/${games.checked} projected, props ${props.created}/${props.checked} projected, ` +
