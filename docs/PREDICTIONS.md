@@ -80,23 +80,42 @@ For each team: blend season points-per-game / opp-points-per-game with a
 recency-weighted average of their last 10 final games — 60% recent form /
 40% season average, and only once there are ≥3 recent games (below that,
 season average alone). Projected score = average of (this team's blended
-offense, the opponent's blended defense), plus a home-court edge. That edge
-comes from each team's own recent home-vs-away scoring margin split,
-falling back to a flat +2.0 pts if there isn't enough of a split to compute.
+offense, the opponent's blended defense), plus a flat +1.8 pt home-court
+edge, applied the same way to every game.
 
 This is the only place opponent strength enters a game prediction — it's
 baked into "the opponent's blended defense" term, not a separate factor.
 
-**Unavailable-scorer adjustment**: if a rostered player is frozen `OUT` for
-the game, and his recent per-game scoring clears a minimum share of his
-team's own recent scoring (so a deep bench player going out doesn't trigger
-anything), his team's blended offense is reduced by his recent average
-times a flat 0.7 redistribution-loss factor — the team is assumed to
-recover 30% of his scoring through increased teammate usage, lose the rest.
-This constant is an unvalidated placeholder (consistent with the rest of
-this model's philosophy of simple clamped constants over a fitted one), not
-a per-team/per-player empirical figure — revisit once graded evidence
-with/without it exists.
+**Home-court edge used to be dynamic** — each team's own recent home-vs-away
+scoring margin split, falling back to a flat default only when there wasn't
+enough of a split to compute. A walk-forward backtest against 3 completed
+seasons (`scripts/backtest-game-rating-floor.ts`'s harness, swept via
+`scripts/sweep-game-hyperparameters.ts --param=homeCourtEdge`) found the
+per-team split actually made projections *worse* than just using a flat
+constant for every game — margin MAE 11.75 vs 11.47, winner accuracy 62.8%
+vs 66.3%, consistent across all 3 seasons individually. A ~5-home/~5-away
+split drawn from a 10-game recent window is too small a sample to carry
+real signal; it was adding noise, not signal. Flattened in
+`lib/projections/game-projection.ts`'s `HOME_COURT_EDGE`, tagged
+`method: "v3-flat-home-edge"`. The same sweep tool checked
+`RECENT_FORM_WEIGHT` (0.6) and found it already near-optimal — not changed.
+
+**There is no unavailable-scorer adjustment.** Earlier versions reduced a
+team's blended offense when a rostered player was frozen `OUT`, by his
+recent scoring average times a flat 0.7 redistribution-loss factor — it
+shipped as an acknowledged unvalidated placeholder and was removed once
+validated and rejected. There's no historical `PlayerAvailability` snapshot
+to replay, so `scripts/backtest-redistribution-loss-factor.ts` uses a
+proxy: a player who scored meaningfully in a team's recent games and then
+has no box score at all for a given game stands in for "frozen OUT" (almost
+always an injury scratch, occasionally an off-data trade). Across 4,040
+such proxy events, team-offense MAE was lowest assuming **no loss at all**
+(10.0) and got monotonically worse at every tested factor up to 1.0 (31.7)
+— holding across every missing-scorer-magnitude bucket tested (even 25+
+combined points), not just marginal ones. NBA teams recover a missing
+scorer's offense almost completely on average; the adjustment and its
+OUT-scorer plumbing were removed rather than just zeroing the constant.
+Tagged `method: "v4-no-redistribution-loss"`.
 
 Returns `null` (no projection created) if either team has no season stat
 and no recent games — never fabricated.
@@ -204,8 +223,26 @@ computed and frozen once, same as the projection itself.
 
 For **player props**, the stat's own stdev is computed from the same
 recent-games window as the projection. For the **game spread/total**, the
-stdev is pooled from both teams' recent scoring-margin (spread) or
-scoring-total (total) variance via `combineStdev` — `sqrt((a² + b²) / 2)`.
+stdev is a residual-based estimate — `computeResidualStdevs` in
+`generate-projections.ts`, the standard deviation of (actual margin/total −
+what the current ratings would have projected) over the league's last 90
+completed games, computed once per ingest run and shared by every game that
+run (design.md "Residual-based stdev"; `combineStdev`'s pooled-team-variance
+approach was the original design but was never wired up this way).
+
+**Spread "bettable" is always `false`, regardless of edge ratio.** A
+walk-forward backtest against 4 seasons of real market lines
+(`scripts/backtest-bettable-confidence.ts`) found the spread edge ratio has
+no relationship to cover rate at all — every bucket from 0 to 1.5+ sits
+within noise of a coin flip (48-51%), and the picks that cleared the old
+0.75 cutoff actually hit *worse* (45.9%, n=98) than the unfiltered pool
+(50.4%). Beating a sportsbook's spread needs a genuine informational edge;
+our own model disagreeing with the market more often reflects our model's
+~11.5-point margin error than a real mispricing. The **total** confidence
+gate is unaffected and stays calibrated — the same backtest found the
+bettable-only total pool hitting 58.4% vs. 48.7% overall. The spread row
+still renders on the page with its own margin/edge for context, just never
+marked as a recommendation, the same as any other sub-threshold pick.
 
 ### The spread pick is NOT "whoever we think wins"
 

@@ -17,7 +17,6 @@ import {
   blendRating,
   type TeamProjectionInput,
   type TeamRecentGame,
-  type UnavailableScorer,
 } from "../lib/projections/game-projection";
 import { projectPlayerStat } from "../lib/projections/player-prop-projection";
 import { extractStatValue, type RawPlayerGameRow } from "../lib/projections/extract-prop-stat";
@@ -48,8 +47,20 @@ import type { AvailabilityStatus } from "../lib/espn/injury-status-mapping";
 // tune-minutes-trend-clamp: a tighter, empirically-validated minutes-trend
 // clamp changes projection values, not just a bug fix, so it gets its own
 // tag too rather than assuming the offline backtest's result transfers
-// perfectly to live outcomes.
-const GAME_METHOD = "v2-opponent-rating";
+// perfectly to live outcomes. GAME_METHOD bumped again by
+// flatten-home-court-edge: replacing the per-team dynamic home/away split
+// with a flat constant (backtested across 3 seasons: margin MAE 11.75 ->
+// 11.47, winner accuracy 62.8% -> 66.3%) changes every game's projected
+// margin/total, not just a bug fix. Bumped again by
+// remove-redistribution-loss-factor: a proxy backtest (a scorer missing a
+// box score despite recent history, standing in for frozen-OUT — no
+// historical PlayerAvailability snapshot exists to replay) found NBA teams
+// recover a missing scorer's offense almost completely on average — MAE
+// 10.0 with no adjustment at all vs. 22.8 at production's 0.7 factor,
+// holding across every missing-scorer-magnitude bucket tested, n=4040. The
+// whole unavailable-scorer offense adjustment (and its OUT-scorer
+// plumbing) was removed rather than just zeroing the constant.
+const GAME_METHOD = "v4-no-redistribution-loss";
 const PROP_METHOD = "v4-tuned-minutes-trend";
 const RECENT_GAMES_WINDOW = 10;
 
@@ -220,35 +231,6 @@ async function loadTeamProjectionInput(teamId: number, seasonId: number): Promis
   };
 }
 
-// Rostered players on `teamId` frozen OUT for `gameId`, with their recent
-// per-game scoring (see game-projection.ts "Team offense adjustment") — the
-// last caller of `loadPlayerGameLog` (prop/KOTC projections now use the
-// season-scoped `loadPlayerSeasonGameLog` instead; see
-// openspec/changes/fix-player-projection-season-scope). Only reads the
-// recency slice below, never a season average, so the unscoped log is fine
-// here — kept as its own query rather than switched to the season-scoped
-// loader to avoid changing this adjustment's early-season recency-padding
-// behavior as a side effect of an unrelated fix.
-async function loadUnavailableScorers(
-  teamId: number,
-  gameId: number,
-  availabilityByGamePlayer: Map<string, AvailabilityStatus>,
-): Promise<UnavailableScorer[]> {
-  const roster = await prisma.player.findMany({ where: { currentTeamId: teamId }, select: { id: true } });
-  const outPlayerIds = roster
-    .map((p) => p.id)
-    .filter((playerId) => availabilityByGamePlayer.get(`${gameId}|${playerId}`) === "OUT");
-  if (outPlayerIds.length === 0) return [];
-
-  const scorers: UnavailableScorer[] = [];
-  for (const playerId of outPlayerIds) {
-    const gameLog = await loadPlayerGameLog(playerId);
-    const recentPoints = gameLog.slice(-RECENT_GAMES_WINDOW).map((row) => row.points ?? 0);
-    scorers.push({ recentPoints });
-  }
-  return scorers;
-}
-
 // How many of the league's most recent completed games to backtest the
 // current ratings against for the residual-based stdev (design.md
 // "Residual-based stdev") — a single shared, league-wide figure, not
@@ -303,7 +285,7 @@ async function computeResidualStdevs(
   return { marginStdev: computeStdev(marginResiduals), totalStdev: computeStdev(totalResiduals) };
 }
 
-async function generateGameProjections(availabilityByGamePlayer: Map<string, AvailabilityStatus>) {
+async function generateGameProjections() {
   const scheduledGames = await prisma.game.findMany({
     where: { status: "SCHEDULED", gameProjection: null },
     select: { id: true, seasonId: true, homeTeamId: true, awayTeamId: true },
@@ -345,11 +327,9 @@ async function generateGameProjections(availabilityByGamePlayer: Map<string, Ava
 
   let created = 0;
   for (const game of scheduledGames) {
-    const [homeInput, awayInput, homeUnavailable, awayUnavailable] = await Promise.all([
+    const [homeInput, awayInput] = await Promise.all([
       loadTeamProjectionInput(game.homeTeamId, game.seasonId),
       loadTeamProjectionInput(game.awayTeamId, game.seasonId),
-      loadUnavailableScorers(game.homeTeamId, game.id, availabilityByGamePlayer),
-      loadUnavailableScorers(game.awayTeamId, game.id, availabilityByGamePlayer),
     ]);
 
     const seasonRatings = seasonRatingsBySeasonId.get(game.seasonId) ?? new Map<number, TeamRating>();
@@ -361,13 +341,11 @@ async function generateGameProjections(availabilityByGamePlayer: Map<string, Ava
 
     const home: TeamProjectionInput = {
       ...homeInput,
-      unavailableScorers: homeUnavailable,
       rating: ratingFor(game.homeTeamId),
       leagueAvgPoints,
     };
     const away: TeamProjectionInput = {
       ...awayInput,
-      unavailableScorers: awayUnavailable,
       rating: ratingFor(game.awayTeamId),
       leagueAvgPoints,
     };
@@ -390,7 +368,20 @@ async function generateGameProjections(availabilityByGamePlayer: Map<string, Ava
         projectedMargin: projection.projectedMargin,
         marginStdev,
         totalStdev,
-        spreadBettable: isBettable(projection.projectedMargin, marketMargin, marginStdev),
+        // Never bettable: a walk-forward backtest against 4 seasons of real
+        // market lines (scripts/backtest-bettable-confidence.ts) found the
+        // spread edge-ratio has no relationship to cover rate at all — every
+        // edge bucket sits within noise of a coin flip, and the >=0.75
+        // "bettable" bucket actually hit *worse* (45.9%) than the unfiltered
+        // pool (50.4%). Beating the market's spread needs a real
+        // informational edge, not just disagreement with our own noisy
+        // margin — so until there's a methodology with demonstrated signal,
+        // this stays permanently false rather than surfacing a false-
+        // confidence recommendation. The row (and its own edge/stdev, for
+        // context) still renders plainly — see spreadValueSide/toBoardRows
+        // in src/app/betting/page.tsx. Totals ARE calibrated (bettable-only
+        // hit rate 58.4% vs 48.7% overall) and keep using isBettable.
+        spreadBettable: false,
         totalBettable: isBettable(projectedTotal, marketTotal, totalStdev),
         marketMarginAtPick: marketMargin,
         marketTotalAtPick: marketTotal,
@@ -432,35 +423,13 @@ async function backfillMissingMarketLines() {
       data: {
         marketMarginAtPick: marketMargin,
         marketTotalAtPick: marketTotal,
-        spreadBettable: isBettable(proj.projectedMargin, marketMargin, proj.marginStdev),
+        spreadBettable: false, // see generateGameProjections' comment — never bettable
         totalBettable: isBettable(projectedTotal, marketTotal, proj.totalStdev),
       },
     });
     updated += 1;
   }
   return { checked: pending.length, updated };
-}
-
-// Caches a player's full, unscoped-across-seasons game-log rows (ordered
-// oldest -> newest, matching lib/projections/player-prop-projection.ts's
-// documented order). Used only by `loadUnavailableScorers` below, which
-// reads just the recency slice (never a season average) — see that
-// function's comment and openspec/changes/fix-player-projection-season-scope
-// for why prop/KOTC projections use the season-scoped
-// `loadPlayerSeasonGameLog` instead.
-const playerGameLogCache = new Map<number, RawPlayerGameRow[]>();
-
-async function loadPlayerGameLog(playerId: number): Promise<RawPlayerGameRow[]> {
-  const cached = playerGameLogCache.get(playerId);
-  if (cached) return cached;
-
-  const rows = await prisma.playerGameStat.findMany({
-    where: { playerId, points: { not: null }, game: { status: "FINAL" } },
-    orderBy: { game: { date: "asc" } },
-    select: { points: true, rebounds: true, assists: true, threeMade: true, steals: true, blocks: true, minutes: true },
-  });
-  playerGameLogCache.set(playerId, rows);
-  return rows;
 }
 
 // A team's rostered player ids, cached — reused for both "who could absorb
@@ -827,7 +796,7 @@ async function generatePlayerPropProjections(
 async function main() {
   const start = Date.now();
   const availabilityByGamePlayer = await loadAvailabilityByGamePlayer();
-  const games = await generateGameProjections(availabilityByGamePlayer);
+  const games = await generateGameProjections();
   const backfilled = await backfillMissingMarketLines();
   const props = await generatePlayerPropProjections(availabilityByGamePlayer);
   const kingOfTheCourt = await generateKingOfTheCourtLeaderboard(availabilityByGamePlayer);
